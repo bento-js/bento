@@ -1,0 +1,24 @@
+# The VitePress docs tooling installs at the repo root rather than under docs/, because VitePress
+# renders markdown from `srcDir: ".."` and those files must be able to resolve `vue` and
+# `vitepress` during the production SSR bundle. Installing only inside docs/ breaks that.
+#
+# `packages:` is intentionally absent. This is a single-package repository.
+allowBuilds:
+    esbuild: true
+    onnxruntime-node: true
+    protobufjs: true
+    vue-demi: true
+catalog:
+    vite: npm:@voidzero-dev/vite-plus-core@1.1.0
+    vite-plus: 1.1.0
+# The coding agent is tracked at `latest`; holding it back by the release-age window would pin the
+# repository's harness tooling to whatever shipped a day earlier.
+minimumReleaseAgeExclude:
+    - "@oh-my-pi/*"
+overrides:
+    vite@*: "catalog:"
+peerDependencyRules:
+    allowAny:
+        - vite
+    allowedVersions:
+        vite: "*"

@@ -1,0 +1,30 @@
+# macOS
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/
+.pnpm-store/
+.cache/
+dist/
+
+# Docs site (VitePress)
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs and temp
+*.log
+*.pid
+*.tmp
+
+# Tests
+coverage/

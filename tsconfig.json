@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "allowImportingTsExtensions": true,
+        "isolatedModules": true,
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "noEmit": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "target": "ES2022",
+        "verbatimModuleSyntax": true
+    },
+    "exclude": ["docs/.vitepress/cache", "docs/.vitepress/dist", "node_modules"],
+    "include": [
+        "vite.config.ts",
+        "docs/.vitepress/**/*.ts",
+        "docs/.vitepress/**/*.vue",
+        "docs/.vitepress/**/*.tsx",
+        ".omp/extensions/**/*.ts",
+        ".omp/tools/**/*.ts"
+    ]
+}

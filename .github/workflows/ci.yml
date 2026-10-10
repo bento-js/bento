@@ -1,0 +1,30 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+            - uses: voidzero-dev/setup-vp@v1.21.1
+              with:
+                  cache: true
+            - run: vp run check
+            - name: Validate pull request commit messages
+              if: github.event_name == 'pull_request'
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  while IFS= read -r subject; do
+                    message_file="$(mktemp)"
+                    printf '%s\n' "$subject" > "$message_file"
+                    .agents/hooks/check-scoped-commit "$message_file"
+                    rm "$message_file"
+                  done < <(git log --format=%s "$BASE_SHA..$HEAD_SHA")

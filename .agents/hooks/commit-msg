@@ -1,0 +1,5 @@
+#!/bin/sh
+# Git commit-msg hook. Holds commits made from Oh My Pi to Scoped Commits and lets everyone else's
+# through: Oh My Pi exports OMPCODE=1 to every command it runs, and an ordinary terminal does not.
+[ "${OMPCODE-}" = "1" ] || exit 0
+exec "$(dirname "$0")/check-scoped-commit" "$@"

@@ -1,0 +1,10 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        // Node runs these files directly by stripping types, which cannot handle TypeScript-only
+        // runtime syntax such as enums or parameter properties. Vitest would compile it anyway.
+        "erasableSyntaxOnly": true,
+        "types": ["node"]
+    },
+    "include": ["*.ts"]
+}

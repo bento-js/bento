@@ -1,0 +1,125 @@
+# The preview: the cheapest realistic artifact through which a human can exercise the change.
+#
+# Bento's repository holds its vision, architecture, and project record, so its preview is the
+# rendered site, deployed to a real URL and commented on the pull request. A downloadable build
+# artifact is not a preview — nobody unzips a file and starts a local server to review a docs
+# change.
+#
+# GitHub Pages serves the preview publicly. That is correct only while the record is already
+# readable in a public repository; a private repository should use the Cloudflare Pages recipe at
+# the bottom of this file instead — GitHub Pages cannot serve privately outside Enterprise.
+#
+# Requires GitHub Pages enabled with its source set to the `gh-pages` branch.
+
+name: Preview
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened, closed]
+
+concurrency:
+    group: preview-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    deploy:
+        if: github.event.action != 'closed'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: voidzero-dev/setup-vp@v1.21.1
+              with:
+                  cache: true
+
+            # The base must match the path the preview is served from, or every asset 404s.
+            - run: vp run docs:build
+              env:
+                  DOCS_BASE: /${{ github.event.repository.name }}/pr-preview/pr-${{ github.event.pull_request.number }}/
+
+            # Concurrency cannot order runs that never overlap. A run created after the closing
+            # run has already finished will happily publish a preview for a merged pull request,
+            # because its event payload still describes an open one. Ask for live state instead of
+            # trusting the payload — and ask here, after the build, so the window between this
+            # answer and the publish below is as small as it can be.
+            - id: state
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  PR: ${{ github.event.pull_request.number }}
+              run: echo "pr=$(gh pr view "$PR" --json state --jq .state)" >>"$GITHUB_OUTPUT"
+
+            - if: steps.state.outputs.pr == 'OPEN'
+              uses: rossjrw/pr-preview-action@v1.8.1
+              with:
+                  source-dir: docs/.vitepress/dist
+                  preview-branch: gh-pages
+                  umbrella-dir: pr-preview
+                  action: deploy
+
+            # Skipping is the correct outcome, not a failure. Failing here would put a red mark on
+            # a merged pull request for something nobody needs to act on.
+            - if: steps.state.outputs.pr != 'OPEN'
+              run: echo "::notice::Pull request is ${{ steps.state.outputs.pr }} — not publishing a preview."
+
+    remove:
+        if: github.event.action == 'closed'
+        runs-on: ubuntu-latest
+        # No job-level permissions block: it would replace the workflow's grant wholesale, and
+        # this job comments on the pull request as well as writing to gh-pages.
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: rossjrw/pr-preview-action@v1.8.1
+              with:
+                  source-dir: docs/.vitepress/dist
+                  preview-branch: gh-pages
+                  umbrella-dir: pr-preview
+                  action: remove
+
+# ------------------------------------------------------------------------------
+# PREVIEW RECIPE MENU — ADAPT EXACTLY ONE, DELETE THE REST
+#
+# A preview must be something the human can actually exercise. Match the row to what the
+# repository is, not to what is easiest to wire.
+#
+# Whichever you adapt: if it publishes on `synchronize`, keep the live-state guard above. An
+# event payload describes the world at the moment the event fired, not the moment you act on it.
+# ------------------------------------------------------------------------------
+#
+# Documentation, but private
+#   Replace the deploy step with Cloudflare Pages, which can gate a preview behind Cloudflare
+#   Access. Needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets.
+#     - uses: cloudflare/wrangler-action@v4
+#       with:
+#         apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+#         accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+#         command: pages deploy docs/.vitepress/dist --project-name=<project> --branch=pr-${{ github.event.pull_request.number }}
+#   Human exercises: click through the deployed site.
+#
+# Library
+#   Publish a prerelease under a prerelease tag, never `latest`, and link it from the readiness
+#   report. A publication to a public registry is public forever — use a scoped or dist-tagged
+#   release, or pkg.pr.new for per-commit installs that expire.
+#   Human exercises: install the prerelease in a dependent project.
+#
+# Web application
+#   Deploy a preview environment per pull request with isolated configuration and its own data.
+#   Human exercises: the changed behavior in the running application.
+#
+# API
+#   Deploy a preview endpoint with isolated configuration. Include credentials or a token in the
+#   readiness report, and revoke them at cleanup.
+#   Human exercises: real requests against the preview endpoint.
+#
+# Command-line tool
+#   Build an installable executable for the platforms the human uses and upload it. This is the
+#   one case where an artifact is a legitimate preview, because installing it is the real act.
+#   Human exercises: install and run the changed command.
+#
+# Desktop / Mobile
+#   Build an installable package; for mobile use ad-hoc or an internal distribution track.
+#   Human exercises: install and use the changed behavior on a real device.

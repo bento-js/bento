@@ -1,0 +1,58 @@
+# Publishes the documentation site from the default branch to the root of `gh-pages`, alongside
+# the per-pull-request previews that live under `pr-preview/`.
+#
+# PRIVACY
+#
+# This publishes the vision, architecture, record, and guides to the public internet. In a public
+# repository that exposes nothing new, because the same files are already readable there. In a
+# private one it is a leak, and this workflow is the one place that can happen by accident.
+#
+# The job is therefore gated on the repository being public. A private repository will skip it
+# rather than publish, and GitHub Pages cannot serve privately outside Enterprise anyway. If your
+# guides must stay private and you still want them rendered, delete this workflow and use the
+# Cloudflare Pages recipe in `preview.yml`, which can gate a site behind Cloudflare Access.
+
+name: Docs
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+# A newer commit on the default branch supersedes an older deploy; cancelling the stale one is
+# correct. Previews use a separate per-pull-request group and write under `pr-preview/`, which
+# `clean-exclude` below protects.
+concurrency:
+    group: docs-production
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+
+jobs:
+    publish:
+        if: ${{ !github.event.repository.private }}
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - uses: voidzero-dev/setup-vp@v1.21.1
+              with:
+                  cache: true
+
+            # Pages serves this repository at /<name>/, so the site's base must match or every
+            # asset resolves against the domain root and the page loads blank.
+            - run: vp run docs:build
+              env:
+                  DOCS_BASE: /${{ github.event.repository.name }}/
+
+            # `clean` removes files no longer in the build, which would take the preview umbrella
+            # directory with it. Excluding `pr-preview` lets the production site and the open
+            # previews share one branch.
+            - uses: JamesIves/github-pages-deploy-action@v4.9.0
+              with:
+                  branch: gh-pages
+                  folder: docs/.vitepress/dist
+                  clean: true
+                  clean-exclude: pr-preview
+                  commit-message: "Deploy documentation from ${{ github.sha }}"
