@@ -35,3 +35,6 @@ coverage/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Rust
+/target/
