@@ -1,0 +1,73 @@
+{
+    "private": true,
+    "type": "module",
+    "imports": {
+        "#app/*": "./app/*"
+    },
+    "scripts": {
+        "predev": "node --run db:migrate",
+        "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
+        "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
+        "test": "NODE_ENV=test remix test",
+        "fmt": "oxfmt",
+        "lint": "oxlint --fix",
+        "check": "oxfmt --check; oxlint; tsc",
+        "check:fix": "oxfmt && oxlint --fix && tsc",
+        "db:migrate": "remix db migrate",
+        "db:reset": "remix db reset --force",
+        "db:rollback": "remix db rollback",
+        "db:status": "remix db status",
+        "typecheck": "tsc"
+    },
+    "dependencies": {
+        "remix": "3.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.0",
+        "eslint-plugin-perfectionist": "^5.12.0",
+        "eslint-plugin-prefer-let": "^4.2.2",
+        "oxfmt": "^0.72.0",
+        "oxlint": "^1.87.0",
+        "oxlint-tsgolint": "^7.0.0",
+        "typescript": "^7.0.2"
+    },
+    "devEngines": {
+        "packageManager": {
+            "name": "pnpm",
+            "version": "12",
+            "onFail": "download"
+        }
+    },
+    "engines": {
+        "node": ">=26"
+    },
+    "tasks": {
+        "dev": {
+            "dependsOn": [
+                "db:migrate"
+            ],
+            "command": "bento run --watch server.ts"
+        },
+        "start": "bento run server.ts",
+        "test": "NODE_ENV=test remix test",
+        "fmt": "oxfmt",
+        "lint": "oxlint --fix",
+        "typecheck": "tsc",
+        "check": [
+            "oxfmt --check",
+            "oxlint",
+            "tsc"
+        ],
+        "check:fix": {
+            "dependsOn": [
+                "fmt",
+                "lint",
+                "typecheck"
+            ]
+        },
+        "db:migrate": "remix db migrate",
+        "db:reset": "remix db reset --force",
+        "db:rollback": "remix db rollback",
+        "db:status": "remix db status"
+    }
+}

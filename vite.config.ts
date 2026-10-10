@@ -5,6 +5,8 @@ export default defineConfig({
         include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts"],
     },
     fmt: {
+        // The fixture is an independent project with its own toolchain and lockfile.
+        ignorePatterns: ["fixtures/**", "target/**"],
         printWidth: 100,
         tabWidth: 4,
         arrowParens: "avoid",
@@ -33,6 +35,7 @@ export default defineConfig({
         ],
     },
     lint: {
+        ignorePatterns: ["fixtures/**", "target/**"],
         options: {
             typeAware: true,
             typeCheck: true,
