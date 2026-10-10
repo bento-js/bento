@@ -1,7 +1,7 @@
 {
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "bento",
-  "project_id": "7786d078-08db-4330-b153-5297afea84cd"
+    "database": "dolt",
+    "backend": "dolt",
+    "dolt_mode": "embedded",
+    "dolt_database": "bento",
+    "project_id": "7786d078-08db-4330-b153-5297afea84cd"
 }
