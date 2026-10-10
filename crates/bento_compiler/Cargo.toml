@@ -1,0 +1,19 @@
+[package]
+name = "bento_compiler"
+description = "Oxc-based TypeScript and JSX transformation for direct source execution"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jsonc-parser = { version = "0.32.1", features = ["serde"] }
+oxc = { version = "=0.153.0", features = ["codegen", "semantic", "transformer"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

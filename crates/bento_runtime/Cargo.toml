@@ -1,0 +1,48 @@
+[package]
+name = "bento_runtime"
+description = "Embeddable V8 runtime that executes Node-compatible TypeScript applications in-process"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Mirrors the dependency set of Deno v2.9.7's standalone runtime (`cli/rt`), which is the
+# upstream assembly this crate adapts: deno_lib's worker factory over deno_runtime, with
+# deno_resolver/node_resolver resolution against a project's own node_modules.
+[dependencies]
+bento_compiler.workspace = true
+bento_host.workspace = true
+
+deno_ast = { workspace = true, features = ["cjs"] }
+deno_core.workspace = true
+deno_error.workspace = true
+deno_lib.workspace = true
+deno_media_type = { workspace = true, features = ["data_url", "decoding"] }
+deno_node.workspace = true
+deno_npm.workspace = true
+deno_package_json = { workspace = true, features = ["sync"] }
+deno_path_util.workspace = true
+deno_resolver = { workspace = true, features = ["sync"] }
+deno_runtime.workspace = true
+deno_semver.workspace = true
+deno_snapshots.workspace = true
+node_resolver = { workspace = true, features = ["sync"] }
+sys_traits = { workspace = true, features = ["getrandom", "filetime", "libc", "real", "strip_unc"] }
+
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+
+# deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features
+# apart from normal dependencies and nothing upstream enables deno_core's engine feature.
+# Depending on deno_core here (with default features) supplies it to that host-side build.
+[build-dependencies]
+deno_core.workspace = true
