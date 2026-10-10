@@ -11,11 +11,11 @@ Phase 3 preserves proposal intent in independent tests, guides, and code.
 
 ## Preconditions
 
-- The proposal has `status: awaiting-implementation`, or the human returned it for implementation with `status: returned-for-revisions`; neither has an unresolved clarification marker.
+- The proposal has `status: awaiting-implementation`, or the approval owner returned it for implementation with `status: returned-for-revisions`; neither has an unresolved clarification marker.
 - Phase 1 — preparation — created the branch, pushed it to `origin`, and opened a draft pull request.
 - Read the proposal's **Detailed design**, relevant vision, policies, decisions, affected tests, guides, and project conventions.
 - Tests derive from **Detailed design**. Acceptance criteria are an occasional supplement, never the primary source.
-- Raise a conflict or ambiguity. Do not silently choose behavior or expand scope.
+- Raise a conflict or ambiguity. Do not silently choose behavior or expand scope. Under a bounded build mandate ([`AGENTS.md`](../../../AGENTS.md#bounded-build-mandates)) the strategist settles conflicts that stay inside the mandate's boundaries and records them in the proposal; anything past those boundaries, or any doubt about which authority applies, stops the affected slice and goes to the human.
 
 ## Slice and dispatch
 
@@ -55,7 +55,7 @@ Each implementation handoff contains:
 | `DONE` | Continue only after the reported gates are clean. |
 | `DONE_WITH_CONCERNS` | Resolve correctness or scope concerns before review; retain observations for reviewers. |
 | `NEEDS_CONTEXT` | Supply the missing material and re-dispatch. Never ask it to guess intent. |
-| `NEEDS_STRATEGY` | Stop the affected slice. Verify the conflict with domain evidence; the strategist decides whether to revisit grounding, ontology, or the proposal with the human. Use `reframing-a-problem` when repeated fixes stop explaining the evidence. Resume only after intent is settled. |
+| `NEEDS_STRATEGY` | Stop the affected slice. Verify the conflict with domain evidence; the strategist decides whether to revisit grounding, ontology, or the proposal, with the human unless a mandate delegates that decision and the resolution stays inside its boundaries. Use `reframing-a-problem` when repeated fixes stop explaining the evidence. Resume only after intent is settled and recorded. |
 | `BLOCKED` | Classify missing context, reasoning shortfall, oversized slice, or proposal conflict; supply context, escalate the model, re-slice, or stop and raise the conflict. |
 
 ## Do inline only when trivial
@@ -145,7 +145,7 @@ Before any production code:
 1. Read the proposal-derived guide and failing tests side by side when both exist.
 2. List every behavior each artifact mentions.
 3. Treat anything in one list and not the other as a defect in one of them.
-4. Resolve every difference by correcting the guide, correcting the test, or revising the proposal with the human.
+4. Resolve every difference by correcting the guide, correcting the test, or revising the proposal — with the human, or under a mandate that delegates the revision inside its boundaries.
 5. Only then give the agreement to the implementer as the code contract. When one artifact is inapplicable, compare the remaining one directly with Detailed design.
 
 This comparison is load-bearing. Without it, the guide is decorative and the tests are an unreviewed interpretation. If a guide was written or rewritten from implementation, discard the code-shaped prose, derive it again from the proposal, and repeat the comparison.
@@ -162,7 +162,7 @@ If an unknown failure appears, stop implementation and use [`.agents/skills/syst
 
 Run `vp run check`, then the applicable project-specific gates listed by `vp run`. Follow [`.agents/rules/verification.md`](../../rules/verification.md) for completion evidence.
 
-The strategist uses `excellence-pass` on the working implementation before inline reviews. Substantive implementation improvements return to the implementer; rerun validation and the pass. A finding that changes product intent goes back to the human and proposal before code changes.
+The strategist uses `excellence-pass` on the working implementation before inline reviews. Substantive implementation improvements return to the implementer; rerun validation and the pass. A finding that changes product intent goes back to the proposal before code changes — to the human, or to the strategist where a mandate delegates that decision and the revision stays inside its boundaries.
 
 Perform the inline reviews sequentially. A finding returns the affected behavior to tests, guides, or code; rerun its gates and repeat the review that found it. Self-review can catch clear mistakes but never substitutes for either review.
 
@@ -190,3 +190,5 @@ The adversarial reviewer is fresh-context, report-only, and uses a model distinc
 - Use the strongest available model distinct from the implementer for adversarial review; cognitive diversity is the point.
 - Escalate an implementer only for a reasoning shortfall, never for missing context.
 - Do not use a low-reasoning model with untrusted recovery behavior for implementation or review.
+- Never treat a mandate as permission to skip a gate, a review, or honest failing evidence; red gates stop the slice whatever the authority.
+- Never widen a mandate's outcome, scope, constraints, or grants from inside implementation. Only the human changes them.

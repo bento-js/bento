@@ -17,7 +17,7 @@ vp run status
 
 It reads the branch, the pull request, and the active proposal's status, then prints which phase the work is in and what happens next. Run it before asking the human where things stand, and run it again whenever you are unsure.
 
-The human is never expected to remember a command, a skill name, or an argument. "Keep going", "start a feature for X", or a plain description of a problem is enough to orient from `vp run status`. None of those phrases authorizes a proposal or draft pull request.
+The human is never expected to remember a command, a skill name, or an argument. "Keep going", "start a feature for X", or a plain description of a problem is enough to orient from `vp run status`. Those phrases grant no new authority. Check whether a recorded, active build mandate already authorizes the work before asking for per-feature approval; the status command does not validate that authority.
 
 ## Reasoning order
 
@@ -33,7 +33,7 @@ Do not collapse these stages.
 
 **Conceptual model** means deciding what kinds of things exist in the problem, what distinguishes them, how they relate, and which distinctions are fundamental rather than implementation conveniences.
 
-**Intent** is the human-reviewed decision about what this project should do. It is recorded in the proposal.
+**Intent** is the approved decision about what this project should do. It is recorded in the proposal. The human approves intent directly or delegates bounded decisions through a build mandate.
 
 **Implementation** realizes that intent in tests, guides, and code.
 
@@ -105,15 +105,43 @@ In Oh My Pi, `.omp/tools/dynamic-workflows/` registers the `workflow` tool. Use 
 
 For a single bounded task, work inline or use one agent. For a fixed batch of independent slices with no dependent stages, use `task`. The workflow tool earns its overhead when the dependency graph, fan-out/fan-in, or result-driven branching matters. Give each agent a bounded brief and separate ownership of edited files; a final synthesis agent should reconcile independent findings. A failed branch returns `null`, so inspect it rather than treating it as success. The workflow tool coordinates execution; it does not approve proposals, replace the strategist, or bypass tests and review.
 
+## Bounded build mandates
+
+A human-approved build mandate delegates decisions for a bounded outcome to the strategist. Within its recorded authority, it replaces per-feature human consent, proposal approval, and acceptance or merge gates throughout this contract and the linked skills. Outside that authority, the individual human-approval path remains in force.
+
+Record the mandate in a `## Build mandate` section of an ordinary proposal. It must specify:
+
+- the outcome, observable completion criteria, scope, and non-goals;
+- fixed constraints, including trust boundaries and compatibility promises;
+- delegated decisions and actions, naming any permission to create PRs, push feature branches, accept work, and merge into a particular target branch;
+- resource and spending limits, with no new spending authorized by omission;
+- required verification, independent review, and preview evidence;
+- an expiry or completion condition;
+- dated human approval and retrievable evidence of the approved revision.
+
+The mandate proposal requires human approval and cannot authorize itself. Missing approval, unresolved boundaries, expiry, completion, or revocation means no delegated authority. The human alone may extend or renew the mandate, change its boundaries, or grant additional actions. Permission to establish this mechanism does not activate a runtime build mandate.
+
+Each governed proposal carries an `## Authorization` section linking the mandate and its approved revision, explaining why the change fits, and recording the strategist's approval decisions. Ordinary proposals record direct human consent instead. Workers receive that reference with their bounded brief; Beads task state and an agent's assertion of authority do not replace it.
+
+For covered work, the strategist is the approval owner. It may choose and revise in-scope behavior, settle technical tradeoffs, authorize proposals as `awaiting-implementation`, and record in-scope policies and decisions without another human round trip. It must update intent before deriving tests, guides, and code. Implementers still return strategic conflicts to the strategist.
+
+Delegated acceptance requires the readiness report, applicable fresh checks and smoke evidence, the required independent reviews, and an exercised preview. The strategist may then set `accepted` and perform an explicitly authorized PR merge. An implementer's own completion claim is insufficient. Unresolved defects, missing mandated outcomes, and disputed material review findings block autonomous acceptance. Serialize integration and verify the latest integration candidate before merging; earlier branch checks do not prove the combined result.
+
+An in-scope uncertainty belongs to the strategist. A change to the mandate's boundaries or an uncertainty about authority belongs to the human: block the affected slice, record the question and evidence in Beads and the PR, and continue unrelated authorized work. Agents must not weaken security, remove a promised outcome, relax verification, or edit the mandate to manufacture permission.
+
+Merge authority does not grant public publication, production deployment, credential or access changes, branch deletion, force-push, or other destructive operations. Those require explicit human authorization for the action. Direct pushes to the default branch remain prohibited. Required delivery must be completed before `implemented`; a merge-only proposal may finish without a release, while an unperformed required release remains outstanding.
+
+Human instructions override delegated authority immediately. Recheck the mandate before approval and integration decisions, and revert to individual human approval when it no longer applies.
+
 ## The feature loop
 
 ```text
-human opts into proposal → branch → draft PR
+human consent or active mandate → branch → draft PR
        → grounding → baseline study → proposal
        → tests → guides → code → validation
        → excellence pass → inline reviews → cross-artifact review → adversarial review
        → preview → readiness report
-       → human review → revision → vision update → merge → release → cleanup
+       → approval-owner review → revision → vision update → authorized merge/delivery → cleanup
 ```
 
 Grounding and baseline study are part of proposal development, not separate proposal statuses. Use them when the problem requires substantive conceptual understanding; do not manufacture research ceremony for a trivial or already-understood change.
@@ -122,13 +150,13 @@ Numbered phases below follow [`PROCESS.md`](PROCESS.md). Agent review is the end
 
 **Scale the process to the change.** What follows is written for substantial work — new or changed behavior, anything where a reasonable person could build it differently. Not every change is that. A typo, a dead link, or a bug whose correct behavior was never in question does not need a proposal, and often does not need a pull request either; fixing it is faster than describing it.
 
-Use judgement, and lean on one question: **does this change decide something?** If intent already exists because a proposal promised the behavior or the contract is obvious, correct the implementation directly. Say which you think it is and why, in a line, before you start. If a proposal may help, ask the human whether they want one for this change before opening a branch or draft PR. A request to "start a feature" or even "write a proposal" does not replace this explicit question.
+Use judgement, and lean on one question: **does this change decide something?** If intent already exists because a proposal promised the behavior or the contract is obvious, correct the implementation directly. Say which you think it is and why, in a line, before you start. For substantial work, check the bounded build mandate first. If it authorizes the change, record that authority and proceed. Otherwise ask the human whether they want a proposal before opening a branch or draft PR; a request to "start a feature" or "write a proposal" alone does not grant consent.
 
-The human's answer applies to that proposed change, including later edits to its proposal. If they decline, do not create a proposal or a draft PR for it. Proceed directly when intent is unambiguous; if a design decision remains unresolved, clarify the intended behavior or narrow the work with the human before implementing. If a small fix reveals a design choice, stop and ask again before entering the proposal path.
+Individual consent applies to that proposed change, including its revisions. If the human declines, do not create its proposal or draft PR. Proceed directly when intent is unambiguous; clarify consequential choices with the approval owner before implementing. A small fix that reveals a design choice returns to this authority check.
 
 ### 1. Preparation
 
-Only after the human opts into a proposal for this change, create a branch, push it to `origin`, and open a **draft** pull request before writing the proposal. The PR is the durable workspace for the proposal, implementation, review discussion, and status reports. It stays a draft until the agent believes the work is ready.
+After establishing direct human consent or applicable mandate authority, create a branch, push it to `origin`, and open a **draft** pull request before writing the proposal. The PR is the durable workspace for the proposal, implementation, review discussion, and status reports. It stays a draft until the agent believes the work is ready.
 
 ### 2. Grounding and Proposal
 
@@ -191,9 +219,9 @@ The proposal records:
 - compatibility and adoption implications;
 - alternatives and unresolved questions.
 
-The human and agent iterate until the intent is right.
+The approval owner settles the intended behavior: the human for individually approved work, or the strategist for decisions delegated by an active mandate.
 
-The proposal stays `status: draft` throughout. The human decides when it is settled and moves it to `status: awaiting-implementation`.
+The proposal stays `status: draft` during that work. The approval owner records the authorization and moves it to `status: awaiting-implementation` only when the design has no unresolved clarification markers.
 
 Skills:
 
@@ -283,15 +311,15 @@ A preview is keyed to what the repository _is_, not to a fixed mechanism:
 | Desktop    | installable build                           |
 | Mobile     | installable build (ad-hoc / internal track) |
 
-### 4. Human review
+### 4. Acceptance review
 
-The human reviews the report, the diff, and the preview. They comment on the PR; they may also commit directly. When feedback changes the intended design rather than correcting its implementation, **update the proposal first**, then re-run phase 3 against it.
+The approval owner reviews the report, diff, preview, and independent findings. Human comments and direct commits remain instructions under either path. When feedback changes intended behavior, **update the proposal first**, then repeat the affected implementation and review steps.
 
-Their verdict sets the status: `returned-for-revisions` to send it back, `accepted` to take it.
+The verdict sets `returned-for-revisions` or `accepted`. Under a mandate, the strategist may make this decision without waiting for the human only within the delegated acceptance authority and evidence requirements above.
 
 ### 5. Completion and release
 
-Update `VISION.md` if the feature changed what the project is, merge, release, update dependent projects, then clean up. Skill: `.agents/skills/completing-a-feature/`.
+Update `VISION.md` when completed work changes what the project is, perform the authorized merge and required delivery, update dependent projects where applicable, then perform authorized cleanup. Release and destructive cleanup require their own authority. Skill: `.agents/skills/completing-a-feature/`.
 
 ## Reframing hard problems
 
@@ -320,20 +348,20 @@ Use systematic debugging when the intended behavior is sound and the implementat
 - **Never use an existing implementation as the sole source of domain truth when independent domain knowledge is available.** Ground the problem first; then inspect the implementation.
 - **Never silently encode an ontology decision.** If implementation changes what kinds of things exist, their identity, relationships, lifecycle, states, or vocabulary, route that decision upstream.
 - **Never let an implementer redefine product intent or architecture merely to make implementation easier.** Return strategic conflicts to the strategist.
-- **Never create a proposal, feature branch, or draft PR for the proposal path before asking whether the human wants a proposal for this change and receiving an explicit yes.** Do not infer consent from the size of a request, a command's suggested next step, or a request to "start a feature".
-- **Never implement substantial work without an approved proposal.** A conversational request is not a proposal. Corrections and fixes with unambiguous intent are not substantial work.
+- **Never start a proposal workspace without authority.** Establish direct human consent for that change or an active, applicable human-approved build mandate. A request's size, a command's suggestion, and silence grant no authority.
+- **Never implement substantial work without an approved proposal.** Approval comes from the human or the strategist exercising recorded mandate authority. Corrections and fixes with unambiguous intent are not substantial work.
 - **Never write production code before its failing test.** If the behavior warrants a test at all and you wrote the code first, delete it and start over.
 - **Never write guides from the finished code.** When a change warrants a guide, it is derived from the proposal. Whether it warrants one is a judgement; the direction of derivation is not.
 - **Never claim work is done without running the verifying command this turn** and reading its output. See [`.agents/rules/verification.md`](.agents/rules/verification.md).
 - **Never fix a bug before finding its root cause.** Skill: `.agents/skills/systematic-debugging/`.
 - **Never let the adversarial reviewer edit code.** It reports; the implementer fixes.
-- **Never delete a branch, force-push, or publish a release without explicit human confirmation.**
-- **Never expand scope.** Behavior not in the proposal does not get implemented. If it should exist, revise the proposal. A defect you discovered is not a licence to widen the work.
+- **Never merge, publish, change access, or perform destructive operations without authority for that action.** A mandate may explicitly delegate PR merges; it does not implicitly authorize release, branch deletion, or force-push.
+- **Never expand approved scope silently.** Revise the proposal before behavior changes. The strategist may approve revisions within the mandate; only the human may change the mandate's boundaries. A discovered defect is not a licence to widen the work.
 - **Never file an issue to defer work the proposal already requires.** Fix it.
 
 ## Policies and decisions
 
-When a feature establishes a rule future work must keep enforcing, record a **policy**. When it establishes an architectural choice future work must understand, record a **decision**. Discuss both with the human before writing them; neither is a substitute for a proposal.
+When a feature establishes a rule future work must keep enforcing, record a **policy**. When it establishes an architectural choice future work must understand, record a **decision**. Establish approval with the human or under the mandate's delegated authority before writing them; neither is a substitute for a proposal, and neither may silently change the mandate's constraints.
 
 **Most features establish neither, and that is the normal case.** The test is whether the knowledge outlives the change: if it does not, it belongs in the proposal and nowhere else. Both directories being empty is a healthy state, not a gap to fill. A record written speculatively is one nobody follows and everybody has to read.
 
@@ -395,6 +423,7 @@ The process lives harness-neutral in `.agents/`, which stays the source of truth
 Another harness wires the same lifecycle events, listed in [`.agents/hooks/README.md`](.agents/hooks/README.md), into its own configuration; do not fork `.agents/` for it. The commit-message hook is a Git hook that `vp install` installs. It checks only commits made from Oh My Pi, which it recognizes by the `OMPCODE=1` that Oh My Pi exports to every command; another harness needs its own marker added there.
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:46cd31e7 -->
+
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -432,25 +461,28 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 2. **Run quality gates** (if code changed) - Tests, linters, builds
 3. **Update issue status** - Close finished work, update in-progress items
 4. **Handle git/sync by active profile**:
-   ```bash
-   # Conservative/minimal/default: report status and proposed commands; wait for approval.
-   git status
+    ```bash
+    # Conservative/minimal/default: report status and proposed commands; wait for approval.
+    git status
 
-   # Team-maintainer opt-in only, unless current instructions forbid it:
-   git pull --rebase
-   bd dolt push
-   git push
-   git status
-   ```
+    # Team-maintainer opt-in only, unless current instructions forbid it:
+    git pull --rebase
+    bd dolt push
+    git push
+    git status
+    ```
 5. **Hand off** - Summarize changes, validation, issue status, and any blocked sync/commit/push step
 
 **Critical rules:**
+
 - Explicit user or orchestrator instructions override this Beads block.
 - Do not commit or push without clear authority from the active profile or the current user request.
 - If a required sync or push is blocked, stop and report the exact command and error.
+
 <!-- END BEADS INTEGRATION -->
 
 <!-- BEGIN BEADS CODEX SETUP: generated by bd setup codex -->
+
 ## Beads Issue Tracker
 
 Use Beads (`bd`) for durable task tracking in repositories that include it. Use the `beads` skill at `.agents/skills/beads/SKILL.md` (project install) or `~/.agents/skills/beads/SKILL.md` (global install) for Beads workflow guidance, then use the `bd` CLI for issue operations.

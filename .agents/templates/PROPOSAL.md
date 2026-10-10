@@ -16,17 +16,17 @@ Delete this instruction and replace every <placeholder>. A proposal is the durab
 specification for one change; write for someone without the pull-request conversation.
 
 Lifecycle:
-- `draft` — Phase 2 proposal development with the human; may carry clarification markers.
+- `draft` — Phase 2 proposal development; may carry clarification markers.
 - `awaiting-implementation` — Phase 3 implementation may begin.
-- `active-review` — Phase 4 human evaluation; readiness is posted and the pull request is ready.
-- `returned-for-revisions` — Phase 4 human feedback returned the work to Phase 2 or Phase 3.
-- `accepted` — Phase 5 vision update, merge, and release are underway.
-- `implemented` — merged and released; done.
-- `rejected` — the human declined the change; retained as a record.
+- `active-review` — Phase 4 acceptance review; readiness is posted and the pull request is ready.
+- `returned-for-revisions` — Phase 4 review returned the work to Phase 2 or Phase 3.
+- `accepted` — Phase 5 vision update, merge, and required delivery are underway.
+- `implemented` — merged, with every delivery this proposal requires performed; done. A merge-only change needs no release; a required release that has not happened keeps the proposal in `accepted`.
+- `rejected` — the approval owner declined the change; retained as a record.
 - `withdrawn` — the author pulled it; retained as a record.
 - `superseded` — a later proposal replaced it; retained as a record.
 Normal path: `draft` → `awaiting-implementation` → `active-review` → `accepted` → `implemented`.
-Who decides: the human decides `awaiting-implementation`, `returned-for-revisions`, `accepted`, and `rejected`. At the end of Phase 3, `reviewing-an-implementation` alone moves the proposal to `active-review` while posting the readiness report and making the pull request ready. The agent moves `implemented`. The human may ask the agent to make an edit — deciding is the part an agent must never do alone. Permission to begin implementing is `awaiting-implementation`, never `accepted`.
+Who decides: the approval owner decides `awaiting-implementation`, `returned-for-revisions`, `accepted`, and `rejected` — the human, or the strategist for work an active build mandate delegates (AGENTS.md#bounded-build-mandates). At the end of Phase 3, `reviewing-an-implementation` alone moves the proposal to `active-review` while posting the readiness report and making the pull request ready. The agent moves `implemented`. Outside delegated authority, deciding is the part an agent must never do alone; under it, no agent accepts its own completion claim as the evidence. Permission to begin implementing is `awaiting-implementation`, never `accepted`.
 
 -->
 
@@ -38,6 +38,23 @@ the change and its value plainly. It does not need to flow into the next section
 -->
 
 <What changes and why it matters.>
+
+## Authorization
+
+<!--
+Record where the authority for this change comes from, before the work proceeds.
+
+Under a bounded build mandate: link the mandate proposal and the approved revision it rests on,
+explain why this change falls inside its outcome, scope, and constraints, name the delegated
+authority being used, and record the strategist's approval decisions as they are made.
+
+Otherwise: record the human's direct consent for this change — when it was given and what it
+covered. See AGENTS.md#bounded-build-mandates.
+-->
+
+- Authority: <mandate proposal and approved revision, or direct human consent and date>
+- Fit: <why this change is inside that authority>
+- Decisions recorded: <approval decisions taken under it, or “None yet.”>
 
 ## Motivation
 
@@ -167,11 +184,31 @@ scope are filed as GitHub issues, not folded in; use .agents/skills/tracking-def
 
 - <Excluded work and reason it is excluded.>
 
+## Build mandate
+
+<!--
+Usually delete this section. Keep it only when this proposal asks the human to delegate a bounded
+set of decisions to the strategist; a mandate lives in an ordinary proposal rather than a record of
+its own. The human must approve it, and it cannot authorize itself.
+
+Every field below must be settled before approval: an unresolved boundary grants no authority.
+See AGENTS.md#bounded-build-mandates.
+-->
+
+- Outcome: <outcome and the observable criteria that complete it>
+- Scope: <what the mandate covers> — Non-goals: <what it never covers>
+- Constraints: <fixed constraints, including trust boundaries and compatibility promises>
+- Delegated: <decisions and actions, naming proposal approval, branch pushes, pull request creation, acceptance, and merge target>
+- Limits: <resource and spending limits; zero new spend unless granted>
+- Verification: <required checks, reviews, and preview before anything is accepted or merged>
+- Expiry: <date, completion condition, or revocation trigger>
+- Approved: <human approval date and where its evidence is retrievable>
+
 ## Preview
 
 <!--
 Choose the artifact from the preview table that exercises this change and explain why it is the cheapest
-realistic one. A human must exercise changed behavior, not merely inspect prose or a screenshot; use .agents/skills/reviewing-an-implementation/. For a pure refactor with no exercisable surface, state why no preview applies.
+realistic one. The preview must let its reviewer exercise changed behavior rather than merely inspect prose or a screenshot; use .agents/skills/reviewing-an-implementation/. For a pure refactor with no exercisable surface, state why no preview applies.
 -->
 
 - Artifact: <preview artifact>
@@ -208,9 +245,9 @@ If an alternative wins, change the proposal, explain why the new idea won, and u
 
 <!--
 
-Put every unresolved question in the exact marker below. Resolve every marker before the human
-approves implementation; the validator enforces this. Do not guess an answer merely to make the
-proposal appear complete.
+Put every unresolved question in the exact marker below. Resolve every marker before the approval
+owner authorizes implementation; the validator enforces marker resolution. Do not guess an answer
+merely to make the proposal appear complete.
 -->
 
 - [NEEDS CLARIFICATION: <question>]

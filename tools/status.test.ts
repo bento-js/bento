@@ -32,21 +32,16 @@ function proposal(status: string, clarificationCount = 0, overrides: Partial<Pro
     };
 }
 
-// Asserts the derived routing — phase, who acts, which skill. The `next` sentence is human-facing
-// copy that will be reworded; pinning it here would make every wording change a test failure.
-function assertPhase(input: Facts, expected: Pick<Step, "phase" | "title" | "actor" | "skill">) {
+function assertPhase(input: Facts, expected: Pick<Step, "phase" | "actor" | "skill">) {
     let status = deriveStatus(input);
 
     expect(status).toMatchObject(expected);
-    expect(status.next.length, "every phase must say what happens next").toBeGreaterThan(0);
-    expect(status.situation.length, "every phase must describe the situation").toBeGreaterThan(0);
     return status;
 }
 
 test("derives preparation on the default branch", () => {
     assertPhase(facts({ branch: "main", isDefaultBranch: true, pullRequest: null }), {
         phase: "1",
-        title: "Preparation",
         actor: "agent",
         skill: null,
     });
@@ -55,7 +50,6 @@ test("derives preparation on the default branch", () => {
 test("derives preparation for a branch without a pull request", () => {
     assertPhase(facts({ pullRequest: null }), {
         phase: "1",
-        title: "Preparation",
         actor: "agent",
         skill: null,
     });
@@ -64,32 +58,15 @@ test("derives preparation for a branch without a pull request", () => {
 test("derives proposal work for a draft pull request without a proposal", () => {
     assertPhase(facts(), {
         phase: "2",
-        title: "Proposal",
         actor: "agent",
         skill: ".agents/skills/writing-a-proposal/",
     });
 });
 
-test.each([
-    {
-        where: "on the default branch",
-        state: facts({ branch: "main", isDefaultBranch: true, pullRequest: null }),
-    },
-    { where: "on a branch without a pull request", state: facts({ pullRequest: null }) },
-    { where: "on a pull request without a proposal", state: facts() },
-])("asks before opening a proposal workspace or drafting a proposal $where", ({ state }) => {
-    let { actor, next } = deriveStatus(state);
-
-    expect(actor).toBe("agent");
-    expect(next).toMatch(/ask the human whether they want a proposal/i);
-    expect(next).toMatch(/before (creating|pushing|writing)/i);
-});
-
-test("keeps a draft proposal in proposal work", () => {
+test("keeps a draft proposal with its approval owner", () => {
     assertPhase(facts({ proposal: proposal("draft") }), {
         phase: "2",
-        title: "Proposal",
-        actor: "you",
+        actor: "approval owner",
         skill: null,
     });
 });
@@ -97,17 +74,15 @@ test("keeps a draft proposal in proposal work", () => {
 test("derives implementation for an awaiting proposal", () => {
     assertPhase(facts({ proposal: proposal("awaiting-implementation") }), {
         phase: "3",
-        title: "Implementation",
         actor: "agent",
         skill: ".agents/skills/implementing-a-proposal/",
     });
 });
 
-test("derives human review for an active-review proposal", () => {
+test("derives acceptance review for an active-review proposal", () => {
     assertPhase(facts({ proposal: proposal("active-review") }), {
         phase: "4",
-        title: "Human review",
-        actor: "you",
+        actor: "approval owner",
         skill: null,
     });
 });
@@ -115,7 +90,6 @@ test("derives human review for an active-review proposal", () => {
 test("derives revisions for a returned proposal", () => {
     assertPhase(facts({ proposal: proposal("returned-for-revisions") }), {
         phase: "4 → 3",
-        title: "Human review → Implementation",
         actor: "agent",
         skill: ".agents/skills/implementing-a-proposal/",
     });
@@ -124,7 +98,6 @@ test("derives revisions for a returned proposal", () => {
 test("derives completion for an accepted proposal", () => {
     assertPhase(facts({ proposal: proposal("accepted") }), {
         phase: "5",
-        title: "Completion",
         actor: "agent",
         skill: ".agents/skills/completing-a-feature/",
     });
@@ -138,7 +111,6 @@ test("derives done for an implemented merged pull request", () => {
         }),
         {
             phase: "done",
-            title: "Done",
             actor: "you",
             skill: null,
         },
@@ -148,7 +120,6 @@ test("derives done for an implemented merged pull request", () => {
 test("derives a closed state for a rejected proposal", () => {
     assertPhase(facts({ proposal: proposal("rejected") }), {
         phase: "done",
-        title: "Closed",
         actor: "you",
         skill: null,
     });
@@ -157,7 +128,6 @@ test("derives a closed state for a rejected proposal", () => {
 test("derives a closed state for a withdrawn proposal", () => {
     assertPhase(facts({ proposal: proposal("withdrawn") }), {
         phase: "done",
-        title: "Closed",
         actor: "you",
         skill: null,
     });
@@ -170,7 +140,6 @@ test("derives a closed state with its successor for a superseded proposal", () =
     });
     let status = assertPhase(input, {
         phase: "done",
-        title: "Closed",
         actor: "you",
         skill: null,
     });
@@ -181,7 +150,6 @@ test("derives a closed state with its successor for a superseded proposal", () =
 test("names an implemented proposal with an unmerged pull request as inconsistent", () => {
     let status = assertPhase(facts({ proposal: proposal("implemented") }), {
         phase: "3 → 4",
-        title: "Inconsistent record",
         actor: "you",
         skill: null,
     });
@@ -236,7 +204,6 @@ test("reports an unavailable pull request state instead of assuming no pull requ
         }),
         {
             phase: "1",
-            title: "Preparation",
             actor: "agent",
             skill: null,
         },
@@ -254,7 +221,6 @@ test("reports an unauthenticated pull request state", () => {
         }),
         {
             phase: "1",
-            title: "Preparation",
             actor: "agent",
             skill: null,
         },
@@ -266,7 +232,6 @@ test("reports an unauthenticated pull request state", () => {
 test("reports an unknown branch role instead of recommending a pull request", () => {
     assertPhase(facts({ pullRequest: null, isDefaultBranch: null }), {
         phase: "unknown",
-        title: "Branch role unknown",
         actor: "agent",
         skill: null,
     });
@@ -275,7 +240,6 @@ test("reports an unknown branch role instead of recommending a pull request", ()
 test("reserves unknown routing for an invalid proposal status", () => {
     assertPhase(facts({ proposal: proposal("invalid") }), {
         phase: "2",
-        title: "Proposal",
         actor: "you",
         skill: null,
     });

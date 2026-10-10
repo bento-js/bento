@@ -5,7 +5,7 @@ description: Use when an implemented proposal has fresh validation evidence and 
 
 # Reviewing an Implementation
 
-**Phase 3 — Implementation.** Compare the independent representations before asking a human to review the changed behavior. This procedure owns the confirmatory review, adversarial dispatch, preview, and readiness handoff. It does not decide whether the human accepts the work.
+**Phase 3 — Implementation.** Compare the independent representations before asking for review of the changed behavior. This procedure owns the confirmatory review, adversarial dispatch, preview, and readiness handoff. It does not by itself decide acceptance: acceptance is the human's, or the strategist's where a bounded build mandate delegates it ([`AGENTS.md`](../../../AGENTS.md#bounded-build-mandates)).
 
 ## Inputs and order
 
@@ -60,10 +60,10 @@ Each non-full row resolves in exactly one way.
 | Resolution | Use when | Action |
 | --- | --- | --- |
 | Fix the wrong artifact | Intent has not changed | Correct the tests, guides, or code, then recheck the row. |
-| Revise the proposal | Intent or scope changed | Discuss with the human first. Then derive affected tests, guides, and code again. |
+| Revise the proposal | Intent or scope changed | Discuss with the human first, unless a mandate delegates that decision and the revision stays inside its boundaries; record it either way. Then derive affected tests, guides, and code again. |
 | Record the divergence | It remains deliberate for human review | Name the behavior, affected sources, impact, and reason in the readiness report. |
 
-You MAY edit tests, guides, and code to remove a disagreement. You MUST NOT revise a proposal without the human; that is a design change.
+You MAY edit tests, guides, and code to remove a disagreement. You MUST NOT revise a proposal without the human unless a mandate delegates that design decision and the revision stays inside its boundaries; that is a design change either way, so record the authority with it.
 
 Record the inventory, each gap, and its resolution. `ALIGNED` requires a fully ticked inventory. A record with deliberate gaps is `DIVERGENCES RECORDED`; a human design decision is `REVISION REQUIRED`.
 
@@ -75,12 +75,12 @@ Do not replace this dispatch with your own review. The adversary attacks un-enum
 
 Consume its report before continuing:
 
-| Report item      | Response                                                                  |
-| ---------------- | ------------------------------------------------------------------------- |
+| Report item | Response |
+| --- | --- |
 | Confirmed defect | Fix it, refresh affected evidence, and repeat the required review stages. |
-| Suspicion        | Verify it or drop it; never fix it blind.                                 |
-| Proposal gap     | Surface it to the human; do not silently choose an interpretation.        |
-| Declined finding | Preserve it with reasoning for the readiness report.                      |
+| Suspicion | Verify it or drop it; never fix it blind. |
+| Proposal gap | Surface it to the human, or settle it yourself only where a mandate delegates the decision, and record it. Never silently choose an interpretation. |
+| Declined finding | Preserve it with reasoning for the readiness report. |
 
 Repeat the adversarial stage after a defect fix. Continue until its verdict is `CONVERGED`. A disputed finding does not disappear because you decline it.
 
@@ -113,7 +113,7 @@ A site deployed to a subpath needs its base path set to that subpath at build ti
 
 Build from the pull-request revision. Give repository-accessible humans a stable link or installation location; they must not build the artifact themselves. The readiness report links it and states required setup, what to try, and the expected result. A bare URL is insufficient. Keep the preview's lifetime tied to the pull request.
 
-Previews are private by default. Do not publish one publicly unless the project deliberately opts in. A prerelease package published to a public registry is public forever; use a prerelease tag and state that public status in the readiness report. Teardown belongs to Phase 5 cleanup through `completing-a-feature`.
+Previews are private by default. Do not publish one publicly unless the project deliberately opts in. A prerelease package published to a public registry is public forever; use a prerelease tag and state that public status in the readiness report. A mandate that delegates merging delegates nothing about publication: making a preview public needs the human's explicit authority for that act. Teardown belongs to Phase 5 cleanup through `completing-a-feature`.
 
 ## 4. Report readiness and mark ready
 
@@ -152,16 +152,21 @@ At the end of Phase 3, these three actions form one transition and MUST NOT be s
 2. Post the readiness report.
 3. Flip the pull request from draft to ready with `gh pr ready <pr-number>`.
 
-Do not leave the proposal, report, and pull-request state disagreeing. Ready means the work is human-reviewable, not correct or accepted. Never set `accepted`; only the human may do so in Phase 4, which starts Phase 5 completion.
+Do not leave the proposal, report, and pull-request state disagreeing. Ready means the work is reviewable, not correct or accepted. `active-review` remains the readiness transition; under delegated acceptance it does not have to wait for the human to read it.
+
+Acceptance in Phase 4 is the human's. Where a mandate delegates it, the strategist — never an implementer accepting its own claim — may set `accepted` once the independent reviews of the latest relevant revision are clean, fresh checks and smoke of the integration candidate pass, and no real defect, unmet mandated outcome, or disputed material finding remains open. Record the authority relied on and the evidence. Phase 4 then starts Phase 5 completion.
 
 ## Red flags
 
 - You reviewed code quality instead of comparing representations.
 - A behavior-inventory row is not fully ticked and has no recorded resolution.
-- You changed proposal intent without the human.
+- You changed proposal intent without the human and without delegated authority that covers it.
 - You skipped independent adversarial review or dropped a declined finding.
 - The preview is fabricated, public by accident, detached from the pull request, or a bare URL.
 - The report claims a validation gate was not run.
 - You marked the pull request ready without the proposal status and report.
+- You set `accepted` on your own implementation claim, on stale or failing evidence, or with a disputed finding unresolved.
+- You read a merge grant as permission to publish a preview, package, or release.
+- You stretched a mandate's boundaries instead of stopping the slice, recording the question, and waiting for the human.
 
 Correct the record before handoff.

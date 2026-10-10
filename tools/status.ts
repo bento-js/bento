@@ -4,7 +4,8 @@ import path from "node:path";
 
 import { parseFrontmatter, withoutCode, type FrontmatterValue } from "./validate.ts";
 
-type Actor = "agent" | "you";
+// Status cannot establish whether approval belongs to the human or a delegated strategist.
+type Actor = "agent" | "you" | "approval owner";
 
 export interface Step {
     phase: string;
@@ -102,21 +103,21 @@ const STEPS = {
         "1",
         "Preparation",
         "You are on the default branch.",
-        "If considering a proposal, ask the human whether they want a proposal for this change before creating a branch or draft pull request; otherwise handle the correction directly.",
+        "If considering a proposal, check whether an active build mandate covers this change: under one, record that authority and open the workspace; otherwise ask the human before creating a branch or draft pull request. Handle an unambiguous correction directly.",
         "agent",
     ),
     noPullRequest: step(
         "1",
         "Preparation",
         "This branch has no pull request.",
-        "If considering a proposal, ask the human whether they want a proposal for this change before pushing the branch or opening a draft pull request.",
+        "If considering a proposal, settle the authority first — an active build mandate covering this change, or the human's answer — then push the branch and open a draft pull request.",
         "agent",
     ),
     noProposal: step(
         "2",
         "Proposal",
         "The pull request has no proposal.",
-        "Ask the human whether they want a proposal for this change before writing one, unless they already answered for this change. If yes, draft and publish it.",
+        "Settle the authority — an active build mandate covering this change, or the human's consent unless they already answered for it — then draft and publish the proposal, recording that authority in its Authorization section.",
         "agent",
         SKILLS.proposal,
     ),
@@ -124,8 +125,8 @@ const STEPS = {
         "2",
         "Proposal",
         "The proposal is published and being iterated on.",
-        "Edit the proposal directly, or tell the agent what to change. Move it to awaiting-implementation when you are satisfied.",
-        "you",
+        "Iterate the proposal in the pull request. The approval owner moves it to awaiting-implementation once the design is settled and no clarification marker remains.",
+        "approval owner",
     ),
     "awaiting-implementation": step(
         "3",
@@ -137,15 +138,15 @@ const STEPS = {
     ),
     "active-review": step(
         "4",
-        "Human review",
+        "Acceptance review",
         "A first full pass at tests, guides, and code is up for review.",
-        "Review the diff and the preview. Comment on the pull request, or accept the work.",
-        "you",
+        "Review the diff, the preview, and the independent findings, then return the work for revisions or accept it. The strategist may accept only within an active mandate's delegated acceptance and its evidence requirements.",
+        "approval owner",
     ),
     "returned-for-revisions": step(
         "4 → 3",
-        "Human review → Implementation",
-        "The human returned the pull request for revisions.",
+        "Acceptance review → Implementation",
+        "The pull request was returned for revisions.",
         "Process the feedback; update the proposal first if the design changed.",
         "agent",
         SKILLS.implementation,
@@ -154,7 +155,7 @@ const STEPS = {
         "5",
         "Completion",
         "The feature has been accepted and awaits completion.",
-        "Update the vision, merge, release, clean up.",
+        "Update the vision, perform the authorized merge, and complete the delivery this proposal requires. Release only where it is required and separately authorized, then clean up.",
         "agent",
         SKILLS.completion,
     ),

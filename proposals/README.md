@@ -7,17 +7,21 @@ Name each file `<NNNN>-<slug>.md`, using the next four-digit number and a kebab-
 | Status | Meaning | Decided by | Phase |
 | --- | --- | --- | --- |
 | `draft` | Being written and iterated on in the draft pull request. May carry `[NEEDS CLARIFICATION:`. | agent | 2 |
-| `awaiting-implementation` | The human settled the proposal. Implementation is underway or not yet started. | human | 3 |
-| `active-review` | First full pass at tests, guides and code exists; report posted and pull request marked ready. | agent | 5 |
-| `returned-for-revisions` | The human requested changes. Back to implementation, or to the proposal if the design changed. | human | 5 → 3 or 2 |
-| `accepted` | The human accepted the work. Vision update, merge and release are underway. | human | 5 |
-| `implemented` | Merged and released. | agent | done |
-| `rejected` | The human declined the change. Kept as record. | human | terminal |
+| `awaiting-implementation` | The approval owner settled the proposal. Implementation is underway or not yet started. | approval owner | 3 |
+| `active-review` | First full pass at tests, guides and code exists; report posted and pull request marked ready. | agent | 4 |
+| `returned-for-revisions` | The acceptance review asked for changes. Back to implementation, or to the proposal if the design changed. | approval owner | 4 → 3 or 2 |
+| `accepted` | The approval owner accepted the work. Vision update, merge and required delivery are underway. | approval owner | 5 |
+| `implemented` | Merged, with every delivery the proposal requires performed. | agent | done |
+| `rejected` | The approval owner declined the change. Kept as record. | approval owner | terminal |
 | `withdrawn` | The author pulled it. Kept as record. | either | terminal |
 | `superseded` | A later proposal replaced it. | either | terminal |
 
-**Decided by** is about judgement, not keystrokes. The human may ask the agent to make the edit — that is fine. What an agent must never do is decide on its own that a proposal is settled enough to implement, or that finished work is good enough to accept. An agent that can reach those two conclusions unaided is an agent approving its own work.
+**Decided by** names the approval owner: the human, or the strategist for decisions delegated by [an active build mandate](https://github.com/markmals/bento/blob/main/AGENTS.md#bounded-build-mandates). Proposal approval requires settled intent and recorded authority. Acceptance of implementation additionally requires the readiness report, fresh checks, independent reviews, and an exercised preview. An implementer's completion claim alone cannot authorize acceptance.
 
-A proposal stays `draft` for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the human edits it there — directly, or by asking for changes — until they are satisfied. Iteration is the normal case, not a sign of a bad first draft.
+Every proposal records where its authority came from in `## Authorization`: the human's direct consent for this change, or the mandate proposal and approved revision it runs under, why the change fits inside it, and the approval decisions the strategist took. A proposal may also carry an optional `## Build mandate` section; once the human approves that proposal, it is what delegates a bounded set of decisions. Mandates need no separate directory, frontmatter key, or status — an ordinary proposal in this lifecycle carries them — and a mandate proposal cannot authorize itself.
+
+`implemented` means merged and delivered. A proposal moves there once the merge and every delivery it or its mandate requires are performed. A merge-only change reaches `implemented` without a release; where a release is required it needs authorization of its own, and the proposal stays `accepted` until it has actually happened.
+
+A proposal stays `draft` for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the approval owner iterates on it there — editing directly, or asking for changes — until the design is settled. Iteration is the normal case, not a sign of a bad first draft.
 
 History is preserved: never delete a superseded entry — mark it `superseded` and link its replacement through `supersedes`.

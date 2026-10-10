@@ -45,4 +45,4 @@ Return:
 
 Do not silently modify product intent. Do not default to writing code.
 
-The strategist checks the diagnosis against its evidence and determines whether to revisit grounding, ontology, architecture, or the proposal. A change to product intent requires human review of the revised proposal before implementation resumes.
+The strategist checks the diagnosis against its evidence and determines whether to revisit grounding, ontology, architecture, or the proposal. A change to product intent requires human review of the revised proposal before implementation resumes, unless a bounded build mandate delegates that decision and the revision stays inside its outcome, scope, and constraints ([`AGENTS.md`](../../../AGENTS.md#bounded-build-mandates)); record the decision and its evidence in the proposal. A reframe that would widen the mandate is the human's to approve.
