@@ -8,14 +8,14 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# Mirrors the dependency set of Deno v2.9.7's standalone runtime (`cli/rt`), which is the
-# upstream assembly this crate adapts: deno_lib's worker factory over deno_runtime, with
-# deno_resolver/node_resolver resolution against a project's own node_modules.
+# The engine, Web/Node compatibility, and Node-API come from the dependency set of Deno v2.9.7's
+# standalone runtime (`cli/rt`): deno_lib's worker factory over deno_runtime. Per policy.0001,
+# parsing and ESM resolution use Oxc; node_resolver remains only where deno_node's CommonJS
+# `require` implementation and CJS-to-ESM translation are built on it.
 [dependencies]
 bento_compiler.workspace = true
 bento_host.workspace = true
 
-deno_ast = { workspace = true, features = ["cjs"] }
 deno_core.workspace = true
 deno_error.workspace = true
 deno_lib.workspace = true
@@ -37,9 +37,11 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
+oxc = { version = "=0.153.0", features = ["ast_visit"] }
+oxc_resolver = "=11.24.3"
+
 [dev-dependencies]
 tempfile.workspace = true
-
 
 # deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features
 # apart from normal dependencies and nothing upstream enables deno_core's engine feature.

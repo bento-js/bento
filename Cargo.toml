@@ -12,7 +12,6 @@ rust-version = "1.99"
 # Upstream runtime crates are pinned to exactly the set published with Deno v2.9.7 so
 # their internal compatibility assumptions hold. Change them together, never one at a time.
 [workspace.dependencies]
-deno_ast = { version = "=0.53.3", features = ["transpiling"] }
 deno_core = { version = "=0.412.0" }
 deno_error = "=0.7.1"
 deno_lib = "=0.77.0"
