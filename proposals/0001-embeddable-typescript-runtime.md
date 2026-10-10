@@ -2,9 +2,9 @@
 id: proposal.0001
 title: An Embeddable TypeScript Runtime
 authors: [Mark]
-status: draft
+status: awaiting-implementation
 pull-request: https://github.com/markmals/bento/pull/1
-issues: []
+issues: [https://github.com/markmals/bento/issues/2]
 supersedes: []
 ---
 
@@ -12,177 +12,257 @@ supersedes: []
 
 ## Summary
 
-Add a Rust library and CLI for executing TypeScript and JavaScript, loading npm packages, and serving HTTP applications. Rust hosts can expose native APIs, restrict capabilities, and control runtime lifetimes. Both hosts share one implementation, demonstrated by the same Remix 3 guest book.
+Add a Rust library and CLI that run an existing Remix 3 application directly from TypeScript and TSX, with its npm dependencies, native asset pipeline, SQLite database, and project configuration. Developers can install dependencies, run scripts and dependent tasks, and restart a server when its source graph changes. Rust hosts use the same runtime in-process, expose additional native APIs, restrict capabilities, and control execution lifetimes.
 
 ## Authorization
 
-Mark authorized this umbrella proposal on 2026-10-10 and requested a `remix@3.0.0` application running through both the CLI and an embedded Rust host with additional native APIs. That consent covers proposal revisions. Implementation and the bounded mandate below await his approval of a specific revision; neither is active.
+On 2026-10-10, Mark selected `~/Developer/Playgrounds/remix-guest-book-bento`, specified the developer-workflow features below, and authorized this revision with: “Update the proposal with anything that needs updating based on that info and then the proposal is approved.” He also authorized all subscription-covered Claude Max and ChatGPT Pro usage and up to two Codex limit resets when needed. This revision records that approval; no further per-feature approval is required for its stated outcomes.
+
+Approval and activation are separate. The autonomous build's 48-hour clock has not started. Only Mark can activate it through the requested `/goal` or an equivalent explicit instruction to begin the autonomous build. The coordinator then records the approved source revision, activation time, and expiry in the PR and Beads. An agent instruction cannot activate the mandate, and this proposal revision does not itself launch implementation.
 
 ## Motivation
 
-A server application needs a runtime that loads its dependencies and serves requests. A Rust application embedding the same code also needs to decide which files, network endpoints, and native services that code can use, and when execution ends. These requirements belong to the host even when the application uses familiar Node and Web APIs.
+A useful runtime must execute the application a developer actually has, rather than a specially precompiled substitute. For this application, that includes package imports, TypeScript and JSX configuration, development tasks, SQLite, and native compilers invoked by `remix/assets` during startup and requests.
 
-Today, a native application can launch a separate JavaScript runtime and communicate with it, or assemble an in-process environment from engine and compatibility libraries. The first approach introduces a process boundary around every native service. The second makes the application responsible for module loading, compatibility, permissions, and lifecycle integration.
+Embedding adds a different requirement: a Rust application must decide which resources and native services guest code can use, and when execution ends, without moving those services behind a subprocess boundary. The CLI and embedding host should not acquire different module loaders or compatibility behavior.
 
-Bento's [vision](../VISION.md) calls for one execution model usable by both kinds of host. The repository currently contains the design and development tooling but no runtime. This proposal defines the first independently useful part of that vision: running an existing application directly, then embedding it with host-owned services and authority.
+Bento's [vision](../VISION.md) calls for this shared execution model and an integrated developer workflow. The repository currently contains design and development tooling but no runtime. This proposal defines the first usable feature set around a real application, not the complete toolchain described by the vision.
 
 ## Domain grounding
 
 ### Established context
 
-ESM module loading, server-side Web APIs, and Node compatibility are distinct requirements. Supporting JavaScript syntax alone does not make an npm application executable. The [published `remix@3.0.0` manifest](https://registry.npmjs.org/remix/3.0.0) declares ESM, a Node engine floor of `>=24.3.0`, and runtime subpath exports such as `remix/router` and `remix/component`; its root export is types-only.
+**Remix 3 is the framework under test.** The [published `remix@3.0.0` manifest](https://registry.npmjs.org/remix/3.0.0) exposes `remix/component`, `remix/assets`, `remix/router`, `remix/data-table`, and `remix/node-fetch-server`. Its root export is types-only. Some constituent packages, including `@remix-run/component` and `@remix-run/assets`, are versioned `1.0.0`; they belong to this Remix 3 distribution. Remix 1/2, React Router, React rendering, and their build conventions are not interchangeable evidence for these APIs.
 
-Deno provides relevant upstream components. Its [version-pinned worker interface](https://github.com/denoland/deno/blob/v2.9.7/runtime/worker.rs) accepts a module loader, Node services, extensions, and permissions. Its [permission model](https://github.com/denoland/deno/blob/v2.9.7/runtime/permissions/lib.rs) distinguishes filesystem, network, environment, process, import, and FFI access. These interfaces provide integration points; they do not establish that a Bento embedding already works.
+ESM loading, CommonJS interoperability, Node built-ins, Web APIs, and native-addon support are distinct compatibility surfaces. The fixture uses all of them. Native asset compilation is application execution here, not an optional preparatory build step.
+
+[Node-API](https://nodejs.org/api/n-api.html) is an ABI-stable interface independent of a particular JavaScript engine. Supporting the interface still requires an implementation and compatible platform binaries; engine choice alone does not establish addon compatibility. [Deno supports Node-API addons](https://docs.deno.com/runtime/fundamentals/node/#use-packages-with-native-addons) with local dependencies and explicit native-code authority. Its [worker interface](https://github.com/denoland/deno/blob/v2.9.7/runtime/worker.rs) also provides integration points for loaders, Node services, extensions, and permissions. Those are reusable components, not proof that a Bento embedding already works.
 
 ### Relevant constraints and principles
 
-A runtime instance executes guest code. Its host supplies authority and owns services that may outlive that instance. Module availability and permission to perform an operation are separate: a host can expose a storage module while denying writes. Native operations must enforce those restrictions.
+A runtime instance executes guest code; a host supplies authority and owns services that may outlive the instance. Making a module importable does not authorize every operation it exposes. JavaScript compatibility APIs and custom native services must enforce their applicable grants at native boundaries.
 
-Dependency installation and asset compilation prepare an application for execution. A prepared application's runtime can omit those tools. Likewise, transforming TypeScript into executable JavaScript does not provide semantic type checking.
+Arbitrary native addons are a stronger trust boundary than JavaScript APIs. An enabled addon executes native code in the host process and is not contained by JavaScript filesystem or network checks. Supporting trusted native compilers must not be presented as hostile-code isolation.
+
+Installing packages, executing a project task, and running an application are separate operations. Installation may use the declared package manager; a trusted task may invoke Node-based tools. Application execution, including TypeScript transformation and Remix assets, must occur in Bento rather than secretly delegating to another runtime or compiler process. Transforming TypeScript does not provide semantic type checking.
 
 ### Quality bar and remaining uncertainty
 
-Compatibility means preserving observable application behavior across the CLI and Rust host, including asynchronous work, errors, streaming responses, and persistence. Host authority must survive access through Node-compatible APIs, and the host must regain control during shutdown even when guest code does not cooperate.
+Compatibility means preserving observable behavior across the CLI and Rust host: rendering, browser enhancement, validation, streaming, persistence, errors, and cleanup. Successful startup or an HTTP 200 alone is insufficient. A compatible native binding must preserve the called package API, not merely produce vaguely similar JavaScript.
 
-A Deno-derived runtime has not yet been compiled into Bento. Resolver integration, bootstrap and snapshot configuration, async-context behavior, streaming, and isolate interruption remain engineering risks. A different upstream assembly or compatible dependency pin may address them; spawning another runtime or weakening the promised behavior would require a revised proposal.
+The Deno-derived assembly, package resolution, async contexts, native addons, host-module integration, and interruption have not yet been proven inside Bento. Upstream reuse and compatible internal dependency choices are delegated engineering decisions. Spawning another application runtime, prebuilding away the required asset path, or reducing the accepted behavior is not.
 
 ## Existing baseline
 
-The [Railway/Deno guest book](https://github.com/pitlane-tools/templates/tree/8d838f3ea3b7a00f3e906e3e7dcd039ca911a5b8/railway-deno) is an existing application using exactly `remix@3.0.0`. It combines a Fetch-style router, form-data and async-context middleware, server components, browser enhancement, static assets, and SQLite persistence. Its request-time storage needs are listing entries and appending an entry.
+The selected source is `~/Developer/Playgrounds/remix-guest-book-bento`, pinned to `remix@3.0.0`. It replaces the earlier Railway/Deno prebuilt template as this proposal's acceptance fixture. The original checkout, environment files, and database remain untouched; implementation will add an attributed, self-contained derived fixture with the selected source and lockfile provenance.
 
-An isolated copy was built and exercised under Deno `2.9.7` on macOS arm64. Browser rendering, the live character counter, form submission and reset worked; a plain form POST returned `302` to `/`; entries survived a process restart. It also ran with cached-only dependencies and explicit filesystem, environment, and loopback network grants. This establishes the reference behavior, while Bento compatibility and Rust embedding remain unproven.
+Its `server.ts` creates a `node:http` server with `createRequestListener(router.fetch)`. There is no default Fetch-handler export. The application imports `#app/*` through `package.json.imports`, uses `remix/data-table/sqlite`, and compiles assets through `remix/assets`. Its `tsconfig.json` selects NodeNext resolution and `react-jsx` with `jsxImportSource: "remix/component"`; that transform setting does not make the application React-based. The local project's declared Node engine floor is `>=26`.
 
-The released template is a better reference than the local unbundled RC template, which uses `remix@3.0.0-rc.1`, removed `remix/ui` exports, Node loader hooks, and request-time native asset compilation. The released template's existing [start-task defect](https://github.com/pitlane-tools/templates/issues/11) is tracked upstream. Bento's example will use the actual emitted artifact and correct launch instructions without modifying the original template or its database.
+The manifest already contains top-level `tasks`, alongside Node-oriented `scripts`. The `dev` task depends on `db:migrate` and runs `bento run --watch server.ts`. Tasks include string commands, sequential command arrays, objects with `command` and `dependsOn`, and dependency-only aggregators. Existing formatters, linters, the type checker, and Remix's migration CLI are package commands.
+
+The pnpm 12 lockfile contains separate environment/tool-manager and application YAML documents, including a pinned pnpm 12.11.2. Its locked asset pipeline uses `oxc-transform`, `oxc-parser`, and `oxc-minify` 0.121.0, `oxc-resolver` 11.24.2, and `lightningcss` 1.33.0. The associated `pnpm-workspace.yaml` permits the esbuild build script; installation must respect that policy rather than approving additional scripts.
+
+An isolated copy was installed with `pnpm install --frozen-lockfile --ignore-scripts`, migrated, and exercised with Node 26.11.1. Browser rendering, hydration, the character counter, submission and form reset worked. A valid plain POST returned **303** to `/`; invalid whitespace-only fields returned **400** with validation errors. This preparation did not exercise lifecycle-script-dependent tools or the entire task suite.
+
+Bun 1.4.3 started the same server but returned an empty 200 after a server-side `EventTarget.addEventListener` error. Remix 3's server renderer supplies a duck-typed signal; a minimal probe confirmed that Node accepts it while Bun rejects it, although both accept a native `AbortSignal`. [Issue #2](https://github.com/markmals/bento/issues/2) tracks this external benchmark-baseline incompatibility. It is not permission to waive Bento's fixture behavior or count an empty page as a fast result.
 
 ## Proposed solution
 
-Introduce a V8-backed Bento runtime library and two ways to use it. A developer runs a module with `bento run`, or serves a Fetch-compatible application with `bento serve`. A Rust application constructs the same runtime in-process, supplies its capabilities and native modules, and controls its lifetime through Bento's public API.
+Introduce a V8-backed execution library, a thin CLI, and a Rust embedding example. `bento run` evaluates a source file or a declared project task. Watch mode recreates the application when relevant source changes. `bento install` prepares the declared dependency graph using pnpm semantics. Both hosts run the same Remix 3 application and native asset pipeline.
 
-The embedding host can expose application-specific services that ordinary packages and the stock CLI cannot provide. JavaScript imports those services as modules and awaits their operations. The runtime keeps this extension mechanism separate from the application's framework and from the host's storage implementation.
+Reuse a coherent Deno-derived runtime and compatibility assembly behind Bento-owned interfaces. Use native Oxc transformation for direct TypeScript, JSX, and TSX execution. The public embedding contract does not expose raw engine handles or require Deno CLI internals. A larger initial upstream dependency footprint is acceptable in exchange for real compatibility.
 
-Reuse Deno's runtime and compatibility components behind Bento-owned interfaces. A coherent reference assembly is acceptable initially, including its dependency footprint. The public contract does not depend on Deno CLI internals or raw engine handles.
-
-The Remix guest book is the compatibility example for this feature set. Its CLI entrypoint uses a JavaScript SQLite adapter; its embedded entrypoint uses a Rust-owned store through a host module. Both retain the same router and UI. This proposal covers execution and embedding; the vision's integrated development toolchain remains a later change.
+The embedding host additionally exposes Rust-owned guest-book storage through a private host module. The stock CLI uses JavaScript's `node:sqlite` path. Both retain the same application behavior and share the runtime, resolver, transforms, and compatibility layer.
 
 ## Detailed design
 
-### Execute TypeScript, JavaScript, and npm modules
+### Read the existing project and install its dependencies
 
-The runtime loads ordinary ESM and executes JavaScript and type-bearing TypeScript source. TypeScript transformation happens natively during loading, without a compiler subprocess. Asynchronous module execution uses the runtime's event loop. Semantic type checking is outside this feature.
+For a script, locate project configuration from its enclosing package; for a task or installation, locate it from the working directory. Relative project paths, task working directories, configuration discovery, and dependency resolution use that project root consistently. Explicit script paths select files; otherwise an exact top-level task name takes precedence over a relative script filename. An unknown target reports an error rather than becoming an arbitrary shell command.
 
-Applications use familiar package manifests and lockfiles. Bento resolves local dependencies, package subpath exports, and the Node built-ins needed by the tested application through a shared resolution boundary. Reuse upstream package semantics; application-specific import names and hand-written substitutes for framework dependencies are excluded. CLI and embedded execution use the same loader and compatibility implementation.
+Respect `package.json` package type, dependencies, dev dependencies, package exports and imports, and the declared package-manager selection. Preserve the selected fixture's existing files rather than requiring conversion to a Bento-specific manifest. Resolve `#app/*` using the package's `imports` field, including package scope and supported conditions; the matching `tsconfig.json.paths` entry is not a substitute. NodeNext package conditions, ESM/CommonJS boundaries, pnpm symlinks, and local dependency roots must work for the fixture's graph. Do not silently turn TypeScript `paths` into a different Node resolution policy.
 
-Dependencies are prepared before execution. Loading a missing package reports an actionable resolution error; it does not install the package, query a registry, or download a remote module. Module reads remain subject to the instance's granted application and dependency roots. A separate TypeScript example must exercise type-bearing source, npm imports, and asynchronous execution so that precompiled server JavaScript cannot stand in for TypeScript support.
+Read `tsconfig.json` and its applicable inherited settings. Honor execution-relevant settings, including the JSX transform and import source, while leaving semantic checking to the configured type checker. `noEmit` does not disable in-memory runtime transformation; explicit TypeScript extensions remain usable. Unsupported execution-affecting settings produce actionable diagnostics rather than silently selecting another JSX runtime.
 
-### Run modules and serve HTTP applications
+`bento install` installs both `dependencies` and `devDependencies`. For this milestone, delegate installation to the declared pnpm 12 toolchain rather than inventing a second lockfile writer. Honor `devEngines.packageManager` and pnpm's tool-manager lock as used by the fixture. `bento install --frozen-lockfile` reproduces the locked graph without rewriting either lockfile document and fails on a manifest/lock mismatch. Normal installation retains the package manager's documented update behavior. Respect `pnpm-workspace.yaml`, platform-specific optional dependencies, and lifecycle-script authorization; never auto-approve untrusted build scripts.
 
-`bento run <entry>` evaluates a module and drives its asynchronous work. `bento serve <entry>` loads a module whose default export supplies a Fetch-compatible `fetch` handler, listens at an explicitly configured loopback address and port, and passes requests to that handler. Request and response behavior includes form bodies, status codes, headers, and the streamed responses required by Remix.
+Installation may require the documented pnpm/Node tooling and registry access. Execution does not install packages, resolve new versions, or download remote modules. Missing installed dependencies identify the import and preparation step that failed. A prepared application's ordinary CLI or embedded execution must work without Node, Bun, Deno, or pnpm executables on its application PATH.
 
-The application loads successfully before `serve` reports readiness. Configuration, loading, and uncaught guest failures produce contextual errors and unsuccessful CLI exits. Unsupported options are rejected. Selecting an entrypoint or listen address does not grant unrelated filesystem or network access.
+### Load project environment files
 
-Both commands use the library's construction, module evaluation, event-loop, capability, and shutdown facilities. The executing application needs no Node, Deno, Bun, package manager, or development server installed alongside Bento.
+Before starting a script or task, load the project-root `.env` automatically. Determine the environment mode from inherited `NODE_ENV`, then the base file; watch mode defaults to `development` only when neither supplies it. Load `.env.<mode>` when a mode is selected, then `.env.local`, with later files overriding earlier file values. Existing process variables and explicit task environment assignments take precedence over file values. Select the mode once per launch; later files do not trigger recursive profile loading.
+
+The effective environment value is exposed as `process.env.NODE_ENV` when the host grants access to that variable. In particular, a watch-defaulted `development` value enters the launch environment even when no dotenv file exists, so the fixture's `dev` task receives development asset behavior. This default never overrides an explicit process, task, or file value.
+
+Use dotenv-style quoted values and comments, without shell execution or command substitution. Missing optional files are harmless; malformed files produce contextual errors without logging secret values. Environment loading is per project and runtime, not a mutation of the embedding host's process environment. Loading a value does not automatically grant guest access to it. Task tools receive the task's prepared environment; restricted guests receive only what their host authorizes.
+
+Nested Bento task commands distinguish actual inherited or explicitly assigned environment values from values Bento loaded from files. Forwarding a base `.env` value through a task must not accidentally give it precedence over the nested command's selected mode file. For example, an unset mode in `bento run dev` must not prevent its nested watch command from using `.env.development`.
+
+### Execute source files and Node-compatible applications
+
+`bento run <script-path>` executes JavaScript, TypeScript, JSX, and TSX directly, including top-level asynchronous work, and drives the runtime event loop. It requires neither a prebuilt JavaScript entrypoint nor `--import remix/node-tsx`. Native transformation preserves the selected JSX import source and supplies useful source locations for errors. Semantic type checking is not implied.
+
+The required Node compatibility floor includes:
+
+| Module | Required application behavior |
+| --- | --- |
+| `node:http` | Create and listen on the fixture's HTTP server; support its request/response adaptation and streaming; close the listener and active connections through the APIs used by `server.ts`. |
+| `node:path` | Resolve, join, and interpret paths with the platform semantics used by application, configuration, and asset loading. |
+| `node:sqlite` | Run the fixture's actual Remix SQLite adapter, migrations, parameterized reads/writes, and connection cleanup against a persistent database. |
+| `node:fs` and `node:fs/promises` | Perform the file, directory, metadata, and asynchronous operations needed by configuration discovery, migrations, source loading, and assets, subject to applicable grants. |
+
+This is a minimum list, not a reason to reject additional built-ins required by the actual dependency graph. The same graph also needs Node globals and interoperability such as `process`, `Buffer`, `createRequire`, CommonJS native wrappers, and `import.meta.dirname`, alongside Fetch, streams, form data, async context, and event APIs. Reuse existing compatibility implementations; do not replace Remix packages with fixture-specific stubs.
+
+The application's `server.listen` determines its listening behavior under the configured network policy, including Node's omitted-host semantics. Local previews connect over loopback; Bento must not silently reinterpret an omitted host as an explicit loopback binding. Startup, module-resolution, permission, and uncaught guest failures remain distinguishable and produce unsuccessful exits when fatal.
+
+The selected server is a side-effectful script, so `run` is the required HTTP entrypoint. The earlier draft's separate `bento serve` command and mandatory default Fetch export are replaced by this source-execution contract, not added as another weekend interface. The Rust API can still drive a Fetch handler or a script-created server in-process.
+
+### Run tasks and their dependencies
+
+`bento run <task-name>` reads **top-level `package.json.tasks`**. A string is a command; an array is a sequence of commands; an object has `command`, `dependsOn`, or both. A dependency-only task completes when its dependencies succeed. Existing `scripts` remain available to Node tooling but are not implicitly converted into tasks, and npm-style `pre`/`post` hooks do not run automatically. In particular, `dev` must not migrate twice because a `predev` script also exists.
+
+Validate task shapes, missing dependencies, and cycles before executing the selected graph. Run dependencies in their declared order for this milestone, once per invocation even when shared by multiple branches. Then run the task's own command or commands. Command arrays are sequential and stop on failure; a failed dependency prevents its dependents from running. This deterministic order also avoids concurrently modifying files in the fixture's `check:fix` task.
+
+Commands run from the project root with local `node_modules/.bin` on PATH. Preserve shell quoting, inline environment assignments, and operators used by the fixture through ordinary platform shell semantics. Forward arguments after `--` to the selected task's own command, not its dependencies; reject forwarded arguments for a dependency-only task or a multi-command array rather than guessing which command receives them. Surface child output and unsuccessful exits. Cancellation stops the task's child process group, including a nested watch server, without leaving orphan listeners.
+
+Task execution is an explicit trusted host operation, not permission for guest JavaScript to spawn subprocesses. Nested Bento commands inherit the invoking host's runtime policy as a ceiling. Their own grant options may narrow that policy; requesting a wider grant fails before guest execution rather than silently broadening authority or silently discarding the option. This propagation contract does not sandbox the trusted task shell or external executables, which retain their host-process authority.
+
+Bare package commands such as `oxfmt`, `oxlint`, `tsc`, and `remix db migrate` use their installed executable/shebang and may run under Node this weekend. Bento-native package-bin execution and `bento exec` are deferred, as authorized; no command should pretend a Node subprocess is Bento execution. Flagless Bento-native package execution remains the intended later default.
+
+### Reload the server when its source graph changes
+
+`bento run --watch <script-path>` performs a complete runtime restart, not hot module replacement. Watch the entrypoint and its transitive loaded source graph, including modules discovered after startup, and configuration that changes resolution or transformation. Also cover the fixture's browser source graph consumed by `remix/assets`, even when those files are not server-side imports; a conservative watch of configured application source roots is acceptable.
+
+Handle edits, replacements, creations that repair a missing import, and deletions. Coalesce edit bursts and allow only one replacement instance to start after the previous instance releases its resources. A failed initial load or reload reports the failure and stays watching so a repair can recover. Do not serve stale code as though a failed reload succeeded. The next valid request after a successful reload must observe the changed source without a second manual restart.
+
+Preserve the database and other host-owned resources across runtime replacement. Exclude databases, SQLite sidecars, dependency installations, generated outputs, and caches from source watching so requests do not trigger restart loops. A server restarted by the nested `dev` watch command does not rerun the outer task's migrations on every edit. Environment-file values are launch inputs; changing them requires restarting the enclosing command in this milestone, not a promised dotenv hot-reload feature.
+
+Shutdown, failures, and interruption use the same lifecycle contract as ordinary execution. Final cancellation stops watching as well as the application. No HMR protocol, task cache, or parallel task scheduler is required.
+
+### Execute the native Remix 3 asset pipeline
+
+Run the actual `remix/assets` implementation with the locked dependency graph, at startup and on demand. Preserve development versus production behavior, source maps, minification, fingerprinting, allow/deny rules, package asset resolution, and JavaScript/TSX/CSS results. An asset may be compiled before the first HTTP request because entry registration is asynchronous. A prebuilt asset bundle does not satisfy this feature.
+
+The straightforward compatibility route is real Node-API loading and execution for the fixture's installed native modules. A permitted alternative is to expose Bento's native implementations behind compatible package-facing APIs, preserving the JavaScript Remix asset orchestration. This alternative must cover every needed native dependency, not just `oxc-transform`: parsing and visitor keys, resolver factories, transformation, minification, and Lightning CSS are all present. A mixed route is acceptable when each package's behavior is genuine and tested.
+
+The strategist may select the route that proves the complete fixture with the least new compatibility code; there is no obligation to implement both. Built-in replacements must respect package identity and supported versions and preserve used options, result shapes, errors, source maps, and synchronous/asynchronous behavior. Unsupported combinations fail explicitly. Do not silently patch the framework, use fake bindings, substitute a reduced asset pipeline, or spawn Node to do the work. Arbitrary addons and every historical Node-API version are not promised.
+
+Native-code loading requires explicit host authority before addon initialization; denied loading must not execute addon code. Its trust implications remain visible in both CLI and embedding configuration. The locked compiler packages must work through reload and disposal without keeping the old server alive or corrupting a replacement instance. They already contain native compiler implementations under Node and Bun, so “Rust instead of JavaScript” is not evidence of a speedup; any benefit from built-in bindings must be measured.
 
 ### Embed the runtime and expose native APIs
 
-A Rust host can construct a runtime, load an entry module, drive execution or HTTP serving, observe failures, request shutdown, and dispose of runtime-owned resources. All execution occurs in the host process. Public types keep engine-specific handles private and do not require the host to spawn a CLI.
+A Rust host can construct a runtime, load an entry module, drive asynchronous execution and HTTP serving, observe failures, request shutdown, and dispose of runtime-owned resources. All application execution occurs in the host process. The public library boundary keeps engine-specific handles private and does not require spawning a CLI.
 
-Before execution, the host can register modules backed by its own Rust services. Guest code imports a registered module and invokes asynchronous native operations. Registration belongs to the runtime instance; another instance in the same process inherits neither the module nor its grants. Native operation failures are observable by the guest and host rather than converted into empty results or false success.
+Before execution, a host can register modules backed by Rust services. Guest code imports them and awaits native operations. Registrations and grants belong to the instance; another instance in the same process inherits neither. Failures remain observable rather than becoming empty results. An unregistered host-module import fails without package-resolution or network fallback. The stock CLI does not acquire an embedding application's private APIs.
 
-An unregistered host-module import fails as an unavailable module, without package-resolution or network fallback. The stock CLI has only its standard runtime modules; it does not acquire an embedding application's private APIs. Native services enforce their own operation-level authority even when the importing guest can see the module.
+The guest-book embedding exposes `host:guestbook` with asynchronous list and append operations backed by Rust-owned SQLite storage. This interface accepts entries, not arbitrary SQL or database paths. Use a small application storage boundary with CLI and embedded adapters, preserving the common router, validation, rendering, and browser components rather than implementing a partial general-purpose Remix database driver. Convert native timestamp representations at that boundary so both adapters present the same application-facing types.
 
-### Grant capabilities per runtime instance
+Rust can inspect saved records directly and retain the store across runtime disposal and host restart. A read-only instance can list entries but append fails at the Rust operation boundary without changing the database. The CLI rejects `host:guestbook` because it has no registration. These are observable demonstrations of general embedding features, not built-in guest-book functionality in the runtime.
 
-The CLI and embedding API accept explicit, scoped read, write, network, and environment grants. The host supplies the policy before guest execution. Permission requests never prompt interactively.
+### Grant capabilities and control execution lifetime
 
-Filesystem access covers only the prepared application, declared dependency roots, and other explicitly granted resources. Canonical paths and symlinks must not turn an allowed root into access to unrelated files. Environment grants name individual variables; network grants identify permitted endpoints. Outbound destinations outside those grants are denied. Subprocess execution, FFI, native-addon loading, and remote imports are unavailable in this milestone.
+The CLI and embedding API accept explicit scoped read, write, network, and environment grants, plus explicit native-addon authority when that route is used. The host supplies policy before execution; permission requests never prompt interactively. Command forms above describe dispatch, not implicit unrestricted grants. Fixture launch instructions provide the required grants, including through tasks and watch mode.
 
-Enforcement occurs at the native operation boundary, including operations reached through Node-compatible APIs. An unavailable API, denied operation, unresolved package, and guest exception remain distinguishable failures. Exposing a module does not give it ambient host-process privileges.
+Canonical paths and symlinks must not convert an allowed root into unrelated filesystem access through controlled runtime APIs. Environment grants name permitted variables; network grants identify permitted endpoints. Enforce policy at native operation boundaries, including Node-compatible APIs and registered host services. Guest subprocess execution and remote imports remain unavailable. Installer and task subprocesses are separate trusted host operations. An enabled arbitrary native addon is outside the containment of these JavaScript-facing checks; restricted execution must not claim otherwise.
 
-A host-owned service may access resources that guest filesystem APIs cannot see. For example, a storage module can write a host-selected database without granting JavaScript access to that path. These capabilities express application policy; they do not claim hostile-code isolation or replace an OS sandbox.
+A host-owned service may access a database that guest filesystem APIs cannot see. Exposing its module does not authorize writes, reveal its path, or transfer ambient host-process authority. These capabilities express application policy, not an OS sandbox or comprehensive resource quota system.
 
-### Control execution lifetime
+Shutdown stops new requests, drains or cancels guest work, releases runtime-owned resources, and reports its outcome within a bounded deadline, initially five seconds for cooperative operation and interruptible JavaScript. An uncooperative synchronous JavaScript guest is interrupted; the interrupted instance is disposed rather than reused. A timeout cannot report graceful success. Arbitrary blocking native code is outside the isolate's interruption guarantee; the supported fixture's native packages must nevertheless pass the actual shutdown and recreation checks.
 
-The host can shut down an instance independently of host-owned resources. Shutdown stops new requests, drains or cancels pending guest work, releases runtime-owned resources, and reports its outcome within a bounded deadline, initially five seconds.
+A guest's `process.exit` ends its runtime, never the embedding Rust process. CLI signals reach the relevant guest shutdown handling; embedding shutdown remains under Rust's control rather than installing competing process-global signal handlers for each instance. After disposal, the old listener no longer serves requests and a replacement can bind the same port. Runtime recreation and host restart preserve persistent data when supplied the same database.
 
-An uncooperative synchronous guest cannot keep the host waiting indefinitely. The runtime interrupts execution, disposes of the interrupted instance, and reports that outcome; its guest state is not reused. A timeout or failure cannot report graceful success.
+### Preserve the selected guest book's behavior
 
-After disposal, the old listener no longer serves requests and a replacement instance can bind the same port. Data owned by the host remains available to that replacement. Runtime recreation and host-process restart have separate effects on resources, and persistent storage must survive both when the same database is supplied.
+Include a self-contained derived fixture pinned to `remix@3.0.0` and its locked graph, without copying the original `.env` files, database, dependency cache, or generated artifacts. Keep the existing Node launch path as the baseline. Changes to shared application source are limited to the storage boundary, host entrypoints, and necessary Bento configuration; do not replace Remix 3 or redesign the app to avoid compatibility work.
 
-### Compatibility example: the Remix 3 guest book
+Both hosts render persisted entries and the existing required name/message form. Typing updates the hydrated remaining-character indicator; pending submission and the Sign action retain their behavior. Trim and validate fields, enforce the 280-character message limit, and preserve submitted values with field errors on an invalid **400** response. A successful submission creates one entry, returns **303** with `Location: /`, displays the entry, and clears the form. Plain HTML submission also works without browser JavaScript.
 
-The repository includes a derived, attributed guest book pinned to `remix@3.0.0` and a locked dependency graph. Preparation produces its server module graph, remaining local npm dependencies, asset manifest, browser JavaScript, CSS, and public assets using existing build tools. It is reproducible without the original checkout, its environment files, database, or global package cache. Missing prepared assets cause actionable errors; request handling never invokes an asset compiler.
+Persist `id`, `name`, `message`, and `createdAt`. Preserve frame-targeted rendering, browser modules, CSS, and asset behavior in development and production. The CLI's SQLite path and the Rust host's storage path must each survive restart. Exercise the actual browser surface as well as HTTP responses; a synthetic Fetch endpoint is not a substitute.
 
-Both hosts run the same router, controllers, server components, and browser components. The page lists persisted entries and provides the existing required name and message fields, remaining-character indicator, and Sign action. Typing updates the hydrated indicator. Submission creates one entry, returns the reference's `302` redirect to `/`, displays the saved entry, and clears the form. Plain HTML form submission also works without browser JavaScript. Frame-targeted rendering and the asset graph retain their reference behavior.
+### Measure performance against Node and Bun
 
-Preserve the reference's field validation and persist `id`, `name`, `message`, and `createdAt`. The shared application uses a small store interface. Its CLI adapter uses the runtime's `node:sqlite` built-in from JavaScript, as the reference does; this does not require loading an npm native addon. Its embedded adapter imports `host:guestbook`, whose asynchronous list and append operations call Rust-owned SQLite storage. This application-specific module accepts entries, not arbitrary SQL statements or database paths. Any native timestamp representation is converted at the adapter boundary so both adapters expose the same application-facing types.
+Provide a repeatable benchmark harness and recorded results as the runtime becomes usable, then rerun against the integrated build. Correctness gates precede timing. Use the same selected Remix 3 source, locked packages, input data, compiler options, environment mode, and equivalent authority; record hardware, runtime versions, configuration, and source revisions. Benchmark one workload at a time, without concurrent swarm builds or tests contaminating measurements. Keep raw samples and report repeated-trial medians and spread, with latency percentiles where the sample count supports them.
 
-The embedded host can read the resulting record directly from Rust and retain it across runtime disposal and host restart. A read-only embedded instance can import the module and list entries, but append fails at the Rust boundary without changing the database. The stock CLI rejects an import of `host:guestbook` because it has no such registration. The example uses these differences to demonstrate the general host-module and capability features without duplicating its UI or implementing a partial general-purpose SQL driver.
+| Workload | What it answers |
+| --- | --- |
+| Cold process launch to listening and to the first correctly rendered page | Startup versus application initialization cost; do not confuse the two milestones. |
+| First JavaScript/TSX/CSS asset graph and repeat requests in the same process | Native compilation cost versus the fixture's warm in-memory cache, separately in development and production modes. |
+| Matching parse, resolve, transform, minify, and CSS operations | Where time goes inside the asset path; compare native package bindings with compatible built-ins if both actually exist. |
+| Steady rendered GET, asset GET, and persisted POST workloads | Throughput and latency with equivalent response bodies, validation, redirects, and database state. |
+| Entry and transitive-source edits to changed responses | Watch reload latency, successful recovery, and whether persistence/listener correctness survives. |
+| Idle and peak process memory during startup and asset compilation | The footprint of the usable application and native dependencies, not only an empty isolate. |
+
+Node uses the fixture's `--import remix/node-tsx` launch path; Bun and Bento use their direct source execution. Browser-source transformations still go through the same Remix 3 asset implementation. Do not invent a persistent asset-cache scenario: this fixture uses an in-process cache. Reset databases and cold state deliberately, use warmups for steady-state measurements, and alternate runtime order to reduce environmental bias.
+
+A runtime that fails a workload receives an explicit incompatibility result, not a favorable timing row. In particular, the current Bun full-app SSR failure blocks that comparison until resolved, while genuinely equivalent component workloads may still be measured. No arbitrary speed target or claim that Bento is faster is an acceptance criterion; reproducible, honest evidence is.
 
 ## Compatibility
 
-The initial supported platform is macOS arm64 with V8. The release will identify the Node and Web API subset actually exercised by the examples and boundary checks. Reusing Deno components does not imply full Deno, Node 24, or arbitrary npm-package compatibility. The public library boundary remains independent of the selected upstream assembly.
+The initial supported platform is macOS arm64 with V8. Identify the Node, Web, package-manager, and native-addon surfaces actually exercised. Upstream reuse does not imply full Node 26 or Deno compatibility, arbitrary npm execution, every TypeScript compiler option, or general Node loader-hook support.
 
-Bento has no existing runtime API or stored-data format to migrate. The example uses the exact released Remix package unchanged. Changes are confined to the derived example's storage adapters, host entrypoints, and preparation instructions; the original example remains untouched.
+Top-level `tasks` is the selected project contract; the earlier architectural illustration under `bento.tasks` is corrected rather than retained as a second schema. Other Bento-specific runtime configuration may remain namespaced. The original fixture and published Remix 3 package remain unchanged. There is no existing Bento runtime API or stored-data format to migrate.
 
 ## Implications on adoption
 
-Building Bento requires the pinned Rust toolchain. Preparing the example requires its existing package and asset-build tools. Running the prepared application requires only the produced executable, application files, local dependencies, and explicit capability grants.
+Building Bento requires the pinned Rust toolchain. Installing dependencies and running the fixture's package tools may require pnpm and Node; the guide must state these dependencies rather than advertising a fully self-contained development toolchain. Executing the installed application and its native assets requires only Bento or the Rust host, the project files, compatible installed native dependencies, and the host's grants.
 
-Embedders link the library and supply host resources through its API. They can omit application-specific module registration when they do not want to expose that service. Removing the example or replacing its adapter does not require changing the shared runtime or the original template.
+Embedders link the library and supply resources and modules through its API. They may omit the guest-book service entirely. Replacing the example's storage adapter does not require changing the runtime or adopting an application-specific runtime fork.
 
 ## Scope
 
-The feature includes the V8-backed execution library, TypeScript loading, the tested npm/Web/Node compatibility subset, the `run` and `serve` commands, native host modules, per-instance capability enforcement, and bounded lifecycle control. The Rust host and Remix guest book provide usable examples, accompanied by guides and behavioral checks.
+The feature includes the shared runtime library, direct JS/TS/JSX/TSX loading, the fixture's npm/Web/Node and native asset compatibility, `run`, source-graph watch, top-level tasks with dependencies, existing project configuration and imports, pnpm-backed installation including dev dependencies, automatic environment loading, custom Rust host modules, capabilities, lifecycle control, the guest book, guides, and comparative benchmarks.
 
 ### Out of scope
 
-- Integrated package installation, semantic type checking, formatting, linting, bundling, development serving/HMR, test-runner, and task-runner products. This is the execution portion of the vision's broader MVP.
-- Additional engines or platforms, C/Swift APIs, Workers deployment, per-extension minimal builds, full Node loader-hook parity, arbitrary native npm addons, and generic SQL drivers.
-- New guest-book product features, contacts, authentication, multi-tenant storage, visual redesign, cloud deployment, public releases/packages, or changes to the original templates.
-- Non-loopback HTTP serving; the first supported HTTP surface uses local listeners.
-- Hostile-code sandboxing and comprehensive resource quotas.
+- Bento-native package-bin execution and `bento exec`; installed package tools may continue to use Node. Also excluded: native semantic type checking, formatter/linter/test-runner products, a general bundler, HMR, task caching, and parallel task scheduling. Running existing tools as tasks is in scope.
+- Additional engines or platforms, C/Swift APIs, Workers deployment, minimal feature-selected builds, full Node compatibility, arbitrary native addons, and generic SQL drivers.
+- New guest-book features, contacts, authentication, multi-tenant storage, visual redesign, cloud deployment, public releases/packages, or modifications to the original fixture.
+- Hostile-code sandboxing, arbitrary native-code preemption, and comprehensive resource quotas.
 
 ## Build mandate
 
-This proposed grant authorizes delivery of the feature above only after human approval. Execution sequencing, worker assignments, worktree coordination, and authentication runbooks live in Beads `bento-ez1`; they cannot change this grant.
+This approved grant covers delivery of the feature above after activation. Execution sequencing, ownership, worktrees, authentication preflight, quota observations, and durable handoffs live in Beads `bento-23w`, superseding the earlier plan in `bento-ez1`. Those operational records cannot widen this grant.
 
-- Outcome and constraints: deliver the complete Detailed design and local preview using one shared in-process runtime, native enforcement, and exactly `remix@3.0.0`. Scope and exclusions above are binding; reducing an outcome requires the human.
-- Delegated decisions: choose internal implementations and compatible dependency pins, settle in-scope technical questions, authorize necessary child proposals, and record in-scope policies and decisions before implementing them. Changes to product boundaries require the human.
+- Outcome: deliver the complete Detailed design and local preview using one shared in-process runtime and exactly `remix@3.0.0`. Scope reductions require the human; neither a precompiled fixture nor an unavailable mandatory feature counts as completion.
+- Delegated decisions: choose internal implementations and compatible internal dependency pins, select the allowed native-asset route, settle in-scope technical questions, authorize necessary child proposals, and record in-scope policies and decisions before implementing them. Keep the fixture's declared dependency baseline intact; product-boundary changes require the human.
 - Repository authority: create task branches, worktrees and PRs, push feature branches, accept independently reviewed work, merge reviewed task PRs into `proposal/weekend-remix-guest-book`, then merge the verified final PR into `main`. Direct default-branch pushes and bypassing branch protection are excluded.
-- Limits: use the existing workstation and configured services, at most four workers and two heavy build/test jobs total, including at most one shared-target Rust dependency build. No new accounts, subscriptions, paid infrastructure, or purchases. Incremental metered usage awaits the spending decision below.
-- Evidence: fresh repository and applicable Rust checks, the actual TypeScript and guest-book behavior under both hosts, native denial and isolation checks, persistence, bounded shutdown including an uncooperative guest, operation without another installed runtime or startup downloads, guides, runnable local previews, and the repository's required independent reviews. Unresolved material findings block acceptance.
-- Completion and expiry: delivery includes the verified feature, guides, local previews, and authorized final PR merge. Authority ends at completion, revocation, or 48 hours after the human's recorded activation time, whichever comes first. Incomplete work is not accepted on expiry.
-- Exclusions: public publication, production deployment, credential/access changes or renewal, force-push, branch deletion, and destructive changes to unrelated data. Building a new swarm platform, migrating Beads, adding a credential broker, or supervising the agent harness at the OS level is also excluded. Only owned temporary processes and smoke artifacts may be cleaned up; retain worktrees and review artifacts. Credential expiry stops remote actions under both bot and personal identities even if personal access remains usable; the human owns credential retention and de-provisioning.
-- Approval: none yet. The human must approve the exact revision in the PR, resolve the spending limit, and record activation before the strategist records that evidence and changes the status to `awaiting-implementation`.
+- Compute and spending: use the existing workstation and configured services, at most four workers and two heavy build/test jobs total, including at most one shared-target Rust dependency build. All available subscription-covered Claude Max 20× and ChatGPT Pro 5× usage is authorized, including model/provider switching. Observe each provider's reported weekly, session, and model-specific windows rather than estimating remaining quota from token prices. Incremental API charges, paid extra usage, credit purchases, new accounts, subscriptions, or paid infrastructure are not authorized: the incremental spending limit is **$0**.
+- Reset authority: redeem at most **two Codex limit resets**, only when needed for this delivery, through a supported provider/OMP path. Maintain a durable before/after usage and redemption ledger; none were consumed while preparing this revision. This grant does not authorize Anthropic reset credits or purchases. Do not enable unbounded global auto-redemption or consume credits merely to test the mechanism. If quota cannot be refreshed or reset redemption is unavailable, switch to an authorized subscription window, wait, or checkpoint the blocker rather than falling back to paid usage.
+- Evidence: fresh repository and applicable Rust checks; actual direct-source, installation, task, watch, asset, and guest-book behavior; both hosts; native denial and instance isolation; persistence; bounded shutdown and uncooperative-JavaScript interruption; application execution without another runtime or startup downloads; benchmark correctness and recorded comparisons; guides, runnable local previews, and independent reviews. Unresolved material findings block acceptance.
+- Completion and expiry: delivery includes the verified feature, guides, local previews, and authorized final PR merge. Authority ends at completion, revocation, or 48 hours after recorded activation, whichever comes first. Incomplete work is not accepted on expiry; subscription/reset availability does not extend the mandate.
+- Exclusions: public publication, production deployment, credential/access changes or renewal, force-push, branch deletion, and destructive changes to unrelated data. Building a swarm platform, migrating Beads, adding a credential broker, or supervising the harness at the OS level is excluded. Clean up only owned temporary processes and smoke artifacts; retain worktrees and review artifacts. Credential expiry stops remote actions under both bot and personal identities even if personal access remains usable; the human owns credential retention and de-provisioning.
+- Approval record: the human's conditional approval and subsequent reset authorization apply to this expanded revision. Record the published commit and that evidence in the PR. Activation remains pending; the status records approved intent, not an active or completed build.
 
 ## Preview
 
-Provide a local installable macOS-arm64 Bento executable, a separate Rust embedding-host executable, and the prepared guest book with its lockfile and launch instructions. Each host serves the application on an explicit loopback port with a disposable database by default. The reviewer can submit entries, restart the application, inspect Rust-owned persistence, and exercise the embedded read-only denial. Include the separate native TypeScript example.
+Provide a local installable macOS-arm64 Bento executable, a separate Rust embedding-host executable, and the self-contained source fixture with its lockfile and launch instructions. Demonstrate installation, `bento run server.ts`, the `dev` dependency task and watch reload, package tools through tasks, both storage adapters, and the embedded read-only denial. Use disposable databases by default and documented ports/grants. Include a focused direct-source example proving TypeScript, JSX/TSX, npm imports, and asynchronous execution rather than relying on emitted JavaScript.
 
-These artifacts exercise both the CLI and library without a public deployment. Report their source revision and local paths; keep binaries and databases out of Git. Retain the runnable preview for review and remove only owned temporary databases and processes when review is finished.
+The reviewer can render the page in a browser, submit entries, edit a transitive source file, see new behavior, restart, inspect Rust-owned persistence, and reproduce benchmark commands. Report source revisions and artifact paths; keep executables, databases, and raw temporary diagnostics out of Git. Retain runnable previews for review and clean up only owned temporary resources.
 
 ## Policies and decisions checked
 
-No numbered policies or decisions exist in `policies/` or `decisions/`. The proposal follows the [vision's](../VISION.md) embedding-first, host-authority, ecosystem-compatibility, and upstream-reuse principles and the [proposed architecture's](../ARCHITECTURE.md) separation of execution from development tooling. The initial upstream assembly is allowed without claiming that every proposed crate or feature-selected build already exists.
+No numbered policies or decisions exist in `policies/` or `decisions/`. The proposal follows the [vision](../VISION.md) and [architecture](../ARCHITECTURE.md): embedding-first execution, host authority, ecosystem compatibility, upstream reuse, and shared runtime/tooling boundaries. The user's selected top-level task schema replaces the illustrative namespaced schema in the architecture.
 
-The [bounded-mandate contract](https://github.com/markmals/bento/blob/fb9d42c/AGENTS.md#bounded-build-mandates) governs delegated delivery. This proposal supplies product intent and bounded authority; Beads supplies the changeable execution plan. No additional policy or architectural decision is established by this revision.
+The [bounded-mandate contract](https://github.com/markmals/bento/blob/fb9d42c/AGENTS.md#bounded-build-mandates) governs delegated delivery. This proposal supplies approved product intent and bounded authority; Beads supplies the changeable execution plan. No additional standalone policy or architectural decision is needed merely to restate this feature.
 
 ## Future directions
 
-Integrated development tooling can build on the same execution and resolution boundaries. Additional compatibility coverage, feature-selected assemblies, deployment platforms, and engines remain candidates for later proposals, with their own behavioral evidence.
+Flagless execution of installed package binaries under Bento is the intended successor to the weekend's Node-backed task tools. Native installation, additional integrated development tools, broader compatibility, feature-selected assemblies, deployment platforms, and engines remain candidates for later proposals. Measurements from this feature should inform those choices rather than imply an unmeasured performance advantage.
 
 ## Alternatives considered
 
-A CLI-only runtime would serve ordinary applications but leave native hosts to manage a subprocess or another integration layer. A library-only release would support embedding but omit the standalone use of the same application. The shared library with a thin CLI addresses both uses without two execution implementations.
+A CLI-only runtime omits native embedding; a library-only release omits the standalone developer workflow. One library with thin hosts supplies both without divergent execution implementations.
 
-Starting from bare `deno_core` and hand-writing the Web and Node layers would make Bento responsible for substantially more compatibility behavior. Reusing a coherent Deno-derived assembly trades a larger initial dependency footprint for existing implementations, while retaining Bento-owned public interfaces.
+A prebuilt guest book would avoid much of the requested compatibility work, but would not exercise direct source, native assets, or watch mode. The selected Remix 3 source fixture is the acceptance target instead. The older Remix 1/2 ecosystem is not an alternative implementation of that target.
 
-The contacts application would exercise more routes and interactions. The released guest book already covers rendering, forms, asynchronous execution, assets, and persistence, including an application-sized native service for the embedding example. It provides a smaller observable compatibility boundary for this first feature set.
+Starting with bare `deno_core` and hand-writing Web and Node behavior increases compatibility work. A coherent upstream assembly is preferred, with Bento-owned interfaces. Likewise, pnpm delegation preserves the fixture's real lockfile and installation semantics without a new package manager implementation.
+
+Replacing all native package bindings with built-ins could reduce some integration overhead and duplicate compiler code, but introduces API-compatibility obligations. Reusing Node-API is a legitimate baseline. Choose from measured working implementations, not an assumption that embedding Oxc must be faster.
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: What total incremental metered model/tool spending limit is authorized for autonomous delivery, or should it use only subscription-covered usage with no incremental charges? The coordinator must be able to observe and enforce the approved limit before dispatching metered work.]
+No product or spending question blocks this approved revision. The exact native-asset integration and runtime assembly remain bounded implementation decisions whose acceptance criteria are above. The autonomous build still requires activation; the known Bun benchmark incompatibility must remain visible until resolved.
 
 ## Acknowledgments
 
-The compatibility example derives from the Pitlane Remix templates and published Remix packages. Their application behavior provides an independent reference for Bento's execution and embedding features.
+The selected guest-book application and published Remix 3 packages provide an independent reference through their behavior, manifests, and locked dependencies. Preserve the source's attribution and licenses when importing the fixture.
