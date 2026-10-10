@@ -17,3 +17,5 @@ vp hooks enable --hooks-dir .agents/hooks
 | Session start                             | Read `AGENTS.md` |
 
 Harness lifecycle wiring is harness-specific and lives outside `.agents/`. For Oh My Pi it is `.omp/extensions/`.
+
+`vp run check` also requires Bun for the real OMP workflow-tool discovery check, even though Vitest runs under Node. That integration check limits the Bun subprocess to 30 seconds and gives the outer test 35 seconds, rather than applying the five-second unit-test default to cold runtime startup. Loader errors and a missing `workflow` tool still fail the gate.

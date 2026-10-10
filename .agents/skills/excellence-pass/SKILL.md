@@ -80,5 +80,5 @@ The result should feel native to the repository rather than appended to it.
 The strategist records concrete findings with evidence from the grounding, proposal, and implementation. Classify each as an implementation improvement, an intent conflict, or no change needed.
 
 - An implementation improvement goes to the implementer with a bounded correction. Rerun affected tests and validation, then repeat this pass before inline reviews.
-- An intent conflict returns to the strategist and human for a proposal decision. Do not let an implementer settle it through code.
+- An intent conflict returns to the strategist for a proposal decision with the human, or without them only where a bounded build mandate delegates that decision and the resolution stays inside its boundaries ([`AGENTS.md`](../../../AGENTS.md#bounded-build-mandates)); record it in the proposal. Do not let an implementer settle it through code, and never let a finding widen the mandate.
 - With no material findings, proceed to the proposal-compliance and code-quality reviews in `implementing-a-proposal`. Then `reviewing-an-implementation` owns cross-artifact review, adversarial review, preview, and readiness.

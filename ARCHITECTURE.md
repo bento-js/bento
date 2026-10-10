@@ -240,7 +240,7 @@ The production runtime should not require any of these tools if build outputs ha
 
 ## Dependencies, tasks, and configuration
 
-`package.json` is Bento's primary project entry point. Bento recognizes standard `scripts`, `dependencies`, `devDependencies`, `exports`, `imports`, `workspaces`, and `packageManager` fields. Bento-specific options live under a namespaced `bento` field rather than replacing existing standards.
+`package.json` is Bento's primary project entry point. Bento recognizes standard `scripts`, `dependencies`, `devDependencies`, `exports`, `imports`, `workspaces`, and `packageManager` fields. Dependent project commands are declared in the top-level `tasks` field and selected with `bento run <task-name>`. Other Bento-specific options, such as runtime configuration, live under a namespaced `bento` field rather than replacing existing standards.
 
 An illustrative configuration:
 
@@ -250,13 +250,13 @@ An illustrative configuration:
     "type": "module",
     "packageManager": "pnpm@12.0.0",
     "scripts": { "start": "bento run src/server.ts" },
+    "tasks": {
+        "check": { "dependsOn": ["lint", "types"] },
+        "types": { "command": "tsc" },
+        "lint": { "command": "oxlint" }
+    },
     "bento": {
-        "runtime": { "profile": "node" },
-        "tasks": {
-            "check": { "dependsOn": ["lint", "types"] },
-            "types": { "command": "bento typecheck" },
-            "lint": { "command": "bento lint" }
-        }
+        "runtime": { "profile": "node" }
     }
 }
 ```
@@ -265,7 +265,7 @@ The exact schema is to be specified independently of the underlying crates. Exis
 
 pnpm 12 provides the preferred installation and store implementation. `npm:` loading is routed through resolution and the package service, with deterministic lockfile and offline behavior. Mise concepts inform task dependencies, environment interpolation, tool-path injection (including `node_modules/.bin`), and caching, without making Mise itself a mandatory runtime dependency.
 
-The CLI exposes coherent commands such as `bento run`, `dev`, `test`, `typecheck`, `lint`, `fmt`, `build`, `install`, and `task`; these map onto the same underlying libraries available to embedders.
+The CLI exposes coherent commands such as `bento run` for scripts and named tasks, `dev`, `test`, `typecheck`, `lint`, `fmt`, `build`, and `install`; these map onto the same underlying libraries available to embedders. [Proposal 0001](proposals/0001-embeddable-typescript-runtime.md) specifies the initial supported subset, including Node-backed package tools within tasks.
 
 ## Build configurations and deployment
 

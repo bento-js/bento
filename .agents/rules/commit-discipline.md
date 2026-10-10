@@ -80,8 +80,10 @@ Prefer many small, focused commits to one large commit. Commit at each natural g
 
 ## Push policy
 
-Pushing the feature branch to `origin` is expected and routine: it creates and updates the draft pull request that serves as the durable workspace. Push early and push often.
+Pushing an authorized feature branch to `origin` creates and updates the draft pull request that serves as the durable workspace. Direct human consent or an active, applicable human-approved build mandate must authorize that workspace. Push early and push often within that authority.
 
 Pushing directly to the default branch is prohibited. Work reaches the default branch only by merging its pull request.
 
-Force-pushing, deleting a branch, publishing a release, and merging require explicit human confirmation. Merging happens in phase 5 after human acceptance, not because the agent judges the work acceptable.
+PR merges require recorded acceptance and explicit authority to merge into the target branch, from the human or [an active, applicable human-approved build mandate](../../AGENTS.md#bounded-build-mandates). Delegated acceptance alone is not a merge grant. Fresh integration checks and independent review evidence are required; an explicit mandate merge grant replaces repeated per-feature confirmation.
+
+Force-pushing, deleting a branch, publishing a release, changing access, and other destructive actions still require explicit human authorization for that action. Permission to merge grants none of these.

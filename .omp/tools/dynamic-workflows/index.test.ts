@@ -593,10 +593,15 @@ describe("OMP custom-tool discovery (real loader boundary)", () => {
             `}));`,
         ].join("\n");
 
-        let out = execFileSync("bun", ["-e", script], { cwd, encoding: "utf8" });
+        let out = execFileSync("bun", ["-e", script], {
+            cwd,
+            encoding: "utf8",
+            killSignal: "SIGKILL",
+            timeout: 30_000,
+        });
         let loaded = JSON.parse(out) as { errors: unknown[]; tools: string[] };
 
         expect(loaded.errors).toEqual([]);
         expect(loaded.tools).toContain("workflow");
-    });
+    }, 35_000);
 });
