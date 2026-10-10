@@ -76,9 +76,14 @@ export default defineConfig({
         tasks: {
             check: {
                 command: "vp check",
-                dependsOn: ["validate", "test", "docs:build"],
+                dependsOn: ["validate", "deps:policy", "test", "docs:build"],
             },
             validate: "node tools/validate.ts",
+            // policy.0001: Bento crates must not depend on the SWC stack.
+            "deps:policy": {
+                command: "node tools/crate-dependencies.ts",
+                cache: false,
+            },
             test: "vp test run",
             // Reads live git and GitHub state, so a replayed result would be stale.
             status: {
