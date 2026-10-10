@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
     test: {
-        include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts"],
+        include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts", "bench/**/*.test.ts"],
     },
     fmt: {
         // The fixture is an independent project with its own toolchain and lockfile.
