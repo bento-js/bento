@@ -304,7 +304,7 @@ fn repeated_shutdown_and_drop_release_the_same_port() {
 }
 
 #[test]
-fn loaded_modules_includes_dynamic_local_imports_not_packages_or_builtins() {
+fn watch_inputs_include_dynamic_local_imports_not_packages_or_builtins() {
     let root = tempdir().unwrap();
     std::fs::write(root.path().join("dynamic.mjs"), "export const answer = 42;").unwrap();
     let package = root.path().join("node_modules/demo");
@@ -329,14 +329,17 @@ async function awaitImport(res) { const module = await import('./dynamic.mjs'); 
     );
     ready(root.path());
     assert_eq!(
-        runtime.handle().loaded_modules(),
-        vec![root.path().canonicalize().unwrap().join("entry.mjs")]
+        runtime.handle().watch_inputs(),
+        vec![
+            root.path().canonicalize().unwrap().join("entry.mjs"),
+            root.path().canonicalize().unwrap().join("package.json"),
+        ]
     );
     let mut response = String::new();
     request(port).read_to_string(&mut response).unwrap();
     assert!(response.contains("42"));
-    let loaded = runtime.handle().loaded_modules();
-    assert_eq!(loaded.len(), 2, "{loaded:?}");
+    let loaded = runtime.handle().watch_inputs();
+    assert_eq!(loaded.len(), 3, "{loaded:?}");
     assert!(loaded.contains(&root.path().canonicalize().unwrap().join("dynamic.mjs")));
     runtime.handle().shutdown();
     assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));

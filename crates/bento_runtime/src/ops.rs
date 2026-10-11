@@ -11,6 +11,7 @@ use crate::host::HostModules;
 use crate::host_ops::op_bento_host_call;
 use crate::lifecycle::Control;
 use crate::signals::{bento_signal_bind, bento_signal_poll, bento_signal_unbind};
+use crate::watch_inputs::{WatchInputs, op_bento_failed_require, op_bento_missing_require_target};
 use bento_host::Scope;
 
 #[derive(Clone)]
@@ -132,19 +133,23 @@ fn middleware(original: OpDecl) -> OpDecl {
 }
 
 deno_core::extension!(bento_instance,
-    ops = [op_bento_host_call],
+    ops = [op_bento_host_call, op_bento_failed_require, op_bento_missing_require_target],
     esm_entry_point = "ext:bento_instance/host.mjs",
-    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control> },
+    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control>, watch_inputs: WatchInputs },
     middleware = middleware,
     state = |state, options| {
         state.put(options.environment);
         state.put(options.modules);
         state.put(options.control);
+        state.put(options.watch_inputs);
     },
     customizer = |extension: &mut deno_core::Extension| {
         const HOST_SOURCE: &[deno_core::ExtensionFileSource] = &[deno_core::ExtensionFileSource::new(
             "ext:bento_instance/host.mjs",
             deno_core::ascii_str_include!("host.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/require_watch.mjs",
+            deno_core::ascii_str_include!("require_watch.mjs"),
         )];
         extension.esm_files = Cow::Borrowed(HOST_SOURCE);
     },

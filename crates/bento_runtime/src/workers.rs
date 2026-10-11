@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use deno_core::v8;
+use deno_core::{error::CoreError, v8};
 use deno_lib::npm::create_npm_process_state_provider;
 use deno_lib::worker::{LibWorkerFactoryRoots, ModuleLoaderFactory};
 use deno_node::{NodeExtInitServices, ops::worker_threads::ResolvedResourceLimits};
@@ -81,6 +81,7 @@ impl WorkerFactory {
                     self.environment.clone(),
                     self.loader.modules.clone(),
                     self.loader.control.clone(),
+                    self.loader.node.inputs.clone(),
                 ),
                 crate::feature_ops::extension(self.callback()),
             ],
@@ -107,7 +108,11 @@ impl WorkerFactory {
             wait_for_page_wait_for_debugger: args.wait_for_page_wait_for_debugger,
         };
         let (mut worker, handle, bootstrap) = WebWorker::from_options(services, options);
-        self.bootstrap(&mut worker, &bootstrap, resolved_limits);
+        if let Err(error) = self.bootstrap(&mut worker, &bootstrap, resolved_limits) {
+            self.loader.control.fail_feature(crate::RuntimeError::startup(format!(
+                "worker require-watch initialization: {error}"
+            )));
+        }
         (worker, handle)
     }
 
@@ -145,7 +150,7 @@ impl WorkerFactory {
         worker: &mut WebWorker,
         bootstrap: &BootstrapOptions,
         resolved_limits: Option<ResolvedResourceLimits>,
-    ) {
+    ) -> Result<(), CoreError> {
         let isolate = worker.js_runtime.v8_isolate().thread_safe_handle();
         let control = self.loader.control.clone();
         let lifetime = WorkerLifetime { id: control.register_worker(isolate.clone()), control };
@@ -169,6 +174,11 @@ impl WorkerFactory {
             });
         }
         worker.bootstrap(bootstrap);
+        worker.js_runtime.lazy_load_es_module_with_code(
+            "ext:bento_instance/initialize_require_watch.mjs",
+            "import { install } from 'ext:bento_instance/require_watch.mjs'; install();",
+        )?;
+        Ok(())
     }
 }
 

@@ -179,7 +179,7 @@ fn a_loaded_module_outside_the_project_is_watched_once_it_is_reported() {
     let dependency = workspace.write("shared/node_modules/dependency/index.js", "export {};\n");
     let (mut watcher, changes) = workspace.watch();
 
-    assert!(watcher.watch_modules([shared.clone(), dependency.clone()]).is_empty());
+    assert!(watcher.watch_inputs([shared.clone(), dependency.clone()]).is_empty());
     fs::write(&unloaded, "export const edited = true;\n").unwrap();
     fs::write(&dependency, "export const edited = true;\n").unwrap();
     assert_quiet(&changes);
@@ -194,36 +194,36 @@ fn a_loaded_module_in_an_excluded_project_directory_is_watched() {
     let entry = workspace.write("app/dist/server.js", "console.log('built');\n");
     let (mut watcher, changes) = workspace.watch();
 
-    assert!(watcher.watch_modules([entry.clone()]).is_empty());
+    assert!(watcher.watch_inputs([entry.clone()]).is_empty());
     fs::write(&entry, "console.log('rebuilt');\n").unwrap();
 
     assert_eq!(next_change(&changes), vec![entry]);
 }
 
 #[test]
-fn a_missing_module_directory_is_watched_through_its_existing_ancestor() {
+fn a_missing_watch_input_directory_is_watched_through_its_existing_ancestor() {
     let workspace = Workspace::new();
-    let module = workspace.path("later/module.mjs");
+    let input = workspace.path("later/module.mjs");
     let (mut watcher, changes) = workspace.watch();
 
-    assert!(watcher.watch_modules([module.clone()]).is_empty());
-    assert!(watcher.watch_modules([module.clone()]).is_empty());
+    assert!(watcher.watch_inputs([input.clone()]).is_empty());
+    assert!(watcher.watch_inputs([input.clone()]).is_empty());
     workspace.write("later/module.mjs", "export {};\n");
-    assert_eq!(next_change(&changes), vec![module.clone()]);
+    assert_eq!(next_change(&changes), vec![input.clone()]);
 
-    fs::write(&module, "export const edited = true;\n").unwrap();
-    assert_eq!(next_change(&changes), vec![module]);
+    fs::write(&input, "export const edited = true;\n").unwrap();
+    assert_eq!(next_change(&changes), vec![input]);
 }
 
 #[test]
-fn an_unwatchable_module_failure_is_reported_only_once() {
+fn an_unwatchable_input_failure_is_reported_only_once() {
     let workspace = Workspace::new();
     let (mut watcher, _changes) = workspace.watch();
-    let module = PathBuf::from("unwatchable-relative-module.mjs");
-    let failures = watcher.watch_modules([module.clone()]);
+    let input = PathBuf::from("unwatchable-relative-input.mjs");
+    let failures = watcher.watch_inputs([input.clone()]);
     assert_eq!(failures.len(), 1);
-    assert_eq!(failures[0].0, module);
-    assert!(watcher.watch_modules([module]).is_empty());
+    assert_eq!(failures[0].0, input);
+    assert!(watcher.watch_inputs([input]).is_empty());
 }
 
 /// `app/tsconfig.json` extends a file outside the project, which extends another, and a file
@@ -333,7 +333,7 @@ fn proposal_0001_missing_configuration_packages_do_not_watch_project_ancestors()
     );
     let (watcher, _changes) = workspace.watch();
     let watched = &watcher.directories_outside_project;
-    assert!(watched.iter().all(|directory| !root.starts_with(directory)), "{watched:?}");
+    assert!(watched.keys().all(|directory| !root.starts_with(directory)), "{watched:?}");
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn a_missing_module_through_a_directory_symlink_is_a_change() {
     fs::create_dir(workspace.path("real")).unwrap();
     symlink(workspace.path("real"), workspace.path("shared")).unwrap();
     let (mut watcher, changes) = workspace.watch();
-    assert!(watcher.watch_modules([workspace.path("shared/deep/module.mjs")]).is_empty());
+    assert!(watcher.watch_inputs([workspace.path("shared/deep/module.mjs")]).is_empty());
 
     let module = workspace.write("real/deep/module.mjs", "export {};\n");
 
@@ -390,10 +390,112 @@ fn a_loaded_dependency_inside_the_project_is_not_watched() {
     let workspace = Workspace::new();
     let dependency = workspace.write("app/node_modules/dependency/index.js", "export {};\n");
     let (mut watcher, changes) = workspace.watch();
-    assert!(watcher.watch_modules([dependency.clone()]).is_empty());
+    assert!(watcher.watch_inputs([dependency.clone()]).is_empty());
 
     fs::write(dependency, "export const edited = true;\n").unwrap();
 
+    assert_quiet(&changes);
+}
+
+#[test]
+fn external_package_scopes_do_not_subscribe_to_dependency_or_build_descendants() {
+    let workspace = Workspace::new();
+    let package = workspace.write("shared/package.json", "{}");
+    let dependency = workspace.write("shared/node_modules/package/deep/index.js", "");
+    let generated = workspace.write("shared/dist/deep/output.js", "");
+    let (mut watcher, _changes) = workspace.watch();
+    let (sender, notifications) = mpsc::channel();
+    watcher.watcher = notify::recommended_watcher(move |notification| {
+        let _ = sender.send(notification);
+    })
+    .unwrap();
+    assert!(watcher.watch_inputs([package.clone()]).is_empty());
+    thread::sleep(SETTLE);
+    while notifications.try_recv().is_ok() {}
+
+    fs::write(dependency, "installed").unwrap();
+    fs::write(generated, "built").unwrap();
+    assert!(
+        matches!(notifications.recv_timeout(QUIET_WINDOW), Err(RecvTimeoutError::Timeout)),
+        "subscribed to descendants of a package scope"
+    );
+
+    fs::write(&package, r#"{"type":"module"}"#).unwrap();
+    let notification: notify::Result<notify::Event> =
+        notifications.recv_timeout(CHANGE_DEADLINE).expect("package edit was not observed");
+    assert!(notification.unwrap().paths.contains(&package));
+}
+
+#[test]
+fn successful_commonjs_and_dependency_probes_do_not_register_ancestor_watches() {
+    for dependency_probe in [
+        None,
+        Some("require.resolve(target)"),
+        Some("createRequire(path.join(start, 'noop.js')).resolve(target)"),
+        Some(
+            "Module._resolveFilename(target, { id: anchor, filename: anchor, paths: Module._nodeModulePaths(start) })",
+        ),
+    ] {
+        let workspace = Workspace::new();
+        workspace.write("app/package.json", "{}");
+        let source = if let Some(resolve) = dependency_probe {
+            workspace.write(
+                "app/node_modules/config-loader/package.json",
+                r#"{"name":"config-loader","main":"index.js"}"#,
+            );
+            workspace.write(
+                "app/node_modules/config-loader/index.js",
+                &format!("const path = require('node:path'); const {{ createRequire, Module }} = require('node:module'); module.exports = (start) => {{ const anchor = path.join(start, 'noop.js'); for (let dir = start; ; dir = path.dirname(dir)) {{ const target = path.join(dir, 'probe.config.js'); try {{ return {resolve}; }} catch {{}} if (dir === path.dirname(dir)) return; }} }};"),
+            );
+            "require('config-loader')(__dirname);"
+        } else {
+            workspace.write("shared/index.js", "exports.message = 'INDEX';");
+            "require('../shared');"
+        };
+        let entry = workspace.write("app/main.cjs", source);
+        let mut settings = bento_runtime::RuntimeConfig::new(workspace.root());
+        settings.grants.read = bento_host::Scope::All;
+        let runtime = bento_runtime::start(settings, &entry).unwrap();
+        let handle = runtime.handle();
+        assert!(matches!(runtime.wait(), bento_runtime::RunOutcome::Completed));
+        let (mut watcher, changes) = workspace.watch();
+        assert!(watcher.watch_inputs(handle.watch_inputs()).is_empty());
+        let root = workspace.root();
+        let watched = &watcher.directories_outside_project;
+        assert!(watched.keys().all(|directory| !root.starts_with(directory)), "{watched:?}");
+        workspace.write(
+            if dependency_probe.is_some() { "probe.config.js" } else { "shared.js" },
+            "module.exports = 'unloaded';",
+        );
+        assert_quiet(&changes);
+    }
+}
+
+#[test]
+fn failed_require_of_esm_does_not_watch_successful_nested_resolution_ancestors() {
+    let workspace = Workspace::new();
+    let library = Workspace::new();
+    workspace.write("app/package.json", "{}");
+    let library_source = library.write("lib/index.js", "module.exports = 'LIB INDEX';");
+    let library_path = library_source.parent().unwrap();
+    workspace.write(
+        "shared/cjs.cjs",
+        &format!("module.exports = require({:?});", library_path.to_str().unwrap()),
+    );
+    workspace.write("shared/esm.mjs", "import value from './cjs.cjs'; throw new Error('boom');");
+    let entry = workspace.write("app/main.cjs", "try { require('../shared/esm.mjs'); } catch {}");
+    let mut settings = bento_runtime::RuntimeConfig::new(workspace.root());
+    settings.grants.read = bento_host::Scope::All;
+    let runtime = bento_runtime::start(settings, &entry).unwrap();
+    let handle = runtime.handle();
+    assert!(matches!(runtime.wait(), bento_runtime::RunOutcome::Completed));
+
+    let (mut watcher, changes) = workspace.watch();
+    assert!(watcher.watch_inputs(handle.watch_inputs()).is_empty());
+    let root = workspace.root();
+    let watched = &watcher.directories_outside_project;
+    assert!(watched.keys().all(|directory| !root.starts_with(directory)), "{watched:?}");
+    fs::write(library_path.with_extension("js"), "module.exports = 'unused';").unwrap();
     assert_quiet(&changes);
 }
 

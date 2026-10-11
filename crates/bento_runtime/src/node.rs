@@ -14,7 +14,9 @@ use node_resolver::{NodeResolver, PackageJsonResolver, PackageJsonThreadLocalCac
 use sys_traits::impls::RealSys;
 
 use crate::cjs::Analyzer;
+use crate::lifecycle::Control;
 use crate::sources::Sources;
+use crate::watch_inputs::WatchInputs;
 
 pub(crate) type CjsTracker = deno_resolver::cjs::CjsTracker<DenoInNpmPackageChecker, RealSys>;
 pub(crate) type Npm = NpmResolver<RealSys>;
@@ -35,10 +37,17 @@ pub(crate) struct NodeServices {
     pub npm: Npm,
     pub tracker: Arc<CjsTracker>,
     pub translator: Arc<Translator>,
+    pub inputs: WatchInputs,
 }
 
 impl NodeServices {
-    pub fn new(project: &Path, permissions: PermissionsContainer, sources: Arc<Sources>) -> Self {
+    pub fn new(
+        project: &Path,
+        permissions: PermissionsContainer,
+        sources: Arc<Sources>,
+        control: &Control,
+    ) -> Self {
+        let inputs = WatchInputs::new(project.to_owned(), control.watch_inputs());
         let packages = Arc::new(PackageJsonResolver::new(
             RealSys,
             Some(Arc::new(PackageJsonThreadLocalCache)),
@@ -76,6 +85,6 @@ impl NodeServices {
         ));
         let translator =
             Arc::new(NodeCodeTranslator::new(analyzer, NodeCodeTranslatorMode::ModuleLoader));
-        Self { resolver, packages, npm, tracker, translator }
+        Self { resolver, packages, npm, tracker, translator, inputs }
     }
 }

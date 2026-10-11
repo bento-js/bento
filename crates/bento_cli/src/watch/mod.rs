@@ -8,7 +8,7 @@ mod scope;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -25,7 +25,7 @@ pub use self::restarts::run;
 pub struct SourceWatcher {
     watcher: RecommendedWatcher,
     scope: Arc<Mutex<WatchScope>>,
-    directories_outside_project: BTreeSet<PathBuf>,
+    directories_outside_project: BTreeMap<PathBuf, RecursiveMode>,
     watched_files: BTreeSet<PathBuf>,
     /// Failed watch registrations are retried without repeating their warnings.
     unwatched_files: BTreeSet<PathBuf>,
@@ -54,7 +54,7 @@ impl SourceWatcher {
         Ok(SourceWatcher {
             watcher,
             scope,
-            directories_outside_project: BTreeSet::new(),
+            directories_outside_project: BTreeMap::new(),
             watched_files: BTreeSet::new(),
             unwatched_files: BTreeSet::new(),
         })
@@ -72,18 +72,18 @@ impl SourceWatcher {
 
     /// Returns each registration failure once and retries it on later calls.
     /// Dependency checks ignore ancestors of the project, which may itself be in `node_modules`.
-    pub fn watch_modules(
+    pub fn watch_inputs(
         &mut self,
-        modules: impl IntoIterator<Item = PathBuf>,
+        inputs: impl IntoIterator<Item = PathBuf>,
     ) -> Vec<UnwatchedFile> {
         let mut failures = Vec::new();
-        for module in modules {
-            if self.watched_files.contains(&module)
-                || scope::is_dependency(self.scope.lock().project_root(), &module)
+        for input in inputs {
+            if self.watched_files.contains(&input)
+                || scope::is_dependency(self.scope.lock().project_root(), &input)
             {
                 continue;
             }
-            if let Some(failure) = self.watch_input(module) {
+            if let Some(failure) = self.watch_input(input) {
                 failures.push(failure);
             }
         }
@@ -101,8 +101,7 @@ impl SourceWatcher {
         }
     }
 
-    /// Watches an outside file recursively from its nearest existing ancestor, so creations
-    /// of missing parent directories and replacement of the file are noticed.
+    /// Missing parent directories need recursive coverage; existing package-scope parents do not.
     fn watch_file(&mut self, file: &Path) -> notify::Result<()> {
         let mut ancestor = file;
         let file = loop {
@@ -121,15 +120,24 @@ impl SourceWatcher {
             let Some(parent) = directory.parent() else { break };
             directory = parent.to_owned();
         }
+        let mode = if file.file_name().is_some_and(|name| name == "package.json")
+            && file.parent() == Some(directory.as_path())
+        {
+            RecursiveMode::NonRecursive
+        } else {
+            RecursiveMode::Recursive
+        };
         let mut scope = self.scope.lock();
         scope.add_file(file);
         if directory.starts_with(scope.project_root())
-            || self.directories_outside_project.contains(&directory)
+            || self.directories_outside_project.get(&directory).is_some_and(|watched_mode| {
+                *watched_mode == RecursiveMode::Recursive || *watched_mode == mode
+            })
         {
             return Ok(());
         }
-        self.watcher.watch(&directory, RecursiveMode::Recursive)?;
-        self.directories_outside_project.insert(directory);
+        self.watcher.watch(&directory, mode)?;
+        self.directories_outside_project.insert(directory, mode);
         Ok(())
     }
 }

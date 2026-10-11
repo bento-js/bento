@@ -120,7 +120,8 @@ fn create_worker(
     control: Arc<Control>,
 ) -> anyhow::Result<LibMainWorker> {
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
-    let node = NodeServices::new(&config.project_root, permissions.clone(), sources.clone());
+    let node =
+        NodeServices::new(&config.project_root, permissions.clone(), sources.clone(), &control);
     let environment = InstanceEnvironment {
         values: Arc::new(parking_lot::Mutex::new(std::mem::take(&mut config.env))),
         allowed: std::mem::take(&mut config.grants.env),
@@ -167,11 +168,16 @@ fn create_worker(
         Vec::new(),
         permissions,
         vec![
-            bento_instance::init(environment, modules, control.clone()),
+            bento_instance::init(environment, modules, control.clone(), node.inputs),
             crate::feature_ops::extension(worker_factory.callback()),
         ],
         Default::default(),
         None,
+    )?;
+    // node:module must load after bootstrap has initialized process.platform and process.arch.
+    worker.js_runtime().lazy_load_es_module_with_code(
+        "ext:bento_instance/initialize_require_watch.mjs",
+        "import { install } from 'ext:bento_instance/require_watch.mjs'; install();",
     )?;
     // Install after the factory's lazy extension initialization, which resets its private callback.
     let initialize =

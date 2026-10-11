@@ -85,9 +85,9 @@ fn failed_source_files_remain_in_the_watch_input() {
         let handle = runtime.handle();
         assert!(matches!(runtime.wait(), RunOutcome::Failed(_)));
         assert!(
-            handle.loaded_modules().contains(&root.path().canonicalize().unwrap().join(name)),
+            handle.watch_inputs().contains(&root.path().canonicalize().unwrap().join(name)),
             "failed file omitted: {:?}",
-            handle.loaded_modules()
+            handle.watch_inputs()
         );
     }
 }

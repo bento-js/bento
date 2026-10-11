@@ -17,6 +17,7 @@ mod package_lookup;
 mod permissions;
 mod signals;
 mod sources;
+mod watch_inputs;
 mod workers;
 
 use std::collections::BTreeMap;

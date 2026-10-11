@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -64,7 +64,6 @@ struct State {
     report: Option<ShutdownReport>,
     feature_failure: Option<RuntimeError>,
     signals: BTreeMap<u64, (String, watch::Sender<()>)>,
-    modules: BTreeSet<PathBuf>,
 }
 
 impl State {
@@ -77,6 +76,7 @@ impl State {
 
 pub(crate) struct Control {
     state: Mutex<State>,
+    watch_inputs: Arc<Mutex<BTreeSet<PathBuf>>>,
     changed: Condvar,
     commands: mpsc::UnboundedSender<Command>,
     deadline: Duration,
@@ -98,8 +98,12 @@ impl RuntimeHandle {
         state.report.clone().expect("shutdown report available")
     }
 
-    pub fn loaded_modules(&self) -> Vec<PathBuf> {
-        self.control.state.lock().modules.iter().cloned().collect()
+    /// Sorted, deduplicated snapshot of loaded sources, failed application targets, and package scopes.
+    /// Excludes unused successful-resolution candidates and requests with dependency or synthetic parents.
+    /// Included regardless of origin: dependency code borrowing a cached application parent, a URL the
+    /// application itself resolved, and missing worker scripts outside `node_modules`, whoever starts them.
+    pub fn watch_inputs(&self) -> Vec<PathBuf> {
+        self.control.watch_inputs.lock().iter().cloned().collect()
     }
 }
 
@@ -110,6 +114,7 @@ impl Control {
         let (commands, receiver) = mpsc::unbounded_channel();
         let control = Arc::new(Self {
             state: Mutex::new(State::default()),
+            watch_inputs: Arc::default(),
             changed: Condvar::new(),
             commands,
             deadline,
@@ -184,8 +189,8 @@ impl Control {
         }
     }
 
-    pub fn record_module(&self, path: &Path) {
-        self.state.lock().modules.insert(path.to_owned());
+    pub fn watch_inputs(&self) -> Arc<Mutex<BTreeSet<PathBuf>>> {
+        self.watch_inputs.clone()
     }
 
     pub fn default_shutdown(&self) {

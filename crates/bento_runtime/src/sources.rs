@@ -119,14 +119,13 @@ impl Sources {
             && path.strip_prefix(&self.root).is_ok_and(|relative| !in_node_modules(relative))
     }
 
-    pub fn is_watch_source(&self, path: &Path) -> bool {
-        !is_environment_file(path)
-            && !in_node_modules(path.strip_prefix(&self.root).unwrap_or(path))
-    }
-
     pub fn is_local_source(&self, path: &Path) -> bool {
         path.starts_with(&self.root) && !is_environment_file(path)
     }
+}
+
+pub(crate) fn is_watch_source(root: &Path, path: &Path) -> bool {
+    !is_environment_file(path) && !in_node_modules(path.strip_prefix(root).unwrap_or(path))
 }
 
 fn is_environment_file(path: &Path) -> bool {
