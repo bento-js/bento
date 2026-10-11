@@ -320,10 +320,20 @@ fn proposal_0001_missing_configuration_packages_do_not_watch_project_ancestors()
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
 
-    let candidates = super::configuration::files(&workspace.root());
-    assert!(candidates.iter().all(|path| path.starts_with(workspace.root())), "{candidates:?}");
+    // NODE_PATH can add lookup locations of its own; only the project's ancestors are excluded.
+    let root = workspace.root();
+    let ancestor_packages: Vec<PathBuf> =
+        root.ancestors().skip(1).map(|ancestor| ancestor.join("node_modules")).collect();
+    let candidates = super::configuration::files(&root);
+    assert!(
+        candidates
+            .iter()
+            .all(|path| !ancestor_packages.iter().any(|lookup| path.starts_with(lookup))),
+        "{candidates:?}"
+    );
     let (watcher, _changes) = workspace.watch();
-    assert!(watcher.directories_outside_project.is_empty());
+    let watched = &watcher.directories_outside_project;
+    assert!(watched.iter().all(|directory| !root.starts_with(directory)), "{watched:?}");
 }
 
 #[test]
