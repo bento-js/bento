@@ -113,7 +113,7 @@ fn serve_refuses_a_database_inside_the_project_without_creating_it() {
     let output = host_command(scratch.path(), &arguments).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     let message = stderr(&output);
-    assert!(message.contains("inside the project"), "{message}");
+    assert!(message.contains("which the guest may read"), "{message}");
     assert!(
         !scratch.path().join("project/book.db").exists(),
         "a refused serve created the database"
@@ -130,9 +130,27 @@ fn serve_refuses_a_database_that_resolves_inside_the_project_through_a_symlink()
     let output = host_command(scratch.path(), &arguments).output().unwrap();
     assert_eq!(output.status.code(), Some(1));
     let message = stderr(&output);
-    assert!(message.contains("inside the project"), "{message}");
+    assert!(message.contains("which the guest may read"), "{message}");
     assert!(
         !scratch.path().join("project/book.db").exists(),
+        "a refused serve created the database"
+    );
+}
+
+#[test]
+fn serve_refuses_a_database_inside_an_ancestor_node_modules_directory() {
+    let scratch = scratch_dir();
+    std::fs::create_dir(scratch.path().join("project")).unwrap();
+    std::fs::create_dir(scratch.path().join("node_modules")).unwrap();
+    let arguments =
+        ["serve", "--project", "project", "--database", "node_modules/book.db", "--port", "0"];
+    let output = host_command(scratch.path(), &arguments).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    assert!(message.contains("which the guest may read"), "{message}");
+    assert!(message.contains("node_modules"), "{message}");
+    assert!(
+        !scratch.path().join("node_modules/book.db").exists(),
         "a refused serve created the database"
     );
 }

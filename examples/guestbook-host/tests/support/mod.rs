@@ -1,15 +1,18 @@
 #![allow(dead_code, reason = "each integration test binary uses a different subset")]
 
+pub mod document;
 pub mod guests;
 pub mod http;
 
 use std::fs;
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use std::sync::LazyLock;
+use std::process::{Child, Command, Output};
+use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use rusqlite::Connection;
 use tempfile::TempDir;
 
 use bento_guestbook_host::launch::{Launch, Mode};
@@ -24,11 +27,36 @@ pub fn scratch_dir() -> TempDir {
     tempfile::Builder::new().prefix("host-").tempdir_in(SCRATCH).unwrap()
 }
 
-/// `bento-guestbook-host <arguments>`, started in `directory`.
+/// `bento-guestbook-host <arguments>`, started in `directory` without `NODE_PATH`: the guest
+/// book's native resolver reads that variable from the host process, not from the guest's
+/// environment, and would follow it outside the project.
 pub fn host_command(directory: &Path, arguments: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_bento-guestbook-host"));
-    command.args(arguments).current_dir(directory);
+    command.args(arguments).current_dir(directory).env_remove("NODE_PATH");
     command
+}
+
+/// Runs the named test in a child test process without `NODE_PATH`, one child at a time, and
+/// returns `true` in the parent once the child has passed. An in-process fixture instance would
+/// otherwise inherit the harness's `NODE_PATH` through its native resolver.
+pub fn isolated_fixture_test(name: &str) -> bool {
+    static ONE_CHILD: Mutex<()> = Mutex::new(());
+    if std::env::var("BENTO_FIXTURE_TEST").as_deref() == Ok(name) {
+        assert!(std::env::var_os("NODE_PATH").is_none(), "fixture test inherited NODE_PATH");
+        return false;
+    }
+    let _one_child = ONE_CHILD.lock().unwrap_or_else(PoisonError::into_inner);
+    let child = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env("BENTO_FIXTURE_TEST", name)
+        .env_remove("NODE_PATH")
+        .output()
+        .unwrap();
+    let report = stdout(&child);
+    assert!(child.status.success(), "{report}\n{}", stderr(&child));
+    assert!(report.contains("test result: ok. 1 passed"), "{name} did not run once:\n{report}");
+    eprint!("{}", stderr(&child));
+    true
 }
 
 pub fn stdout(output: &Output) -> String {
@@ -44,14 +72,43 @@ pub fn free_port() -> u16 {
     TcpListener::bind("[::]:0").unwrap().local_addr().unwrap().port()
 }
 
+const STARTUP_ALLOWANCE: Duration = Duration::from_secs(30);
+
 /// Blocks until something accepts connections on `port`, or fails after a generous startup
 /// allowance.
 pub fn wait_for_listener(port: u16) {
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let listening = wait_for_listener_unless(port, || false);
+    assert!(listening, "nothing started listening on port {port}");
+}
+
+/// Waits for a runtime instance to listen on `port`; one that ends first reports how instead
+/// of a bare timeout.
+pub fn wait_for_instance(runtime: &RunningRuntime, port: u16) {
+    let listening = wait_for_listener_unless(port, || false);
+    assert!(listening, "the instance never listened on {port}: {:?}", runtime.handle().shutdown());
+}
+
+/// Waits for a spawned host to listen on `port`; one that exits first reports its stderr.
+pub fn wait_for_host(child: &mut Child, port: u16) {
+    let listening = wait_for_listener_unless(port, || child.try_wait().unwrap().is_some());
+    if !listening {
+        let mut diagnostics = String::new();
+        child.stderr.take().unwrap().read_to_string(&mut diagnostics).unwrap();
+        panic!("the host ended before listening on {port}:\n{diagnostics}");
+    }
+}
+
+/// Polls `port` until it accepts a connection (`true`), `ended` reports the server gone
+/// (`false`), or the allowance runs out (`false`).
+fn wait_for_listener_unless(port: u16, mut ended: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + STARTUP_ALLOWANCE;
     while TcpStream::connect(("127.0.0.1", port)).is_err() {
-        assert!(Instant::now() < deadline, "nothing started listening on port {port}");
+        if ended() || Instant::now() >= deadline {
+            return false;
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
+    true
 }
 
 /// The port is free again on every local address, so a replacement server can take it.
@@ -81,6 +138,25 @@ pub fn start_guest(
     let launch = Launch::prepare(project, database, port, Mode::Development).unwrap();
     let store = GuestBookStore::open(launch.database(), access).unwrap();
     start(launch.runtime_config(store), &project.join(guest)).unwrap()
+}
+
+/// Starts the fixture copy's embedded entrypoint as the host serves it and waits until it
+/// listens.
+pub fn start_fixture(launch: &Launch, access: Access) -> RunningRuntime {
+    let store = GuestBookStore::open(launch.database(), access).unwrap();
+    let entry = launch.project().join("server.embedded.ts");
+    let runtime = start(launch.runtime_config(store), &entry).unwrap();
+    wait_for_instance(&runtime, launch.port());
+    runtime
+}
+
+/// `(name, message, createdAt)` for every row, oldest first, read straight from the store.
+pub fn stored_rows(database: &Path) -> Vec<(String, String, String)> {
+    let connection = Connection::open(database).unwrap();
+    let mut statement =
+        connection.prepare("SELECT name, message, createdAt FROM entries ORDER BY id").unwrap();
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap();
+    rows.map(Result::unwrap).collect()
 }
 
 /// A disposable copy of the guest book fixture with its locked dependencies installed.

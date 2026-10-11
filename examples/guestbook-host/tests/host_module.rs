@@ -111,7 +111,10 @@ fn only_the_registering_instance_can_import_host_guestbook() {
     let signed = http::post_form(port, "/", &[("name", "Ada"), ("message", "Still here")]);
     assert_eq!(signed.status, 303);
     assert!(http::get(port, "/").body.contains("Still here"));
-    assert_eq!(serving.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(
+        serving.handle().shutdown().outcome,
+        ShutdownOutcome::Graceful { exit_code: Some(0) }
+    );
     assert!(matches!(serving.wait(), RunOutcome::Shutdown(_)));
 }
 
@@ -130,7 +133,7 @@ fn graceful_shutdown_frees_the_port_and_a_replacement_serves_the_same_entries() 
 
     let requested = Instant::now();
     let report = first.handle().shutdown();
-    assert_eq!(report.outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(report.outcome, ShutdownOutcome::Graceful { exit_code: Some(0) });
     assert!(requested.elapsed() < Duration::from_secs(5), "{:?}", requested.elapsed());
     assert!(matches!(first.wait(), RunOutcome::Shutdown(_)));
     assert_port_free(port);
@@ -140,7 +143,10 @@ fn graceful_shutdown_frees_the_port_and_a_replacement_serves_the_same_entries() 
     let listed: serde_json::Value = serde_json::from_str(&http::get(port, "/").body).unwrap();
     assert_eq!(listed[0]["name"], "Ada");
     assert_eq!(listed[0]["message"], "Hello from 1843");
-    assert_eq!(second.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(
+        second.handle().shutdown().outcome,
+        ShutdownOutcome::Graceful { exit_code: Some(0) }
+    );
     assert!(matches!(second.wait(), RunOutcome::Shutdown(_)));
     assert_port_free(port);
 }

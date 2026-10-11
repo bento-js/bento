@@ -25,6 +25,7 @@ tokio.workspace = true
 
 [dev-dependencies]
 chrono = "0.4.45"
+libc = "0.2.190"
 tempfile.workspace = true
 
 # Executables that embed the runtime export the Node-API symbols so the fixture's native

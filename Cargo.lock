@@ -480,6 +480,7 @@ dependencies = [
  "chrono",
  "clap",
  "deno_napi",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",
