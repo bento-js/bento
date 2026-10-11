@@ -7,16 +7,18 @@ export interface Command {
 
 const SERVER_ENTRY = "server.ts";
 
+// The fixture README's grants. Reads are unscoped because remix/assets probes package.json files
+// in node_modules directories above the project root (Node's package lookup locations).
 const BENTO_SERVER_GRANTS = [
-    "--allow-read=.",
+    "--allow-read",
     "--allow-write=./db",
     "--allow-net",
     "--allow-env=PORT,DATABASE_URL,NODE_ENV",
     "--allow-addons=./node_modules",
 ];
 
-// A script that only reads the fixture and loads the locked native packages.
-const BENTO_SCRIPT_GRANTS = ["--allow-read=.", "--allow-addons=./node_modules"];
+// A script that only reads and loads the locked native packages.
+const BENTO_SCRIPT_GRANTS = ["--allow-read", "--allow-addons=./node_modules"];
 
 const NODE_LOADER = ["--import", "remix/node-tsx"];
 
