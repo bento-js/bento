@@ -74,9 +74,15 @@ export default defineConfig({
             "prefer-let/prefer-let": [2, { forceUpperCaseConst: true }],
         },
     },
-    // Bento's own test and build tasks join `check` as its code lands.
+    // Bento's Rust gate is its own task rather than part of `check`: Bento supports only
+    // macOS on Apple silicon for now while CI runs on Linux, and the full suite takes minutes.
     run: {
         tasks: {
+            rust: {
+                command:
+                    "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+                cache: false,
+            },
             check: {
                 command: "vp check",
                 dependsOn: ["validate", "deps:policy", "test", "docs:build"],

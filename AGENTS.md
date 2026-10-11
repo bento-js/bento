@@ -393,6 +393,7 @@ vp check             # format check, lint, and type-check
 vp run validate      # artifact frontmatter, IDs, and cross-references
 vp run test          # the record tools' and the workflow tool's tests
 vp run docs:build    # the docs site builds
+vp run rust          # Rust formatting, clippy with warnings denied, and every crate's tests (macOS arm64)
 ```
 
 Run project-specific gates (unit, integration, end-to-end) as they exist. `vp run` with no task lists everything available.
