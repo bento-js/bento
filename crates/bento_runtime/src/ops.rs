@@ -1,13 +1,21 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use deno_core::{OpDecl, OpState, op2};
 use deno_error::JsErrorBox;
+use parking_lot::Mutex;
 
+use crate::host::HostModules;
+use crate::host_ops::op_bento_host_call;
+use crate::lifecycle::Control;
+use crate::signals::{bento_signal_bind, bento_signal_poll, bento_signal_unbind};
 use bento_host::Scope;
 
+#[derive(Clone)]
 pub(crate) struct InstanceEnvironment {
-    pub values: BTreeMap<String, String>,
+    pub values: Arc<Mutex<BTreeMap<String, String>>>,
     pub allowed: Scope<String>,
     pub cwd: PathBuf,
 }
@@ -16,7 +24,7 @@ pub(crate) struct InstanceEnvironment {
 #[string]
 fn bento_get_env(state: &OpState, #[string] key: &str) -> Option<String> {
     let environment = state.borrow::<InstanceEnvironment>();
-    environment.allowed.allows(key).then(|| environment.values.get(key).cloned()).flatten()
+    environment.allowed.allows(key).then(|| environment.values.lock().get(key).cloned()).flatten()
 }
 
 #[op2]
@@ -25,6 +33,7 @@ fn bento_env(state: &OpState) -> BTreeMap<String, String> {
     let environment = state.borrow::<InstanceEnvironment>();
     environment
         .values
+        .lock()
         .iter()
         .filter(|(key, _)| environment.allowed.allows(key))
         .map(|(key, value)| (key.clone(), value.clone()))
@@ -42,7 +51,7 @@ fn bento_set_env(
     if value.contains('\0') {
         return Err(JsErrorBox::type_error("environment values cannot contain NUL"));
     }
-    environment.values.insert(key.to_owned(), value.to_owned());
+    environment.values.lock().insert(key.to_owned(), value.to_owned());
     Ok(())
 }
 
@@ -50,7 +59,7 @@ fn bento_set_env(
 fn bento_delete_env(state: &mut OpState, #[string] key: &str) -> Result<(), JsErrorBox> {
     let environment = state.borrow_mut::<InstanceEnvironment>();
     check_key(environment, key)?;
-    environment.values.remove(key);
+    environment.values.lock().remove(key);
     Ok(())
 }
 
@@ -74,6 +83,14 @@ fn bento_cwd(state: &OpState) -> String {
 fn bento_deny_process_mutation(#[string] _path: &str) -> Result<(), JsErrorBox> {
     Err(JsErrorBox::new("NotCapable", "Changing host process state is not permitted"))
 }
+#[op2(fast)]
+fn bento_exit(state: &mut OpState) {
+    state.put(deno_runtime::deno_os::WatcherExited);
+    state.borrow::<deno_runtime::deno_os::WatcherExitHandle>().0.terminate_execution();
+    if !state.has::<crate::workers::WorkerIsolate>() {
+        state.borrow::<Arc<Control>>().dispose();
+    }
+}
 
 fn middleware(original: OpDecl) -> OpDecl {
     let mut replacement = match original.name {
@@ -83,6 +100,10 @@ fn middleware(original: OpDecl) -> OpDecl {
         "op_delete_env" => bento_delete_env(),
         "op_fs_cwd" => bento_cwd(),
         "op_fs_chdir" | "op_node_load_env_file" => bento_deny_process_mutation(),
+        "op_exit" => bento_exit(),
+        "op_signal_bind" => bento_signal_bind(),
+        "op_signal_poll" => bento_signal_poll(),
+        "op_signal_unbind" => bento_signal_unbind(),
         _ => return original,
     };
     replacement.name = original.name;
@@ -91,7 +112,20 @@ fn middleware(original: OpDecl) -> OpDecl {
 }
 
 deno_core::extension!(bento_instance,
-    options = { environment: InstanceEnvironment },
+    ops = [op_bento_host_call],
+    esm_entry_point = "ext:bento_instance/host.mjs",
+    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control> },
     middleware = middleware,
-    state = |state, options| state.put(options.environment),
+    state = |state, options| {
+        state.put(options.environment);
+        state.put(options.modules);
+        state.put(options.control);
+    },
+    customizer = |extension: &mut deno_core::Extension| {
+        const HOST_SOURCE: &[deno_core::ExtensionFileSource] = &[deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/host.mjs",
+            deno_core::ascii_str_include!("host.mjs"),
+        )];
+        extension.esm_files = Cow::Borrowed(HOST_SOURCE);
+    },
 );

@@ -16,11 +16,16 @@ use deno_runtime::deno_web::Blob;
 use node_resolver::errors::PackageJsonLoadError;
 use oxc_resolver::{ResolveOptions, Resolver};
 
+use crate::host::HostModules;
+use crate::lifecycle::Control;
 use crate::node::NodeServices;
 
+#[derive(Clone)]
 pub(crate) struct LoaderFactory {
     pub node: NodeServices,
     pub cwd: PathBuf,
+    pub modules: HostModules,
+    pub control: Arc<Control>,
 }
 
 impl LoaderFactory {
@@ -29,6 +34,8 @@ impl LoaderFactory {
             node: self.node.clone(),
             permissions,
             cwd: self.cwd.clone(),
+            modules: self.modules.clone(),
+            control: self.control.clone(),
             resolver: Resolver::new(ResolveOptions {
                 condition_names: vec!["node".into(), "import".into(), "default".into()],
                 fully_specified: true,
@@ -64,6 +71,8 @@ struct Loader {
     permissions: PermissionsContainer,
     resolver: Resolver,
     cwd: PathBuf,
+    modules: HostModules,
+    control: Arc<Control>,
 }
 
 impl ModuleLoader for Loader {
@@ -74,6 +83,16 @@ impl ModuleLoader for Loader {
         _kind: ResolutionKind,
     ) -> Result<ModuleSpecifier, JsErrorBox> {
         if matches!(specifier, "bento:compat" | "bento:subprocess") {
+            return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
+        }
+        if specifier.starts_with("host:") {
+            if !self.modules.contains(specifier) {
+                return Err(resolution_error(
+                    specifier,
+                    referrer,
+                    "host module is not registered in this instance",
+                ));
+            }
             return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
         }
         let builtin = specifier.strip_prefix("node:").unwrap_or(specifier);
@@ -128,9 +147,13 @@ impl ModuleLoader for Loader {
                 ModuleType::JavaScript,
             )));
         }
+        if let Some(code) = self.modules.source(specifier.as_str()) {
+            return ModuleLoadResponse::Sync(Ok(source(specifier, code, ModuleType::JavaScript)));
+        }
         let specifier = specifier.clone();
         let node = self.node.clone();
         let permissions = self.permissions.clone();
+        let control = self.control.clone();
         ModuleLoadResponse::Async(Box::pin(async move {
             let path = specifier.to_file_path().map_err(|_| {
                 resolution_error(
@@ -142,6 +165,7 @@ impl ModuleLoader for Loader {
             let checked = permissions
                 .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
                 .map_err(JsErrorBox::from_err)?;
+            control.record_module(&path);
             refuse_transform(&path)?;
             let text = std::fs::read_to_string(checked).map_err(JsErrorBox::from_err)?;
             if path.extension().is_some_and(|extension| extension == "json") {
@@ -183,8 +207,10 @@ impl NodeRequireLoader for Loader {
     }
 
     fn load_text_file_lossy(&self, path: &Path) -> Result<FastString, JsErrorBox> {
+        self.control.record_module(path);
         refuse_transform(path)?;
-        std::fs::read_to_string(path).map(Into::into).map_err(JsErrorBox::from_err)
+        let text = std::fs::read_to_string(path).map_err(JsErrorBox::from_err)?;
+        Ok(text.into())
     }
 
     fn is_maybe_cjs(&self, specifier: &ModuleSpecifier) -> Result<bool, PackageJsonLoadError> {

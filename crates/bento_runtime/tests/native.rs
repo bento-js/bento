@@ -1,8 +1,11 @@
 mod support;
 
 use std::collections::BTreeSet;
+use std::net::TcpListener;
+use std::time::{Duration, Instant};
 
 use bento_host::Scope;
+use bento_runtime::{RunOutcome, ShutdownOutcome, start};
 
 use support::{completed, config, fixture, run};
 
@@ -78,4 +81,67 @@ for (const production of [false, true]) {
 }
 "#,
     ));
+}
+
+#[test]
+fn native_addons_and_large_heaps_shutdown_and_recreate_on_the_same_port() {
+    let root = fixture();
+    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    for cycle in 0..3 {
+        let mut settings = config(root);
+        settings.grants.net = Scope::All;
+        settings.grants.read = Scope::All;
+        settings.grants.addons =
+            Scope::Only(BTreeSet::from([settings.project_root.join("node_modules")]));
+        settings.shutdown_deadline = Duration::from_millis(200);
+        let entry = root.join(format!("native-shutdown-{cycle}.mjs"));
+        let marker = format!("native-ready-{cycle}");
+        let handler = if cycle == 1 {
+            "while (true) {}"
+        } else {
+            "server.close(() => process.exit(0)); server.closeAllConnections();"
+        };
+        std::fs::write(
+            &entry,
+            format!(
+                r#"
+import {{ createRequire }} from 'node:module';
+import {{ writeFileSync }} from 'node:fs';
+import http from 'node:http';
+const require = createRequire(import.meta.resolve('remix/assets'));
+const {{ parseSync }} = require('oxc-parser');
+const {{ transform }} = require('oxc-transform');
+const {{ minify }} = require('oxc-minify');
+const {{ ResolverFactory }} = require('oxc-resolver');
+const lightningcss = require('lightningcss');
+parseSync('native.ts', 'const n: number = 1;');
+await transform('native.ts', 'export const n: number = 1;');
+await minify('native.js', 'export const n = 1;');
+new ResolverFactory().sync(process.cwd(), 'remix/assets');
+lightningcss.transform({{ filename: 'native.css', code: Buffer.from('body {{ color: red; }}') }});
+globalThis.retainedHeap = Array.from({{ length: 2_000_000 }}, (_, index) => index);
+const server = http.createServer((req, res) => res.end('native'));
+process.on('SIGTERM', () => {{ {handler} }});
+server.listen({port}, '127.0.0.1', () => writeFileSync('{marker}', 'ready'));
+"#
+            ),
+        )
+        .unwrap();
+        let runtime = start(settings, &entry).unwrap();
+        let ready_deadline = Instant::now() + Duration::from_secs(10);
+        while !root.join(&marker).exists() {
+            assert!(Instant::now() < ready_deadline, "native guest did not become ready");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let started = Instant::now();
+        let expected = if cycle == 1 {
+            ShutdownOutcome::Interrupted
+        } else {
+            ShutdownOutcome::Graceful { exit_code: 0 }
+        };
+        assert_eq!(runtime.handle().shutdown().outcome, expected);
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));
+        drop(TcpListener::bind(("127.0.0.1", port)).expect("native guest retained the port"));
+    }
 }
