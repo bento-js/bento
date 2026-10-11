@@ -123,6 +123,16 @@ impl ModuleLoader for Loader {
             .and_then(|path| path.parent().map(Path::to_owned))
             .unwrap_or_else(|| self.cwd.clone());
         let resolved = self.resolver.resolve(&base, specifier).map_err(|error| {
+            if specifier.starts_with("./")
+                || specifier.starts_with("../")
+                || Path::new(specifier).is_absolute()
+            {
+                let candidate = base.join(specifier);
+                let candidate = bento_host::canonical_path(&candidate).unwrap_or(candidate);
+                if self.sources.is_watch_source(&candidate) {
+                    self.control.record_module(&candidate);
+                }
+            }
             self.sources.resolution_error(specifier, referrer, &error.to_string())
         })?;
         ModuleSpecifier::from_file_path(resolved.path()).map_err(|_| {

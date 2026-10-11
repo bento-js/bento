@@ -100,11 +100,15 @@ impl SourceWatcher {
         }
     }
 
-    /// Watches `file` wherever it is, by watching the directory holding it, so that replacing
-    /// or deleting the file is noticed as well as editing it.
+    /// Watches an outside file recursively from its nearest existing ancestor, so creations
+    /// of missing parent directories and replacement of the file are noticed.
     fn watch_file(&mut self, file: PathBuf) -> notify::Result<()> {
         let file = file.canonicalize().unwrap_or(file);
-        let directory = file.parent().expect("a file has a parent directory").to_owned();
+        let mut directory = file.parent().expect("a file has a parent directory").to_owned();
+        while !directory.is_dir() {
+            let Some(parent) = directory.parent() else { break };
+            directory = parent.to_owned();
+        }
         let mut scope = self.scope.lock();
         scope.add_file(file);
         if directory.starts_with(scope.project_root())
@@ -112,7 +116,7 @@ impl SourceWatcher {
         {
             return Ok(());
         }
-        self.watcher.watch(&directory, RecursiveMode::NonRecursive)?;
+        self.watcher.watch(&directory, RecursiveMode::Recursive)?;
         self.directories_outside_project.insert(directory);
         Ok(())
     }

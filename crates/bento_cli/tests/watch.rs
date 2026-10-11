@@ -89,6 +89,20 @@ fn a_failed_first_load_keeps_watching_until_the_missing_module_is_created() {
 }
 
 #[test]
+fn creating_a_missing_import_outside_the_project_recovers_watch() {
+    let temp = TempProject::new(json!({}));
+    temp.write("app/package.json", &json!({ "type": "module" }).to_string());
+    temp.write("app/server.mjs", &SERVER.replace("./message.mjs", "../sibling/missing.mjs"));
+    temp.write("sibling/keep", "");
+    let port = free_port();
+    let mut bento = watch(&temp, port, "app/server.mjs");
+    bento.wait_for_stderr("waiting for changes");
+    assert!(bento.is_running());
+    temp.write("sibling/missing.mjs", &message_module("repaired outside"));
+    wait_for_response(port, "repaired outside");
+}
+
+#[test]
 fn a_burst_of_edits_restarts_the_server_once() {
     let temp = server_project("edit 0");
     let port = free_port();
@@ -235,10 +249,9 @@ fn a_file_tsconfig_begins_to_extend_after_an_edit_is_watched() {
     bento.wait_for_stdout("listening", 3);
 }
 
-/// The first request imports a module from outside the project and then moves its directory
-/// away, so that Bento cannot watch it until the test moves the directory back.
+/// A module loaded before its directory moves remains watched through the nearest existing ancestor.
 #[test]
-fn a_loaded_module_that_cannot_be_watched_yet_is_watched_once_it_can_be() {
+fn a_loaded_module_stays_watched_when_its_directory_is_moved_and_restored() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write(
@@ -262,10 +275,9 @@ fn a_loaded_module_that_cannot_be_watched_yet_is_watched_once_it_can_be() {
     command.env("PORT", port.to_string());
     let bento = Background::spawn(command);
     wait_for_response(port, "shared one");
-    bento.wait_for_stderr("cannot watch");
     thread::sleep(SETTLE);
     let warnings = bento.stderr.all().into_iter().filter(|line| line.contains("cannot watch"));
-    assert_eq!(warnings.count(), 1, "{}", bento.stderr.text());
+    assert_eq!(warnings.count(), 0, "{}", bento.stderr.text());
 
     fs::rename(temp.path("moved"), temp.path("shared")).unwrap();
     thread::sleep(SETTLE);

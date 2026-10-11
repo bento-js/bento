@@ -62,8 +62,17 @@ struct State {
     interrupted: bool,
     disposed: bool,
     report: Option<ShutdownReport>,
+    feature_failure: Option<RuntimeError>,
     signals: BTreeMap<u64, (String, watch::Sender<()>)>,
     modules: BTreeSet<PathBuf>,
+}
+
+impl State {
+    fn terminate_isolates(&self) {
+        for isolate in self.isolate.iter().chain(self.workers.values()) {
+            isolate.terminate_execution();
+        }
+    }
 }
 
 pub(crate) struct Control {
@@ -183,6 +192,16 @@ impl Control {
         self.state.lock().default_shutdown = true;
     }
 
+    pub fn fail_feature(&self, error: RuntimeError) {
+        let mut state = self.state.lock();
+        state.feature_failure.get_or_insert(error);
+        state.terminate_isolates();
+    }
+
+    pub fn feature_failure(&self) -> Option<RuntimeError> {
+        self.state.lock().feature_failure.clone()
+    }
+
     // A completion report is retained for later shutdown calls, but returned only for requested shutdown.
     pub fn complete(&self, execution: &RunOutcome) -> Option<ShutdownReport> {
         let mut state = self.state.lock();
@@ -238,12 +257,7 @@ impl Control {
             return;
         }
         state.interrupted = true;
-        if let Some(isolate) = &state.isolate {
-            isolate.terminate_execution();
-        }
-        for isolate in state.workers.values() {
-            isolate.terminate_execution();
-        }
+        state.terminate_isolates();
         self.dispose();
         let disposal_deadline = Instant::now() + DISPOSAL_MARGIN;
         while !state.disposed {

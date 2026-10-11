@@ -53,6 +53,10 @@ impl RuntimeError {
         Self { kind: ErrorKind::Startup, message: plain_message(message.into()), location: None }
     }
 
+    pub(crate) fn unsupported(message: impl Into<String>) -> Self {
+        Self { kind: ErrorKind::Uncaught, message: plain_message(message.into()), location: None }
+    }
+
     pub(crate) fn guest(error: CoreError, entry: &Path, sources: &Sources) -> Self {
         let failure = match error.as_kind() {
             CoreErrorKind::Js(error) => error.message.as_deref().and_then(|message| {

@@ -3,6 +3,9 @@
 mod assembly;
 mod cjs;
 mod error;
+mod feature_ops;
+mod features;
+mod fs_ops;
 mod host;
 mod host_ops;
 mod import_position;
