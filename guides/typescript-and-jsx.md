@@ -23,6 +23,8 @@ Every transformed module carries a source map, so stack traces and error locatio
 
 A project without a `tsconfig.json` runs with TypeScript's defaults: no JSX runtime is selected (plain TypeScript still runs), imports used only as types are elided, decorators are not transformed, and class fields follow the JavaScript specification.
 
+Bento applies the project's settings to every non-dependency source it transforms, including workspace siblings such as `../shared/view.tsx`, whether or not `tsconfig.json#include` lists them. Dependency sources use TypeScript's defaults instead. Within the project root, a `node_modules` directory in the source's relative path marks it as a dependency; outside the project root, any `node_modules` directory in the full path does. A project located beneath `node_modules` still uses its own settings for its own source files.
+
 ## Worked example
 
 The guest-book fixture's `tsconfig.json` sets `"jsx": "react-jsx"`, `"jsxImportSource": "remix/component"`, and `"verbatimModuleSyntax": true`. Loading it produces no errors; the only options it contains that Bento does not act on are type-checker and tooling options that have no runtime meaning.
