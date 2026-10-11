@@ -29,7 +29,8 @@ fn loaded_native_addons() -> Vec<String> {
 
 #[test]
 fn addon_denial_precedes_dlopen() {
-    let root = fixture();
+    let directory = fixture();
+    let root = directory.path();
     assert!(loaded_native_addons().is_empty());
     let outcome = run(
         config(root),
@@ -49,8 +50,9 @@ await import(require.resolve('oxc-transform'));
 
 #[test]
 fn create_require_preserves_denied_addon_error_classification() {
+    let directory = fixture();
     let outcome = run(
-        config(fixture()),
+        config(directory.path()),
         "denied-require-native.mjs",
         r#"
 import { createRequire } from 'node:module';

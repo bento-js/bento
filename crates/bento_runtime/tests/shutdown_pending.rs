@@ -35,7 +35,10 @@ await new Promise(() => {});
     settings.shutdown_deadline = Duration::from_millis(200);
     let runtime = start(settings, &entry).unwrap();
     wait_for(&root.path().join("ready"));
-    assert_eq!(runtime.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(
+        runtime.handle().shutdown().outcome,
+        ShutdownOutcome::Graceful { exit_code: Some(0) }
+    );
     assert!(root.path().join("signalled").exists());
     assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));
 }
