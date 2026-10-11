@@ -51,6 +51,7 @@ insert.run('Seeded visitor', 'A seeded greeting'); db.close();
         assert_document(&page);
         assets::check(port, &page.body, development, &mut minified_scripts);
         check_forms(port, development);
+        assets::check_rules(port, development);
         shutdown(runtime, port);
         let replacement = start(settings.clone(), &root.join("server.ts")).unwrap();
         let persisted = wait_for_page(&replacement, port);

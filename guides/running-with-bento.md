@@ -62,7 +62,7 @@ A flag without `=` grants the whole kind: `--allow-net` allows every host. With 
 
 Relative paths resolve from the directory you run `bento` in, not from the project root. Bento then resolves symlinks, so a grant names the real location: granting `./data` when `data` is a link to `/srv/data` grants `/srv/data`. A path that does not exist yet, such as a database file the application will create, is normalized as written beneath its nearest existing directory.
 
-No flag can let guest code start subprocesses or import remote modules. An addon grant is different from the others: an addon runs native code inside the Bento process, so once loaded it is not contained by the file, network, or environment grants. Grant addons only from packages you trust.
+No flag can let guest code start subprocesses, import remote modules, or read system information. Every script may read the process's user and group IDs, which Node's `fs.access` needs to check a file's permission bits; apart from the platform and architecture in `process.platform` and `process.arch`, nothing else about the system is available, so calls such as `os.hostname()` and `os.userInfo()` fail with `NotCapable`. An addon grant is different from the others: an addon runs native code inside the Bento process, so once loaded it is not contained by the file, network, or environment grants. Grant addons only from packages you trust.
 
 Grants govern guest code. They do not restrict task commands or the tools those commands start, which run with your user's full authority.
 

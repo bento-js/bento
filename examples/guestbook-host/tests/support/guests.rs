@@ -113,3 +113,13 @@ net.createServer().listen(Number(process.env.PORT));
 await new Promise(resolve => setTimeout(resolve, 60_000));
 process.on('SIGTERM', () => process.exit(0));
 "#;
+
+/// A guest whose `SIGTERM` handler throws, so its shutdown fails with an uncaught error.
+pub const FAILING_SHUTDOWN: &str = r#"
+import net from 'node:net';
+
+net.createServer().listen(Number(process.env.PORT));
+process.on('SIGTERM', () => {
+    throw new Error('the guest could not close');
+});
+"#;

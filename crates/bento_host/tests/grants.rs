@@ -15,7 +15,7 @@ fn top_level_request_without_options_grants_nothing() {
     let grants = GrantRequest::default().resolve(None).unwrap();
     assert_eq!(grants, Grants::none());
     assert!(!grants.read.allows(Path::new("/project")));
-    assert!(!grants.env.allows(&"PORT".to_string()));
+    assert!(!grants.env.allows("PORT"));
 }
 
 #[test]

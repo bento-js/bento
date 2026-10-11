@@ -51,6 +51,8 @@ fn interrupt(bento: &mut Background, port: u16) -> Option<i32> {
     code
 }
 
+/// The fixture locks pnpm 12.11.2 as its package manager, and pnpm records the version that
+/// installed `node_modules`, so the install used the pinned pnpm whatever `pnpm` is on `PATH`.
 #[test]
 fn a_frozen_install_adds_dependencies_and_dev_tools_and_keeps_the_lockfile() {
     let guest_book = GuestBook::install();
@@ -59,6 +61,9 @@ fn a_frozen_install_adds_dependencies_and_dev_tools_and_keeps_the_lockfile() {
         assert!(guest_book.path(installed).exists(), "{installed} is missing");
     }
     assert_eq!(guest_book.read("pnpm-lock.yaml"), fixture_file("pnpm-lock.yaml"));
+    let modules: serde_json::Value =
+        serde_json::from_str(&guest_book.read("node_modules/.modules.yaml")).unwrap();
+    assert_eq!(modules["packageManager"], "pnpm@12.11.2");
 }
 
 /// `start` runs `bento run server.ts`, which serves production assets. Interrupting the task

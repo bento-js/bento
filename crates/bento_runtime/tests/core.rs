@@ -124,6 +124,32 @@ assert.throws(() => execSync('/usr/bin/true'), /NotCapable|subprocess/i);
 }
 
 #[test]
+fn every_grant_still_exposes_only_the_user_and_group_ids_of_the_system() {
+    let root = tempdir().unwrap();
+    let mut settings = config(root.path());
+    settings.grants.read = Scope::All;
+    settings.grants.write = Scope::All;
+    settings.grants.net = Scope::All;
+    settings.grants.env = Scope::All;
+    settings.grants.addons = Scope::All;
+    completed(run(
+        settings,
+        "system.mjs",
+        r#"
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+assert.ok(Number.isInteger(process.getuid()) && Number.isInteger(process.getgid()));
+fs.accessSync(process.cwd(), fs.constants.R_OK);
+for (const query of [os.hostname, os.userInfo, os.homedir, os.networkInterfaces, os.cpus,
+    os.totalmem, os.freemem, os.loadavg, os.uptime, os.release]) {
+    assert.throws(() => query(), /NotCapable/, query.name);
+}
+"#,
+    ));
+}
+
+#[test]
 fn event_target_accepts_node_style_signals() {
     let root = tempdir().unwrap();
     completed(run(
