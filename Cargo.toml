@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "examples/guestbook-host"]
-exclude = ["third_party"]
 
 [workspace.package]
 edition = "2024"
@@ -47,9 +46,10 @@ thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["full"] }
 
 # deno_core 0.412.0 with one fix: require() of an ES module rethrows the module's original
-# exception instead of a serialized copy. See third_party/deno_core/BENTO_PATCH.md.
+# exception instead of a serialized copy. The fork imports the published crate unmodified and
+# carries the change as separate commits; see PATCHES.md there.
 [patch.crates-io]
-deno_core = { path = "third_party/deno_core" }
+deno_core = { git = "https://github.com/bento-js/deno_core", rev = "825264984ee3945d3713fb2bc6b224b491a82478" }
 
 # rusty_v8 miscompiles below -O1.
 [profile.dev.package.v8]

@@ -1860,6 +1860,7 @@ dependencies = [
 [[package]]
 name = "deno_core"
 version = "0.412.0"
+source = "git+https://github.com/bento-js/deno_core?rev=825264984ee3945d3713fb2bc6b224b491a82478#825264984ee3945d3713fb2bc6b224b491a82478"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4716,7 +4717,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

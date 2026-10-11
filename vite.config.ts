@@ -6,9 +6,8 @@ export default defineConfig({
     },
     fmt: {
         // The fixture is an independent project with its own toolchain and lockfile,
-        // third_party holds vendored upstream code whose only changes are its documented patches,
         // and bench/results holds recorded benchmark output kept exactly as the harness wrote it.
-        ignorePatterns: ["bench/results/**", "fixtures/**", "target/**", "third_party/**"],
+        ignorePatterns: ["bench/results/**", "fixtures/**", "target/**"],
         printWidth: 100,
         tabWidth: 4,
         arrowParens: "avoid",
@@ -38,7 +37,7 @@ export default defineConfig({
     },
     lint: {
         // The direct-source example is an independent project whose types come from its own install.
-        ignorePatterns: ["examples/direct-source/**", "fixtures/**", "target/**", "third_party/**"],
+        ignorePatterns: ["examples/direct-source/**", "fixtures/**", "target/**"],
         options: {
             typeAware: true,
             typeCheck: true,
