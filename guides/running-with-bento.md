@@ -19,6 +19,16 @@ Bento options go before the target. Everything after the target belongs to the s
 
 ## How to use it
 
+### Get Bento
+
+Bento is built from this repository for macOS on Apple silicon. Building needs the Rust toolchain pinned in `rust-toolchain.toml`, which `rustup` selects automatically. From the repository root:
+
+```sh
+cargo install --locked --path crates/bento_cli
+```
+
+This installs the `bento` executable into Cargo's bin directory (`~/.cargo/bin` by default). Running an installed project needs nothing else. Installing dependencies needs pnpm and Node, because `bento install` delegates to the project's declared pnpm, and the package tools a task runs, such as `oxfmt`, `tsc`, or `remix db migrate`, start through their own executables, which may be Node scripts.
+
 ### Choose what to run
 
 Bento decides whether the target is a file or a task:
