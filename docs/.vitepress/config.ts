@@ -56,6 +56,7 @@ let config = defineConfig<BentoThemeConfig>({
         "fixtures/**",
         "target/**",
         "third_party/**",
+        "bench/**",
         "docs/public/**",
         "README.md",
         "PROCESS.md",

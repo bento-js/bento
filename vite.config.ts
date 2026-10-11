@@ -5,9 +5,10 @@ export default defineConfig({
         include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts", "bench/**/*.test.ts"],
     },
     fmt: {
-        // The fixture is an independent project with its own toolchain and lockfile, and
-        // third_party holds vendored upstream code whose only changes are its documented patches.
-        ignorePatterns: ["fixtures/**", "target/**", "third_party/**"],
+        // The fixture is an independent project with its own toolchain and lockfile,
+        // third_party holds vendored upstream code whose only changes are its documented patches,
+        // and bench/results holds recorded benchmark output kept exactly as the harness wrote it.
+        ignorePatterns: ["bench/results/**", "fixtures/**", "target/**", "third_party/**"],
         printWidth: 100,
         tabWidth: 4,
         arrowParens: "avoid",

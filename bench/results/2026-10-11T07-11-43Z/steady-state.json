@@ -1,0 +1,752 @@
+{
+  "startedAt": "2026-10-11T07:11:43.782Z",
+  "options": {
+    "help": false,
+    "runtimes": [
+      "node",
+      "bun",
+      "bento"
+    ],
+    "workloads": [
+      "cold-launch",
+      "assets",
+      "asset-operations",
+      "steady-state",
+      "watch-reload",
+      "memory"
+    ],
+    "trials": {
+      "cold-launch": 15,
+      "assets": 10,
+      "asset-operations": 10,
+      "steady-state": 5,
+      "watch-reload": 10,
+      "memory": 10
+    },
+    "steadyState": {
+      "durationSeconds": 10,
+      "warmupSeconds": 3,
+      "concurrency": 16
+    },
+    "iterations": 10,
+    "keepFixtures": false,
+    "executables": {
+      "node": "/Users/orion/.local/share/mise/installs/node/26.11.1/bin/node",
+      "bun": "/Users/orion/.local/share/mise/installs/bun/latest/bin/bun",
+      "bento": "/Users/orion/Developer/Projects/.worktrees/bento-preview/bin/bento"
+    }
+  },
+  "environment": {
+    "hardware": "Mac16,1, Apple M4, 10 cores, 32 GiB",
+    "os": "macOS 27.0.1 (arm64)",
+    "runtimes": {
+      "node": "v26.11.1",
+      "bun": "1.4.3",
+      "bento": "sha256:55ef5f931f27"
+    },
+    "tools": {
+      "pnpm": "12.11.2",
+      "oha": "1.16.0"
+    },
+    "revisions": {
+      "bento": "8c6abd2-dirty",
+      "fixture": "b3c5986"
+    },
+    "remixVersion": "3.0.0"
+  },
+  "workload": "steady-state",
+  "title": "Steady-state load",
+  "question": "How many requests per second, at what latency, does a runtime sustain at fixed concurrency after a warmup, for a rendered page, an asset, and a persisted valid submission? Responses must keep their expected status and persisted rows must be counted.",
+  "metrics": [
+    {
+      "key": "getRps",
+      "label": "Rendered GET /, throughput",
+      "unit": "req/s"
+    },
+    {
+      "key": "getP50Ms",
+      "label": "Rendered GET /, latency p50",
+      "unit": "ms"
+    },
+    {
+      "key": "getP99Ms",
+      "label": "Rendered GET /, latency p99",
+      "unit": "ms"
+    },
+    {
+      "key": "assetRps",
+      "label": "Asset GET, throughput",
+      "unit": "req/s"
+    },
+    {
+      "key": "assetP50Ms",
+      "label": "Asset GET, latency p50",
+      "unit": "ms"
+    },
+    {
+      "key": "assetP99Ms",
+      "label": "Asset GET, latency p99",
+      "unit": "ms"
+    },
+    {
+      "key": "postRps",
+      "label": "Persisted POST /, throughput",
+      "unit": "req/s"
+    },
+    {
+      "key": "postP50Ms",
+      "label": "Persisted POST /, latency p50",
+      "unit": "ms"
+    },
+    {
+      "key": "postP99Ms",
+      "label": "Persisted POST /, latency p99",
+      "unit": "ms"
+    }
+  ],
+  "series": [
+    {
+      "runtime": "bun",
+      "variant": "production",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17737/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "getRps": 121.7474086624758,
+            "getP50Ms": 131.02054099999998,
+            "getP99Ms": 171.005375,
+            "getLoad": {
+              "requests": 1229,
+              "requestsPerSecond": 121.7474086624758,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 1229
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 131.02054099999998,
+                "p90": 154.072291,
+                "p95": 160.005292,
+                "p99": 171.005375
+              },
+              "bytesPerRequest": 4501
+            },
+            "assetRps": 5327.789029269133,
+            "assetP50Ms": 2.933209,
+            "assetP99Ms": 4.078375,
+            "assetLoad": {
+              "requests": 53307,
+              "requestsPerSecond": 5327.789029269133,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 53307
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 2.933209,
+                "p90": 3.3891669999999996,
+                "p95": 3.5815,
+                "p99": 4.078375
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 4286.651996478021,
+            "postP50Ms": 3.385125,
+            "postP99Ms": 7.736375,
+            "postLoad": {
+              "requests": 42892,
+              "requestsPerSecond": 4286.651996478021,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 42892
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.385125,
+                "p90": 4.522292,
+                "p95": 6.602542000000001,
+                "p99": 7.736375
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 1,
+            "getRps": 120.08139965949653,
+            "getP50Ms": 131.022041,
+            "getP99Ms": 178.37716600000002,
+            "getLoad": {
+              "requests": 1214,
+              "requestsPerSecond": 120.08139965949653,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 1214
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 131.022041,
+                "p90": 157.626125,
+                "p95": 163.496333,
+                "p99": 178.37716600000002
+              },
+              "bytesPerRequest": 4502
+            },
+            "assetRps": 5328.269331129859,
+            "assetP50Ms": 2.930833,
+            "assetP99Ms": 4.100459,
+            "assetLoad": {
+              "requests": 53314,
+              "requestsPerSecond": 5328.269331129859,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 53314
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 2.930833,
+                "p90": 3.3872910000000003,
+                "p95": 3.5812090000000003,
+                "p99": 4.100459
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 2920.7712322071716,
+            "postP50Ms": 3.781292,
+            "postP99Ms": 29.575625000000002,
+            "postLoad": {
+              "requests": 29227,
+              "requestsPerSecond": 2920.7712322071716,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 29227
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.781292,
+                "p90": 10.341375,
+                "p95": 15.557667,
+                "p99": 29.575625000000002
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 2,
+            "getRps": 121.3416764953408,
+            "getP50Ms": 130.570834,
+            "getP99Ms": 171.79487500000002,
+            "getLoad": {
+              "requests": 1227,
+              "requestsPerSecond": 121.3416764953408,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 1227
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 130.570834,
+                "p90": 154.779792,
+                "p95": 158.664209,
+                "p99": 171.79487500000002
+              },
+              "bytesPerRequest": 4502
+            },
+            "assetRps": 5340.813470964987,
+            "assetP50Ms": 2.925375,
+            "assetP99Ms": 4.085458999999999,
+            "assetLoad": {
+              "requests": 53430,
+              "requestsPerSecond": 5340.813470964987,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 53430
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 2.925375,
+                "p90": 3.3795420000000003,
+                "p95": 3.569458,
+                "p99": 4.085458999999999
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 4127.371365932661,
+            "postP50Ms": 3.541834,
+            "postP99Ms": 8.260958,
+            "postLoad": {
+              "requests": 41299,
+              "requestsPerSecond": 4127.371365932661,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 41299
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.541834,
+                "p90": 4.601542,
+                "p95": 6.700084,
+                "p99": 8.260958
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 3,
+            "getRps": 121.09543335034587,
+            "getP50Ms": 131.371333,
+            "getP99Ms": 170.90329200000002,
+            "getLoad": {
+              "requests": 1224,
+              "requestsPerSecond": 121.09543335034587,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 1224
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 131.371333,
+                "p90": 154.794333,
+                "p95": 158.944083,
+                "p99": 170.90329200000002
+              },
+              "bytesPerRequest": 4501
+            },
+            "assetRps": 5335.063802620034,
+            "assetP50Ms": 2.9300829999999998,
+            "assetP99Ms": 4.028208,
+            "assetLoad": {
+              "requests": 53367,
+              "requestsPerSecond": 5335.063802620034,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 53367
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 2.9300829999999998,
+                "p90": 3.3874999999999997,
+                "p95": 3.570625,
+                "p99": 4.028208
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 4146.053953539998,
+            "postP50Ms": 3.5444999999999998,
+            "postP99Ms": 8.177042,
+            "postLoad": {
+              "requests": 41487,
+              "requestsPerSecond": 4146.053953539998,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 41487
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.5444999999999998,
+                "p90": 4.672292,
+                "p95": 6.633667,
+                "p99": 8.177042
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 4,
+            "getRps": 121.8427871023278,
+            "getP50Ms": 129.739541,
+            "getP99Ms": 175.697416,
+            "getLoad": {
+              "requests": 1232,
+              "requestsPerSecond": 121.8427871023278,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 1232
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 129.739541,
+                "p90": 155.130833,
+                "p95": 160.329208,
+                "p99": 175.697416
+              },
+              "bytesPerRequest": 4502
+            },
+            "assetRps": 5340.860123159401,
+            "assetP50Ms": 2.9204589999999997,
+            "assetP99Ms": 4.0714999999999995,
+            "assetLoad": {
+              "requests": 53441,
+              "requestsPerSecond": 5340.860123159401,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 53441
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 2.9204589999999997,
+                "p90": 3.361458,
+                "p95": 3.550792,
+                "p99": 4.0714999999999995
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 4106.705279210511,
+            "postP50Ms": 3.556334,
+            "postP99Ms": 8.371666999999999,
+            "postLoad": {
+              "requests": 41092,
+              "requestsPerSecond": 4106.705279210511,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 41092
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.556334,
+                "p90": 4.6730410000000004,
+                "p95": 6.688417,
+                "p99": 8.371666999999999
+              },
+              "bytesPerRequest": 0
+            }
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "getRps": 31.53392327889353,
+            "getP50Ms": 504.65895900000004,
+            "getP99Ms": 822.6425,
+            "getLoad": {
+              "requests": 331,
+              "requestsPerSecond": 31.53392327889353,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 331
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 504.65895900000004,
+                "p90": 518.997584,
+                "p95": 519.922166,
+                "p99": 822.6425
+              },
+              "bytesPerRequest": 4497
+            },
+            "assetRps": 842.5013241640345,
+            "assetP50Ms": 18.159583,
+            "assetP99Ms": 31.043875,
+            "assetLoad": {
+              "requests": 8437,
+              "requestsPerSecond": 842.5013241640345,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 8437
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 18.159583,
+                "p90": 22.848,
+                "p95": 26.120458,
+                "p99": 31.043875
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 3932.5720935011464,
+            "postP50Ms": 3.9416670000000003,
+            "postP99Ms": 6.3383329999999996,
+            "postLoad": {
+              "requests": 39351,
+              "requestsPerSecond": 3932.5720935011464,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 39351
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.9416670000000003,
+                "p90": 4.699667,
+                "p95": 5.063667,
+                "p99": 6.3383329999999996
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 1,
+            "getRps": 31.530738527715908,
+            "getP50Ms": 503.486541,
+            "getP99Ms": 910.061166,
+            "getLoad": {
+              "requests": 329,
+              "requestsPerSecond": 31.530738527715908,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 329
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 503.486541,
+                "p90": 520.318,
+                "p95": 522.055958,
+                "p99": 910.061166
+              },
+              "bytesPerRequest": 4497
+            },
+            "assetRps": 844.1313177485085,
+            "assetP50Ms": 17.997083,
+            "assetP99Ms": 30.240416999999997,
+            "assetLoad": {
+              "requests": 8453,
+              "requestsPerSecond": 844.1313177485085,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 8453
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 17.997083,
+                "p90": 23.030625,
+                "p95": 25.477875,
+                "p99": 30.240416999999997
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 4005.802335810891,
+            "postP50Ms": 3.83875,
+            "postP99Ms": 6.173958,
+            "postLoad": {
+              "requests": 40074,
+              "requestsPerSecond": 4005.802335810891,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 40074
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.83875,
+                "p90": 4.580334000000001,
+                "p95": 4.883833,
+                "p99": 6.173958
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 2,
+            "getRps": 31.578002705726128,
+            "getP50Ms": 503.106459,
+            "getP99Ms": 905.903209,
+            "getLoad": {
+              "requests": 329,
+              "requestsPerSecond": 31.578002705726128,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 329
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 503.106459,
+                "p90": 520.315791,
+                "p95": 520.641291,
+                "p99": 905.903209
+              },
+              "bytesPerRequest": 4496
+            },
+            "assetRps": 841.2029656546675,
+            "assetP50Ms": 18.106041,
+            "assetP99Ms": 30.803334000000003,
+            "assetLoad": {
+              "requests": 8428,
+              "requestsPerSecond": 841.2029656546675,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 8428
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 18.106041,
+                "p90": 22.936916,
+                "p95": 26.146791999999998,
+                "p99": 30.803334000000003
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 3908.538451340077,
+            "postP50Ms": 3.905417,
+            "postP99Ms": 6.682458,
+            "postLoad": {
+              "requests": 39110,
+              "requestsPerSecond": 3908.538451340077,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 39110
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.905417,
+                "p90": 4.708041,
+                "p95": 5.049958,
+                "p99": 6.682458
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 3,
+            "getRps": 31.542974010422622,
+            "getP50Ms": 502.945042,
+            "getP99Ms": 850.4049580000001,
+            "getLoad": {
+              "requests": 331,
+              "requestsPerSecond": 31.542974010422622,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 331
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 502.945042,
+                "p90": 521.847292,
+                "p95": 610.1689580000001,
+                "p99": 850.4049580000001
+              },
+              "bytesPerRequest": 4497
+            },
+            "assetRps": 839.5423621513149,
+            "assetP50Ms": 18.252208,
+            "assetP99Ms": 31.316584000000002,
+            "assetLoad": {
+              "requests": 8413,
+              "requestsPerSecond": 839.5423621513149,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 8413
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 18.252208,
+                "p90": 22.728375,
+                "p95": 25.991541,
+                "p99": 31.316584000000002
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 3868.480008351807,
+            "postP50Ms": 4.008833,
+            "postP99Ms": 6.801875,
+            "postLoad": {
+              "requests": 38706,
+              "requestsPerSecond": 3868.480008351807,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 38706
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 4.008833,
+                "p90": 4.73625,
+                "p95": 5.079208,
+                "p99": 6.801875
+              },
+              "bytesPerRequest": 0
+            }
+          },
+          {
+            "trial": 4,
+            "getRps": 31.569563112510394,
+            "getP50Ms": 503.8583330000001,
+            "getP99Ms": 851.321666,
+            "getLoad": {
+              "requests": 329,
+              "requestsPerSecond": 31.569563112510394,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 329
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 503.8583330000001,
+                "p90": 518.545333,
+                "p95": 523.0287089999999,
+                "p99": 851.321666
+              },
+              "bytesPerRequest": 4497
+            },
+            "assetRps": 763.2818816291209,
+            "assetP50Ms": 19.570417,
+            "assetP99Ms": 38.292416,
+            "assetLoad": {
+              "requests": 7657,
+              "requestsPerSecond": 763.2818816291209,
+              "successRate": 1,
+              "statusCodes": {
+                "200": 7657
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 19.570417,
+                "p90": 25.945084,
+                "p95": 28.972375000000003,
+                "p99": 38.292416
+              },
+              "bytesPerRequest": 320
+            },
+            "postRps": 3798.2789089295175,
+            "postP50Ms": 3.915417,
+            "postP99Ms": 9.769667,
+            "postLoad": {
+              "requests": 38005,
+              "requestsPerSecond": 3798.2789089295175,
+              "successRate": 1,
+              "statusCodes": {
+                "303": 38005
+              },
+              "errors": {},
+              "latencyMs": {
+                "p50": 3.915417,
+                "p90": 4.8765,
+                "p95": 5.366292,
+                "p99": 9.769667
+              },
+              "bytesPerRequest": 0
+            }
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "notes": []
+}
