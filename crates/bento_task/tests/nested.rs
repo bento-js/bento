@@ -39,11 +39,25 @@ fn value<'a>(environment: &'a LaunchEnvironment, name: &str) -> Option<&'a str> 
 /// project whose `.env` sets `DATABASE_URL=base` and whose `.env.development` sets
 /// `DATABASE_URL=dev`.
 fn nested_launch_started_by(command: &str) -> LaunchEnvironment {
+    nested_launch_in(&TempProject::with_tasks(json!({ "dev": command })))
+}
+
+/// Like [`nested_launch_started_by`], from a project whose `bin` directory holds a stand-in
+/// for `env`, a `test` script that runs `bento`, and a `command` script that ignores its
+/// arguments and runs `bento`.
+fn nested_launch_with_project_scripts_started_by(command: &str) -> LaunchEnvironment {
     let temp = TempProject::with_tasks(json!({ "dev": command }));
+    temp.write_executable("bin/env", "#!/bin/sh\nexec /usr/bin/env \"$@\"\n");
+    temp.write_executable("bin/test", "#!/bin/sh\nexec bento \"$@\"\n");
+    temp.write_executable("bin/command", &format!("#!/bin/sh\nexec {NESTED_WATCH}\n"));
+    nested_launch_in(&temp)
+}
+
+fn nested_launch_in(temp: &TempProject) -> LaunchEnvironment {
     temp.write(".env", "DATABASE_URL=base\n");
     temp.write(".env.development", "DATABASE_URL=dev\n");
-    let child = nested_bento_environment(&temp, "dev", &[("PATH", SYSTEM_PATH)], &Grants::none());
-    nested_watch_launch(&temp, child)
+    let child = nested_bento_environment(temp, "dev", &[("PATH", SYSTEM_PATH)], &Grants::none());
+    nested_watch_launch(temp, child)
 }
 
 #[test]
@@ -227,6 +241,48 @@ fn env_split_string_assignments_still_win_in_the_nested_launch() {
         format!("env -S 'DATABASE_URL=base' {NESTED_WATCH}"),
     ] {
         let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn wrapper_named_by_a_path_still_passes_its_assignments_to_the_nested_launch() {
+    for command in [
+        format!("/usr/bin/env DATABASE_URL=base {NESTED_WATCH}"),
+        format!("/usr/bin/env -u UNUSED DATABASE_URL=base {NESTED_WATCH}"),
+        format!("./bin/env DATABASE_URL=base {NESTED_WATCH}"),
+        format!("/usr/bin/nohup env DATABASE_URL=base {NESTED_WATCH} > /dev/null"),
+        format!("/usr/bin/nohup /usr/bin/env DATABASE_URL=base {NESTED_WATCH} > /dev/null"),
+        "/usr/bin/env DATABASE_URL=base ./bento-bin/bento run --watch server.ts".to_owned(),
+    ] {
+        let nested = nested_launch_with_project_scripts_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn wrapper_named_by_a_path_that_starts_no_launch_leaves_the_file_value_to_the_nested_mode() {
+    for command in [
+        format!("DATABASE_URL=base /usr/bin/env > /dev/null; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base ./bin/env > /dev/null; {NESTED_WATCH}"),
+        format!("/usr/bin/env DATABASE_URL=base true; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base /usr/bin/nohup true > /dev/null; {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_with_project_scripts_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command}");
+    }
+}
+
+#[test]
+fn program_named_by_a_path_like_a_builtin_may_still_start_the_nested_launch() {
+    for command in [
+        "DATABASE_URL=base ./bin/test run --watch server.ts",
+        "DATABASE_URL=base ./bin/command true",
+    ] {
+        let nested = nested_launch_with_project_scripts_started_by(command);
 
         assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
     }

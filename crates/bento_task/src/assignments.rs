@@ -26,6 +26,13 @@ const EXPORTING_BUILTINS: [&str; 2] = ["export", "readonly"];
 /// Utilities that run their first operand as a command, with the same environment.
 const WRAPPERS: [&str; 3] = ["command", "exec", "nohup"];
 
+/// The modeled utilities that are also programs, so a path to one runs that utility:
+/// `/usr/bin/env` is `env`, and reading it as any other program would lose its operands.
+/// `command` and `exec` are shell builtins, so a path named like one is some other program,
+/// as is a path named like a builtin that starts no program, such as `./test`. Either may be
+/// a project script; read as any other program, it at worst keeps a value.
+const PROGRAMS_NAMED_BY_PATH: [&str; 2] = ["env", "nohup"];
+
 /// Names assigned in `command`'s text that a nested `bento` launch it starts may see.
 pub(crate) fn assigned_names(command: &str) -> BTreeSet<String> {
     simple_commands(command).iter().flat_map(|words| names_reaching_a_launch(words)).collect()
@@ -70,9 +77,10 @@ fn command_effect(command: &[String]) -> Effect {
     program_effect(&name, &arguments)
 }
 
-/// The effect of running the program `name` with `arguments`, all already unquoted. Any
+/// The effect of running the command word `word` with `arguments`, all already unquoted. Any
 /// program other than a known builtin may be, or may start, a nested `bento`.
-fn program_effect(name: &str, arguments: &[Cow<'_, str>]) -> Effect {
+fn program_effect(word: &str, arguments: &[Cow<'_, str>]) -> Effect {
+    let name = utility_name(word);
     if NON_LAUNCHING_BUILTINS.contains(&name) {
         return Effect::NoProgram;
     }
@@ -83,6 +91,15 @@ fn program_effect(name: &str, arguments: &[Cow<'_, str>]) -> Effect {
         return env_effect(arguments);
     }
     Effect::Assigns(Vec::new())
+}
+
+/// The name of the utility the command word `word` runs: a path to one of
+/// [`PROGRAMS_NAMED_BY_PATH`] runs that utility, and any other word stands for itself.
+fn utility_name(word: &str) -> &str {
+    match word.rsplit_once('/') {
+        Some((_, file_name)) if PROGRAMS_NAMED_BY_PATH.contains(&file_name) => file_name,
+        _ => word,
+    }
 }
 
 /// `env`'s `NAME=value` operands apply to the utility it runs. Without a utility it prints
