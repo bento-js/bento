@@ -36,7 +36,8 @@ export default defineConfig({
         ],
     },
     lint: {
-        ignorePatterns: ["fixtures/**", "target/**", "third_party/**"],
+        // The direct-source example is an independent project whose types come from its own install.
+        ignorePatterns: ["examples/direct-source/**", "fixtures/**", "target/**", "third_party/**"],
         options: {
             typeAware: true,
             typeCheck: true,

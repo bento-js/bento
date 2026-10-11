@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::grant_flags::GrantError;
 use bento_package::InstallError;
+use bento_runtime::{ErrorKind, RuntimeError};
 use bento_task::{PlanError, Signal, TaskError};
 use bento_workspace::{EnvironmentError, ProjectError, TargetError};
 
@@ -41,10 +42,12 @@ pub enum CliError {
         "--watch restarts a script when its source changes, so it cannot run task `{0}`; give the task a command that runs `bento run --watch <script>`"
     )]
     WatchedTask(String),
+    #[error("{}: {}", describe_failure(.0.kind), .0)]
+    Script(RuntimeError),
     #[error(
-        "cannot run `{0}`: script execution requires the runtime, which this build of bento does not include"
+        "cannot watch `{0}`: restarting a script when its source changes needs a runtime that can shut a script down, which this build of bento does not include"
     )]
-    RuntimeUnavailable(String),
+    WatchUnavailable(String),
 }
 
 impl CliError {
@@ -69,4 +72,14 @@ impl CliError {
 fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
     code.and_then(|code| u8::try_from(code).ok()).map_or(ExitCode::FAILURE, ExitCode::from)
+}
+
+fn describe_failure(kind: ErrorKind) -> &'static str {
+    match kind {
+        ErrorKind::Startup => "the script could not start",
+        ErrorKind::Resolution => "a module could not be resolved",
+        ErrorKind::Transform => "a module could not be transformed",
+        ErrorKind::Permission => "permission denied",
+        ErrorKind::Uncaught => "uncaught exception",
+    }
 }

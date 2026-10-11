@@ -38,7 +38,7 @@ Arguments for a task go after `--`, and Bento appends them, shell-quoted, to the
 
 ### Grant capabilities
 
-Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, or load native addons.
+Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, or load native addons. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
 
 | Flag | Grants | Items |
 | --- | --- | --- |
@@ -74,21 +74,40 @@ Loading a variable does not grant guest code access to it; `--allow-env` does. T
 
 ### Run a script
 
-> This section describes behavior that the next stage of the Bento CLI completes. Until then, `bento run <script-path>` selects the script, checks its grants, and loads its environment, then exits with status 1 and the message `script execution requires the runtime`. It never starts Node, Deno, Bun, or another runtime in its place.
+`bento run --allow-read=. server.mjs` executes the file in Bento's own runtime, inside the `bento` process. Nothing else needs to be installed to run it: Bento never starts Node, Deno, Bun, or pnpm, and runs the same with none of them on `PATH`.
 
-`bento run server.ts` executes the file directly. TypeScript, JSX, and TSX need no build step, no prebuilt JavaScript entrypoint, and no `--import remix/node-tsx`. Bento follows the execution settings in `tsconfig.json` and the files it extends, such as `jsx` and `jsxImportSource`, and reports an execution-affecting setting it cannot honor rather than choosing another JSX runtime. It does not type-check; run your type checker as a task.
+> Executing TypeScript, JSX, and TSX is completed in the next stage of the Bento CLI. Until then, `bento run` executes JavaScript modules, and a TypeScript, JSX, or TSX module fails to load with a transform error. The rest of this section describes the finished behavior.
 
-Modules resolve the way Node resolves them for the project: `package.json` `imports` and `exports`, ESM and CommonJS packages, and pnpm's `node_modules` layout. `tsconfig.json` `paths` never change resolution. Execution never installs or downloads anything; a missing package names the import that failed and points you to `bento install`.
+`bento run server.ts` executes TypeScript, JSX, and TSX directly. They need no build step, no prebuilt JavaScript entrypoint, and no `--import remix/node-tsx`. Bento follows the execution settings in `tsconfig.json` and the files it extends, such as `jsx` and `jsxImportSource`, and reports an execution-affecting setting it cannot honor rather than choosing another JSX runtime. It does not type-check; run your type checker as a task.
 
-Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. Startup, module resolution, permission, and uncaught errors are reported as such, with source locations in your TypeScript, and end the run unsuccessfully.
+Modules resolve the way Node resolves them for the project: `package.json` `imports` and `exports`, ESM and CommonJS packages, and pnpm's `node_modules` layout. Packages resolve from the script's project even when you run `bento` from another directory. `tsconfig.json` `paths` never change resolution. Execution never installs or downloads anything; a missing package names the import that failed and points you to `bento install`.
+
+The script sees what a Node script would see of its launch, limited by its grants:
+
+- `process.argv.slice(2)` holds the words after the script path, unchanged, as under Node.
+- `process.cwd()` is the directory you ran `bento` in, not the project root.
+- `process.env` holds the variables `--allow-env` grants, from your environment or the project's environment files. Other variables are invisible, not just unreadable.
+
+Packages with Node-API native addons, such as the compilers `remix/assets` uses, load into the `bento` process when `--allow-addons` covers their installed location. Without that grant, loading the addon is a permission denial and its native code never runs.
+
+Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. The error's message and source location follow, and `bento` exits with status 1.
 
 ### Watch for changes
 
-> This section describes behavior that the next stage of the Bento CLI completes. Until then, `bento run --watch <script-path>` fails the same way as `bento run <script-path>`.
+> This section describes behavior that the next stage of the Bento CLI completes. Until then, `bento run --watch <script-path>` exits with status 1 and a message that starts `cannot watch`, without running the script.
 
-`bento run --watch server.ts` runs the script and restarts it completely when its source changes; it does not replace modules in place. Bento watches the entrypoint, every local module it loads, including ones loaded after startup, the configuration that affects resolution and transformation, and the application's source directories, so browser modules compiled by `remix/assets` count too. Edits, replaced files, deletions, and a newly created file that fixes a missing import all trigger a restart.
+`bento run --watch server.ts` runs the script and restarts it completely when its source changes; it does not replace modules in place. Bento watches the project directory, so browser modules compiled by `remix/assets` count even though the server never imports them. It also watches every module the script loads from outside the project, including ones loaded after startup, and the configuration that changes how modules resolve and transform: `package.json`, `tsconfig.json`, and every file `tsconfig.json` extends, even from another directory or a package. Edits, replaced files, deletions, and a newly created file that fixes a missing import all trigger a restart.
 
-A burst of edits causes one restart. The new instance starts only after the old one has shut down and released its port. When loading fails, Bento reports the error and keeps watching, so fixing the file recovers; it never keeps serving the old code as though the reload had worked. Databases, SQLite side files, `node_modules`, generated output, and caches are not watched, so requests that write to them do not cause restarts.
+Inside the project, Bento ignores what running or building the application writes, so requests that write to them do not cause restarts:
+
+- dependencies and version control: `node_modules` and `.git`;
+- build output and caches: `dist`, `build`, `target`, `.cache`, and `coverage` directories, and `.DS_Store` files;
+- databases and SQLite side files: `*.db`, `*.sqlite`, `*.sqlite3`, `*-wal`, `*-shm`, and `*-journal`;
+- environment files: `.env` and `.env.*`, because a restart would not reload them.
+
+A module the script actually loads from one of those places, such as an entrypoint in `dist`, is still watched. Modules loaded from a `node_modules` directory are not.
+
+Edits within about a tenth of a second of each other cause one restart. The new instance starts only after the old one has shut down and released its port. When loading fails, Bento reports the error and keeps watching, so fixing the file recovers; it never keeps serving the old code as though the reload had worked.
 
 Watching does not reload `.env` files and does not rerun the tasks that started it. When the guest book's `dev` task starts `bento run --watch server.ts`, migrations run once, before the watcher starts. Stopping the command stops both the application and the watching.
 
@@ -102,19 +121,21 @@ Watching does not reload `.env` files and does not rerun the tasks that started 
 
 When you press Ctrl-C or send `bento` a termination signal while a task runs, Bento forwards the signal to the task command's whole process group, including servers started by nested `bento` commands. Processes still running after a 10-second grace period are killed. `bento` exits once nothing from the task is left running, so its port is free again. The same holds while Bento is stopping processes a finished command left running in the background: the signal reaches them too, and `bento` exits with `130` or `143` rather than the command's own status.
 
-When the runtime runs a script (next stage), the signal reaches the script's `process.on("SIGINT")` and `process.on("SIGTERM")` listeners. Without a listener, Bento shuts the script down.
+> Signal handling for scripts is completed in the next stage of the Bento CLI. Until then, Bento does not deliver signals to a script itself.
+
+When `bento` runs a script, the signal reaches the script's `process.on("SIGINT")` and `process.on("SIGTERM")` listeners. Without a listener, Bento shuts the script down.
 
 ### Exit codes
 
 | Code | When |
 | --- | --- |
 | `0` | The script or task finished successfully. |
-| The script's code | The script called `process.exit(code)` (next stage). |
+| The script's code | The script called `process.exit(code)`. |
 | The command's code | A task command failed; a command killed by signal `N` gives `128 + N`, as shells report it. |
 | pnpm's code | `pnpm install` failed. |
 | `130` | An interrupt (SIGINT, Ctrl-C) stopped the run. |
 | `143` | A termination signal (SIGTERM) stopped the run. |
-| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, or misplaced arguments. |
+| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, or threw an uncaught exception. |
 
 ## Worked example
 
@@ -126,7 +147,7 @@ bento install --frozen-lockfile
 bento run --allow-read=. --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
 ```
 
-`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Ctrl-C stops the watcher, the server, and its listener, and `bento` exits with `130`. Until the next stage of the CLI completes script execution, the nested launch stops after checking its grants and environment with `script execution requires the runtime`, and the `dev` task fails with status 1.
+`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Ctrl-C stops the watcher, the server, and its listener, and `bento` exits with `130`. Until the next stage of the CLI completes `--watch`, the nested launch stops after checking its grants and environment with `cannot watch`, and the `dev` task fails with status 1.
 
 If a task in the same project ran `bento run --allow-read=/ server.ts` under those grants, the nested launch would stop before running anything with an error like:
 

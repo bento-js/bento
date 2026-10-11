@@ -3,9 +3,7 @@ mod support;
 use serde_json::json;
 
 use bento_host::Grants;
-use support::{SYSTEM_PATH, TempProject, stderr};
-
-const RUNTIME_REQUIRED: &str = "script execution requires the runtime";
+use support::{SYSTEM_PATH, TempProject, stderr, stdout};
 
 #[test]
 fn an_unknown_target_is_an_error_and_never_a_shell_command() {
@@ -51,7 +49,7 @@ fn a_task_name_wins_over_a_file_of_the_same_name() {
 /// whether anything tried to run them.
 fn script_project() -> (TempProject, String) {
     let temp = TempProject::with_tasks(json!({}));
-    temp.write("server.ts", "console.log('served');\n");
+    temp.write("server.mjs", "console.log('served', JSON.stringify(process.argv.slice(2)));\n");
     for runtime in ["node", "deno", "bun"] {
         temp.write_executable(&format!("other-runtimes/{runtime}"), "#!/bin/sh\ntouch ran.log\n");
     }
@@ -60,62 +58,61 @@ fn script_project() -> (TempProject, String) {
 }
 
 #[test]
-fn a_script_reports_that_execution_requires_the_runtime_without_trying_another() {
+fn a_script_runs_in_bento_without_trying_another_runtime() {
     let (temp, search_path) = script_project();
 
-    for target in ["./server.ts", "server.ts"] {
+    for target in ["./server.mjs", "server.mjs"] {
         let output = temp
             .bento(&["run", "--allow-read=.", target, "--port", "3000"])
             .env("PATH", &search_path)
             .output()
             .unwrap();
 
-        assert_eq!(output.status.code(), Some(1), "{target}");
-        let message = stderr(&output);
-        assert!(message.contains(RUNTIME_REQUIRED), "{message}");
-        assert!(message.contains(&format!("`{target}`")), "{message}");
+        assert!(output.status.success(), "{target}: {}", stderr(&output));
+        assert_eq!(stdout(&output), "served [\"--port\",\"3000\"]\n", "{target}");
     }
     assert!(!temp.exists("ran.log"));
 }
 
 #[test]
-fn a_watched_script_also_reports_that_execution_requires_the_runtime() {
+fn watching_a_script_reports_that_restarting_is_unavailable_without_running_it() {
     let (temp, search_path) = script_project();
 
     let output =
-        temp.bento(&["run", "--watch", "server.ts"]).env("PATH", &search_path).output().unwrap();
+        temp.bento(&["run", "--watch", "server.mjs"]).env("PATH", &search_path).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains(RUNTIME_REQUIRED), "{}", stderr(&output));
+    assert!(stderr(&output).contains("cannot watch `server.mjs`"), "{}", stderr(&output));
+    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
     assert!(!temp.exists("ran.log"));
 }
 
 #[test]
-fn script_grants_are_validated_first() {
+fn script_grants_are_validated_before_the_script_runs() {
     let (temp, _) = script_project();
     let ceiling = Grants::none().to_ceiling_value();
 
     let output = temp
-        .bento(&["run", "--allow-net", "./server.ts"])
+        .bento(&["run", "--allow-net", "./server.mjs"])
         .env("BENTO_GRANT_CEILING", ceiling)
         .output()
         .unwrap();
 
     assert_eq!(output.status.code(), Some(1));
-    let message = stderr(&output);
-    assert!(message.contains("--allow-net") && !message.contains(RUNTIME_REQUIRED), "{message}");
+    assert!(stderr(&output).contains("--allow-net"), "{}", stderr(&output));
+    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
 }
 
 #[test]
-fn script_environment_files_are_loaded_first() {
+fn script_environment_files_are_loaded_before_the_script_runs() {
     let (temp, _) = script_project();
     temp.write(".env", "PORT\n");
 
-    let output = temp.bento(&["run", "./server.ts"]).output().unwrap();
+    let output = temp.bento(&["run", "./server.mjs"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
-    let message = stderr(&output);
-    assert!(message.contains(".env:1") && !message.contains(RUNTIME_REQUIRED), "{message}");
+    assert!(stderr(&output).contains(".env:1"), "{}", stderr(&output));
+    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
 }
 
 #[test]

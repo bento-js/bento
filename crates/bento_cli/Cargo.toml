@@ -15,11 +15,19 @@ path = "src/main.rs"
 [dependencies]
 bento_host.workspace = true
 bento_package.workspace = true
+bento_runtime.workspace = true
 bento_task.workspace = true
 bento_workspace.workspace = true
 clap = { version = "4.6.6", features = ["derive"] }
+notify = "8.2.0"
+oxc_resolver = "=11.24.3"
+parking_lot = "0.12.5"
 signal-hook = "0.3.18"
 thiserror.workspace = true
+
+# Exports the Node-API symbols from the `bento` executable, where native addons look them up.
+[build-dependencies]
+deno_napi.workspace = true
 
 [dev-dependencies]
 libc = "0.2"
