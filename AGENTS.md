@@ -101,7 +101,9 @@ The adversary receives fresh context and attempts to falsify the finished work. 
 
 ## Orchestrating agents
 
-In Oh My Pi, `.omp/tools/dynamic-workflows/` registers the `workflow` tool. Use it when several independent agent branches feed a later decision or synthesis, or when a result determines which agents run next. A deterministic JavaScript script can call `agent`, `parallel` with zero-argument functions, and `pipeline`; it can label phases and return a final result.
+In Oh My Pi, `.omp/extensions/dynamic-workflows.ts` registers the `workflow` tool, whose runtime lives in `.omp/tools/dynamic-workflows/`. Use it when several independent agent branches feed a later decision or synthesis, or when a result determines which agents run next. A deterministic JavaScript script can call `agent`, `parallel` with zero-argument functions, and `pipeline`; it can label phases and return a final result.
+
+A run starts in the background: the call returns a run id at once, the result arrives later as a `workflow-result` message, and the strategist keeps working meanwhile. Each agent's label becomes its agent id (`runtime-core` → `RuntimeCore`), so agents and the strategist can message each other with `write agent://<id>`. `workflow_runs` lists runs, shows one run's live agent rows, blocks on a run with `action: "wait"` instead of polling, and cancels a run; `background: false` waits for the result instead, and `concurrency` bounds live agents.
 
 For a single bounded task, work inline or use one agent. For a fixed batch of independent slices with no dependent stages, use `task`. The workflow tool earns its overhead when the dependency graph, fan-out/fan-in, or result-driven branching matters. Give each agent a bounded brief and separate ownership of edited files; a final synthesis agent should reconcile independent findings. A failed branch returns `null`, so inspect it rather than treating it as success. The workflow tool coordinates execution; it does not approve proposals, replace the strategist, or bypass tests and review.
 
@@ -416,7 +418,7 @@ The process lives harness-neutral in `.agents/`, which stays the source of truth
 | --- | --- |
 | This contract | Loads `AGENTS.md` from the repository root |
 | Skills | Discovers `.agents/skills/` |
-| `workflow` tool | `.omp/tools/dynamic-workflows/` |
+| `workflow` and `workflow_runs` tools | `.omp/extensions/dynamic-workflows.ts`, runtime in `.omp/tools/dynamic-workflows/` |
 | Format after every edit | `.omp/extensions/format-after-edit.ts` runs `vp fmt` on each file the `edit` or `write` tool changed and reports a reformat or a parse failure |
 | Gate before the turn ends | `.omp/extensions/check-before-stop.ts` runs `vp run check`; a failure sends the agent back once with the output |
 

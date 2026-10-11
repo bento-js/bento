@@ -1,11 +1,15 @@
 // Ported from pi-dynamic-workflows v1.0.1, commit 31b2aca0f1cb195aafbfc5e3ee2b8c83ad3f21a2.
 // Pure display model only: Pi extension widget/status APIs are intentionally omitted.
+import { inspect } from "node:util";
+
 import type { WorkflowMeta } from "./workflow.js";
 
 export type WorkflowAgentStatus = "queued" | "running" | "done" | "error" | "skipped";
 
 export interface WorkflowAgentSnapshot {
     id: number;
+    /** OMP agent registry id, once the run reserved one; `agent://<agentId>` reaches it. */
+    agentId?: string;
     label: string;
     phase?: string;
     prompt: string;
@@ -117,14 +121,7 @@ export function renderWorkflowLines(
         );
 
         let visibleAgents = tail(agents, maxAgents);
-        for (let agent of visibleAgents) {
-            let order = `#${agent.id}`;
-            let result =
-                showResultPreviews && agent.resultPreview ? ` — ${agent.resultPreview}` : "";
-            lines.push(
-                `    ${order} ${STATUS_ICON[agent.status]} ${shorten(agent.label, 48)}${result}`,
-            );
-        }
+        for (let agent of visibleAgents) lines.push(agentRow(agent, showResultPreviews));
         if (agents.length > visibleAgents.length)
             lines.push(`    … ${agents.length - visibleAgents.length} earlier agents`);
     }
@@ -133,11 +130,7 @@ export function renderWorkflowLines(
     if (unphased.length) {
         lines.push("  Unphased");
         for (let agent of tail(unphased, maxAgents)) {
-            let result =
-                showResultPreviews && agent.resultPreview ? ` — ${agent.resultPreview}` : "";
-            lines.push(
-                `    #${agent.id} ${STATUS_ICON[agent.status]} ${shorten(agent.label, 48)}${result}`,
-            );
+            lines.push(agentRow(agent, showResultPreviews));
         }
     }
 
@@ -166,6 +159,14 @@ const STATUS_ICON: Record<WorkflowAgentStatus, string> = {
     skipped: "-",
 };
 
+function agentRow(agent: WorkflowAgentSnapshot, showResultPreviews: boolean): string {
+    // The reserved registry id is what `write agent://<id>` addresses, so it leads
+    // the row; the label stays beside it as the human-readable name.
+    let address = agent.agentId ? `${agent.agentId} · ` : "";
+    let result = showResultPreviews && agent.resultPreview ? ` — ${agent.resultPreview}` : "";
+    return `    #${agent.id} ${STATUS_ICON[agent.status]} ${address}${shorten(agent.label, 48)}${result}`;
+}
+
 function tail<T>(items: T[], count: number): T[] {
     return count > 0 ? items.slice(-count) : [];
 }
@@ -179,4 +180,18 @@ export function preview(value: unknown, max = 80): string {
     let text = typeof value === "string" ? value : JSON.stringify(value);
     if (!text) return "";
     return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+// Render a structured-cloneable result as text. Ordinary values keep their exact
+// JSON pretty-print; when JSON.stringify throws (BigInt, cycles) or returns
+// undefined (top-level undefined/function/symbol), fall back to a deterministic
+// inspect so every cloneable result still produces one coherent rendering.
+export function formatWorkflowResult(value: unknown): string {
+    try {
+        let json = JSON.stringify(value, null, 2);
+        if (json !== undefined) return json;
+    } catch {
+        // structured-cloneable but not JSON-serializable; fall through to inspect.
+    }
+    return inspect(value, { depth: null });
 }
