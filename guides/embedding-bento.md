@@ -56,9 +56,15 @@ match outcome {
 
 `RuntimeConfig::new(root)` initializes `cwd` to the project root, denies grants, leaves environment, arguments, and registrations empty, and sets the shutdown deadline to five seconds. Configure authority explicitly before execution.
 
+The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration errors return from `start` as `ErrorKind::Transform`; warnings go to stderr once per instance. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
+
 ## Grants and environment
 
 Read, write, network, environment, and native-addon authority are independent. Ungranted operations fail without interactive prompts. Guest subprocesses and remote module imports remain unavailable. Granting access to a host module does not grant filesystem or database authority: the Rust handler remains responsible for its application's service policy, such as rejecting writes to a read-only store.
+
+For the guest book's Remix asset discovery, compose the canonical project root and `package_lookup_paths(&root)?` into `Scope::Only` for reads. The helper returns canonical `<ancestor>/node_modules` paths from the project root through `/`, including missing directories, as `std::io::Result<Vec<PathBuf>>`. Keep any host-owned database outside these roots when guest filesystem access must remain denied. Adding these lookup roots is an explicit host policy decision; runtime construction adds no permissions.
+
+Inspect every lookup path before granting it. An ancestor's `node_modules` symlink resolves to its target, and granting that path permits reads throughout the target tree, not just the packages the resolver requests. Ancestors writable by other users, such as a shared temporary directory, can therefore introduce unexpectedly broad roots. Use a project location with trusted ancestors or reject lookup roots that exceed your host's policy.
 
 Only granted names from `RuntimeConfig.env` are visible through `process.env` and `Deno.env`. Enumeration omits ungranted names. Guest writes and deletions affect the instance map, not `std::env` or another instance; writing an ungranted name fails. Loading project environment files is a host preparation step, not implicit permission to expose their values.
 
@@ -82,11 +88,17 @@ Return `HostError { name, message }` to reject the guest promise with a JavaScri
 
 `start` returns a `RunningRuntime`; `wait` blocks until execution finishes and the instance is disposed. Startup, resolution, transformation, permission, and uncaught guest errors remain distinguishable. Guest `process.exit(code)` yields `RunOutcome::Exited(code)` rather than exiting the Rust process, including when called inside an HTTP request handler.
 
+Use `error.location()` when presenting source diagnostics. It returns `Option<&SourceLocation>` with a local `PathBuf` and one-based `line` and `column`. Compiler failures refer to the original source diagnostic; exception and rejection frames are source-mapped back to TypeScript; unresolved imports refer to their importing file and import position when available. `message` remains readable without a diagnostic renderer, and locations never select an environment file.
+
+Permission diagnostics can identify installed package source and follow a wrapped error's cause to the denied operation. This preserves the native permission error and its asset-code location when a framework adds a compilation-error wrapper.
+
 Clone the `RuntimeHandle` to control the instance from another thread. `loaded_modules()` returns the local source paths attempted so far, including dynamic imports discovered after startup and files whose parsing or transformation failed, excluding built-ins, host modules, and files in `node_modules`. Watch hosts can poll this snapshot to expand their watch input and observe repairs to failed source files.
 
 `handle.signal(Signal::Terminate)` delivers virtual `SIGTERM`; `Signal::Interrupt` delivers virtual `SIGINT`. Guest `process.on` listeners receive these signals. If the signal has no guest listener, its default action requests shutdown. Embedded instances never register process-global OS signal handlers; the CLI owns OS signal handling and forwards the relevant signals to its guest.
 
 `handle.shutdown()` requests termination and returns a `ShutdownReport` within the configured deadline plus a small disposal margin. If a `SIGTERM` listener exists, the guest can stop accepting requests and drain work, for example with `server.close(() => process.exit(0))` and `server.closeAllConnections()`. Without a listener, Bento closes runtime resources and cancels pending guest work. `ShutdownOutcome::Graceful { exit_code }` means disposal completed cooperatively. `ShutdownOutcome::Failed(error)` preserves an uncaught failure during shutdown or a failure that occurred before the shutdown request; `wait()` also returns that failure as `RunOutcome::Failed`. At the deadline Bento interrupts synchronous JavaScript and disposes the instance, reporting `Interrupted`, never graceful success. `TimedOut` means disposal did not finish within the bounded interruption/disposal window, including when native code has not yielded; it is not proof that disposal will never finish.
+
+The graceful report's `exit_code` is `Option<i32>`: `Some(n)` preserves the guest's exit code, including `Some(0)` when a signal handler closes its server and lets the event loop drain, an assigned `process.exitCode`, or an explicit `process.exit(0)`. `None` means Bento's default shutdown ended execution without a guest exit code. A host must not interpret `None` as a successful guest exit. The CLI preserves guest codes and uses 130 for interrupt or 143 for termination when no guest exit code exists.
 
 Once shutdown completes gracefully or by interruption, listeners and connections are closed and another instance can bind the same port. Dropping a running instance also requests bounded shutdown. Host-owned services and persistent data are not discarded when the isolate is disposed. A runtime interrupted by the deadline is never restarted in the same isolate.
 

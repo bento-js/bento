@@ -1,8 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use deno_core::error::{CoreError, CoreErrorKind, JsError};
 use deno_error::JsErrorClass;
 use thiserror::Error;
+
+use crate::sources::Sources;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -18,6 +20,14 @@ pub enum ErrorKind {
 pub struct RuntimeError {
     pub kind: ErrorKind,
     pub message: String,
+    location: Option<SourceLocation>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceLocation {
+    pub path: PathBuf,
+    pub line: u32,
+    pub column: u32,
 }
 
 pub type StartError = RuntimeError;
@@ -31,18 +41,72 @@ pub enum RunOutcome {
 }
 
 impl RuntimeError {
-    pub(crate) fn startup(message: impl Into<String>) -> Self {
-        Self { kind: ErrorKind::Startup, message: message.into() }
+    pub fn location(&self) -> Option<&SourceLocation> {
+        self.location.as_ref()
     }
 
-    pub(crate) fn guest(error: CoreError, entry: &Path) -> Self {
+    pub(crate) fn transform(message: impl Into<String>, location: Option<SourceLocation>) -> Self {
+        Self { kind: ErrorKind::Transform, message: message.into(), location }
+    }
+
+    pub(crate) fn startup(message: impl Into<String>) -> Self {
+        Self { kind: ErrorKind::Startup, message: message.into(), location: None }
+    }
+
+    pub(crate) fn guest(error: CoreError, entry: &Path, sources: &Sources) -> Self {
         let message = match error.as_kind() {
             CoreErrorKind::Js(error) => deno_runtime::fmt_errors::format_js_error(error, None),
             _ => format!("{error:#}"),
         };
         let kind = classify(&error);
-        Self { kind, message: format!("{}: {message}", entry.display()) }
+        let location = match error.as_kind() {
+            CoreErrorKind::Js(error) => error
+                .message
+                .as_deref()
+                .and_then(|message| sources.error_location(message))
+                .or_else(|| stack_location(error, sources, kind == ErrorKind::Permission)),
+            _ => sources.error_location(&error.to_string()),
+        };
+        Self { kind, message: format!("{}: {message}", entry.display()), location }
     }
+}
+
+fn stack_location(error: &JsError, sources: &Sources, permission: bool) -> Option<SourceLocation> {
+    if permission {
+        let cause_location =
+            error.cause.as_deref().and_then(|cause| stack_location(cause, sources, true)).or_else(
+                || {
+                    error.aggregated.as_ref()?.iter().find_map(|cause| {
+                        has_permission_cause(cause)
+                            .then(|| stack_location(cause, sources, true))
+                            .flatten()
+                    })
+                },
+            );
+        if cause_location.is_some() {
+            return cause_location;
+        }
+    }
+    error.frames.iter().find_map(|frame| {
+        let name = frame.file_name.as_deref()?;
+        let path = deno_core::ModuleSpecifier::parse(name)
+            .ok()
+            .and_then(|url| url.to_file_path().ok())
+            .or_else(|| Path::new(name).is_absolute().then(|| PathBuf::from(name)))?;
+        let local = if permission {
+            sources.is_local_source(&path)
+        } else {
+            sources.is_project_source(&path)
+        };
+        if !local {
+            return None;
+        }
+        Some(SourceLocation {
+            path,
+            line: u32::try_from(frame.line_number?).ok()?.max(1),
+            column: u32::try_from(frame.column_number?).ok()?.max(1),
+        })
+    })
 }
 
 fn classify(error: &CoreError) -> ErrorKind {

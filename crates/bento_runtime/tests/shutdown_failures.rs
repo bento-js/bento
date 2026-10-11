@@ -101,7 +101,10 @@ fn an_explicit_nonzero_exit_during_shutdown_is_not_a_failure() {
     std::fs::write(&entry, "import { writeFileSync } from 'node:fs'; process.on('SIGTERM', () => process.exit(1)); writeFileSync('ready', 'yes'); setInterval(() => {}, 1000);").unwrap();
     let runtime = start(settings, &entry).unwrap();
     ready(&root.path().join("ready"));
-    assert_eq!(runtime.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: 1 });
+    assert_eq!(
+        runtime.handle().shutdown().outcome,
+        ShutdownOutcome::Graceful { exit_code: Some(1) }
+    );
     assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));
     assert!(matches!(
         run(config(root.path()), "ordinary-exit.mjs", "process.exit(1);"),

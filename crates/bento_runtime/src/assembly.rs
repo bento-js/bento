@@ -21,6 +21,7 @@ use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
 use crate::node::NodeServices;
 use crate::ops::{InstanceEnvironment, bento_instance};
+use crate::sources::Sources;
 use crate::workers::WorkerFactory;
 use crate::{RunOutcome, RuntimeConfig, RuntimeError};
 
@@ -28,10 +29,12 @@ pub(crate) async fn run(
     config: RuntimeConfig,
     entry: PathBuf,
     modules: HostModules,
+    sources: Arc<Sources>,
     control: Arc<Control>,
     mut commands: mpsc::UnboundedReceiver<Command>,
 ) -> RunOutcome {
-    let mut worker = match create_worker(config, &entry, modules, control.clone()) {
+    let mut worker = match create_worker(config, &entry, modules, sources.clone(), control.clone())
+    {
         Ok(worker) => worker,
         Err(error) => {
             let outcome = RunOutcome::Failed(RuntimeError::startup(format!(
@@ -43,7 +46,7 @@ pub(crate) async fn run(
         }
     };
     let execution = execute(&mut worker, &mut commands, &control).await;
-    let outcome = execution_outcome(&mut worker, execution, &entry);
+    let outcome = execution_outcome(&mut worker, execution, &entry, &sources);
     close_resources(&mut worker);
     drop(worker);
     control.close_workers();
@@ -70,6 +73,7 @@ async fn execute(
             result = &mut execution => return result,
             command = commands.recv() => {
                 if !matches!(command, Some(Command::Shutdown)) || !control.deliver(Signal::Terminate.name()) {
+                    control.default_shutdown();
                     return Ok(0);
                 }
             }
@@ -81,6 +85,7 @@ fn execution_outcome(
     worker: &mut LibMainWorker,
     execution: Result<i32, CoreError>,
     entry: &Path,
+    sources: &Sources,
 ) -> RunOutcome {
     let state = worker.js_runtime().op_state();
     if state.borrow().has::<WatcherExited>() {
@@ -89,7 +94,7 @@ fn execution_outcome(
     match execution {
         Ok(0) => RunOutcome::Completed,
         Ok(code) => RunOutcome::Exited(code),
-        Err(error) => RunOutcome::Failed(RuntimeError::guest(error, entry)),
+        Err(error) => RunOutcome::Failed(RuntimeError::guest(error, entry, sources)),
     }
 }
 
@@ -109,6 +114,7 @@ fn create_worker(
     mut config: RuntimeConfig,
     entry: &Path,
     modules: HostModules,
+    sources: Arc<Sources>,
     control: Arc<Control>,
 ) -> anyhow::Result<LibMainWorker> {
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
@@ -123,6 +129,7 @@ fn create_worker(
         cwd: config.cwd.clone(),
         modules: modules.clone(),
         control: control.clone(),
+        sources,
     };
     let worker_factory = Arc::new(WorkerFactory::new(
         loader.clone(),

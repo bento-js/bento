@@ -19,6 +19,7 @@ use oxc_resolver::{ResolveOptions, Resolver};
 use crate::host::HostModules;
 use crate::lifecycle::Control;
 use crate::node::NodeServices;
+use crate::sources::Sources;
 
 #[derive(Clone)]
 pub(crate) struct LoaderFactory {
@@ -26,6 +27,7 @@ pub(crate) struct LoaderFactory {
     pub cwd: PathBuf,
     pub modules: HostModules,
     pub control: Arc<Control>,
+    pub sources: Arc<Sources>,
 }
 
 impl LoaderFactory {
@@ -36,6 +38,7 @@ impl LoaderFactory {
             cwd: self.cwd.clone(),
             modules: self.modules.clone(),
             control: self.control.clone(),
+            sources: self.sources.clone(),
             resolver: Resolver::new(ResolveOptions {
                 condition_names: vec!["node".into(), "import".into(), "default".into()],
                 fully_specified: true,
@@ -73,6 +76,7 @@ struct Loader {
     cwd: PathBuf,
     modules: HostModules,
     control: Arc<Control>,
+    sources: Arc<Sources>,
 }
 
 impl ModuleLoader for Loader {
@@ -87,7 +91,7 @@ impl ModuleLoader for Loader {
         }
         if specifier.starts_with("host:") {
             if !self.modules.contains(specifier) {
-                return Err(resolution_error(
+                return Err(self.sources.resolution_error(
                     specifier,
                     referrer,
                     "host module is not registered in this instance",
@@ -105,7 +109,7 @@ impl ModuleLoader for Loader {
         }
         if let Ok(url) = ModuleSpecifier::parse(specifier) {
             if url.scheme() != "file" {
-                return Err(resolution_error(
+                return Err(self.sources.resolution_error(
                     specifier,
                     referrer,
                     "remote and unregistered module schemes are unavailable",
@@ -118,12 +122,15 @@ impl ModuleLoader for Loader {
             .and_then(|url| url.to_file_path().ok())
             .and_then(|path| path.parent().map(Path::to_owned))
             .unwrap_or_else(|| self.cwd.clone());
-        let resolved = self
-            .resolver
-            .resolve(&base, specifier)
-            .map_err(|error| resolution_error(specifier, referrer, &error.to_string()))?;
+        let resolved = self.resolver.resolve(&base, specifier).map_err(|error| {
+            self.sources.resolution_error(specifier, referrer, &error.to_string())
+        })?;
         ModuleSpecifier::from_file_path(resolved.path()).map_err(|_| {
-            resolution_error(specifier, referrer, "resolved path is not an absolute file")
+            self.sources.resolution_error(
+                specifier,
+                referrer,
+                "resolved path is not an absolute file",
+            )
         })
     }
 
@@ -154,9 +161,10 @@ impl ModuleLoader for Loader {
         let node = self.node.clone();
         let permissions = self.permissions.clone();
         let control = self.control.clone();
+        let sources = self.sources.clone();
         ModuleLoadResponse::Async(Box::pin(async move {
             let path = specifier.to_file_path().map_err(|_| {
-                resolution_error(
+                sources.resolution_error(
                     specifier.as_str(),
                     specifier.as_str(),
                     "only local source files can be loaded",
@@ -166,11 +174,11 @@ impl ModuleLoader for Loader {
                 .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
                 .map_err(JsErrorBox::from_err)?;
             control.record_module(&path);
-            refuse_transform(&path)?;
             let text = std::fs::read_to_string(checked).map_err(JsErrorBox::from_err)?;
             if path.extension().is_some_and(|extension| extension == "json") {
                 return Ok(source(&specifier, text, ModuleType::Json));
             }
+            let text = sources.transform(&path, text)?;
             let translated = node
                 .translator
                 .translate_cjs_to_esm(&specifier, Some(Cow::Owned(text)))
@@ -178,6 +186,10 @@ impl ModuleLoader for Loader {
                 .map_err(JsErrorBox::from_err)?;
             Ok(source(&specifier, translated.into_owned(), ModuleType::JavaScript))
         }))
+    }
+
+    fn get_source_map(&self, name: &str) -> Option<Cow<'_, [u8]>> {
+        self.sources.source_map(name).map(Cow::Owned)
     }
 
     fn get_host_defined_options<'s>(
@@ -208,9 +220,8 @@ impl NodeRequireLoader for Loader {
 
     fn load_text_file_lossy(&self, path: &Path) -> Result<FastString, JsErrorBox> {
         self.control.record_module(path);
-        refuse_transform(path)?;
         let text = std::fs::read_to_string(path).map_err(JsErrorBox::from_err)?;
-        Ok(text.into())
+        Ok(self.sources.transform(path, text)?.into())
     }
 
     fn is_maybe_cjs(&self, specifier: &ModuleSpecifier) -> Result<bool, PackageJsonLoadError> {
@@ -225,28 +236,10 @@ impl NodeRequireLoader for Loader {
     }
 }
 
-fn refuse_transform(path: &Path) -> Result<(), JsErrorBox> {
-    if path.extension().is_some_and(|extension| {
-        matches!(extension.to_str(), Some("ts" | "mts" | "cts" | "tsx" | "jsx"))
-    }) {
-        return Err(JsErrorBox::type_error(format!(
-            "BENTO_TRANSFORM {} requires bento_compiler integration for TypeScript/JSX transformation",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-
 fn source(
     specifier: &ModuleSpecifier,
     code: impl Into<FastString>,
     kind: ModuleType,
 ) -> ModuleSource {
     ModuleSource::new(kind, ModuleSourceCode::String(code.into()), specifier, None)
-}
-
-fn resolution_error(specifier: &str, referrer: &str, detail: &str) -> JsErrorBox {
-    JsErrorBox::type_error(format!(
-        "BENTO_RESOLUTION Cannot resolve {specifier:?} from {referrer}: {detail}. For missing installed packages, run bento install."
-    ))
 }

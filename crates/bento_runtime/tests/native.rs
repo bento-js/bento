@@ -11,7 +11,8 @@ use support::{completed, config, fixture, run};
 
 #[test]
 fn pnpm_exports_imports_commonjs_and_real_native_assets() {
-    let root = fixture();
+    let directory = fixture();
+    let root = directory.path();
     std::fs::write(root.join("app/runtime-probe.mjs"), "export const probe = 'imports';").unwrap();
     let mut settings = config(root);
     settings.grants.read = Scope::All;
@@ -85,7 +86,8 @@ for (const production of [false, true]) {
 
 #[test]
 fn native_addons_and_large_heaps_shutdown_and_recreate_on_the_same_port() {
-    let root = fixture();
+    let directory = fixture();
+    let root = directory.path();
     let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
     for cycle in 0..3 {
         let mut settings = config(root);
@@ -137,7 +139,7 @@ server.listen({port}, '127.0.0.1', () => writeFileSync('{marker}', 'ready'));
         let expected = if cycle == 1 {
             ShutdownOutcome::Interrupted
         } else {
-            ShutdownOutcome::Graceful { exit_code: 0 }
+            ShutdownOutcome::Graceful { exit_code: Some(0) }
         };
         assert_eq!(runtime.handle().shutdown().outcome, expected);
         assert!(started.elapsed() < Duration::from_secs(1));

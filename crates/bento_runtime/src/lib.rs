@@ -5,12 +5,15 @@ mod cjs;
 mod error;
 mod host;
 mod host_ops;
+mod import_position;
 mod lifecycle;
 mod loader;
 mod node;
 mod ops;
+mod package_lookup;
 mod permissions;
 mod signals;
+mod sources;
 mod workers;
 
 use std::collections::BTreeMap;
@@ -21,9 +24,10 @@ use std::time::Duration;
 
 use bento_host::Grants;
 
-pub use error::{ErrorKind, RunOutcome, RuntimeError, StartError};
+pub use error::{ErrorKind, RunOutcome, RuntimeError, SourceLocation, StartError};
 pub use host::{HostError, HostModule};
 pub use lifecycle::{RuntimeHandle, ShutdownOutcome, ShutdownReport, Signal};
+pub use package_lookup::package_lookup_paths;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeConfig {
@@ -67,12 +71,13 @@ pub fn start(mut config: RuntimeConfig, entry: &Path) -> Result<RunningRuntime, 
     let entry = std::fs::canonicalize(&entry)
         .map_err(|error| RuntimeError::startup(format!("{}: {error}", entry.display())))?;
     let modules = host::HostModules::new(std::mem::take(&mut config.host_modules))?;
+    let sources = Arc::new(sources::Sources::load(&config.project_root)?);
     let (control, commands) = lifecycle::Control::new(config.shutdown_deadline)?;
     let handle = RuntimeHandle { control: control.clone() };
     LazyLock::force(&V8_PLATFORM);
     let thread = std::thread::Builder::new()
         .name("bento-runtime".into())
-        .spawn(move || run_thread(config, entry, modules, control, commands))
+        .spawn(move || run_thread(config, entry, modules, sources, control, commands))
         .map_err(|error| {
             let error = RuntimeError::startup(error.to_string());
             handle.control.complete(&RunOutcome::Failed(error.clone()));
@@ -85,6 +90,7 @@ fn run_thread(
     config: RuntimeConfig,
     entry: PathBuf,
     modules: host::HostModules,
+    sources: Arc<sources::Sources>,
     control: Arc<lifecycle::Control>,
     commands: tokio::sync::mpsc::UnboundedReceiver<lifecycle::Command>,
 ) -> RunOutcome {
@@ -97,7 +103,7 @@ fn run_thread(
         }
     };
     let local = tokio::task::LocalSet::new();
-    local.block_on(&runtime, assembly::run(config, entry, modules, control, commands))
+    local.block_on(&runtime, assembly::run(config, entry, modules, sources, control, commands))
 }
 
 impl RunningRuntime {
