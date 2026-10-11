@@ -46,6 +46,13 @@ await import(require.resolve('oxc-transform'));
     };
     assert_eq!(error.kind, ErrorKind::Permission, "{error:?}");
     assert!(loaded_native_addons().is_empty(), "addon initialized despite denied authority");
+    let location = error.location().expect("addon binding loader location");
+    let source = std::fs::read_to_string(&location.path).unwrap();
+    let line = source.lines().nth(location.line as usize - 1).unwrap();
+    assert!(
+        line.contains(".node") || line.contains("@oxc-transform/binding"),
+        "{location:?}: {line}"
+    );
 }
 
 #[test]

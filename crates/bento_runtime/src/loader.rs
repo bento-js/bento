@@ -94,7 +94,7 @@ impl ModuleLoader for Loader {
                 return Err(self.sources.resolution_error(
                     specifier,
                     referrer,
-                    "host module is not registered in this instance",
+                    "the host did not register this module in this instance",
                 ));
             }
             return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
@@ -173,7 +173,9 @@ impl ModuleLoader for Loader {
             let checked = permissions
                 .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
                 .map_err(JsErrorBox::from_err)?;
-            control.record_module(&path);
+            if sources.is_watch_source(&path) {
+                control.record_module(&path);
+            }
             let text = std::fs::read_to_string(checked).map_err(JsErrorBox::from_err)?;
             if path.extension().is_some_and(|extension| extension == "json") {
                 return Ok(source(&specifier, text, ModuleType::Json));
@@ -219,7 +221,9 @@ impl NodeRequireLoader for Loader {
     }
 
     fn load_text_file_lossy(&self, path: &Path) -> Result<FastString, JsErrorBox> {
-        self.control.record_module(path);
+        if self.sources.is_watch_source(path) {
+            self.control.record_module(path);
+        }
         let text = std::fs::read_to_string(path).map_err(JsErrorBox::from_err)?;
         Ok(self.sources.transform(path, text)?.into())
     }

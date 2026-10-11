@@ -78,6 +78,11 @@ pub fn isolated_fixture_test(name: &str) -> bool {
         String::from_utf8_lossy(&child.stdout),
         String::from_utf8_lossy(&child.stderr)
     );
+    let stdout = String::from_utf8_lossy(&child.stdout);
+    assert!(
+        stdout.lines().any(|line| line.starts_with("test result: ok. 1 passed;")),
+        "fixture child did not run exactly one test:\n{stdout}"
+    );
     eprint!("{}", String::from_utf8_lossy(&child.stderr));
     true
 }
