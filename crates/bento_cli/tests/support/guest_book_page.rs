@@ -54,7 +54,8 @@ pub fn assert_guest_book_page(page: &Response, entries: &[&str]) {
 }
 
 /// Signs the guest book on `port` as a browser without JavaScript would: a valid entry is
-/// saved and redirects home, blank fields and a 281-character message are refused.
+/// saved, redirects home, and leaves a blank form; blank fields and a 281-character message are
+/// refused.
 pub fn assert_signing(port: u16) {
     let valid =
         http::post_form(port, "name=Bento+visitor&message=Signed+through+bento+run").unwrap();
@@ -62,6 +63,7 @@ pub fn assert_signing(port: u16) {
     assert_eq!(valid.header("location"), "/");
     let page = http::get(port, "/").unwrap();
     assert_guest_book_page(&page, &["Bento visitor", "Signed through bento run"]);
+    assert_form_cleared(&page.body);
 
     let blank = http::post_form(port, "name=+++&message=++").unwrap();
     assert_eq!(blank.status, 400, "{}", blank.body);
@@ -72,6 +74,27 @@ pub fn assert_signing(port: u16) {
     let long = http::post_form(port, &format!("name=Long&message={}", "x".repeat(281))).unwrap();
     assert_eq!(long.status, 400, "{}", long.body);
     assert!(long.body.contains("Keep your message to 280 characters or fewer."), "{}", long.body);
+}
+
+/// Asserts that the sign form in `document` is blank: neither field echoes a submitted value.
+fn assert_form_cleared(document: &str) {
+    let (name, _) = named_element(document, "input", "name");
+    let value = name.split_once(" value=\"").map(|(_, value)| value.split('"').next().unwrap());
+    assert!(value.unwrap_or_default().is_empty(), "the name field kept a value: <input{name}>");
+    let (_, after_message) = named_element(document, "textarea", "message");
+    let message = after_message.split_once("</textarea>").expect("unclosed textarea").0;
+    assert!(message.is_empty(), "the message field kept {message:?}");
+}
+
+/// The attributes of the first `<tag>` in `document` named `name`, and what follows its `>`.
+fn named_element<'a>(document: &'a str, tag: &str, name: &str) -> (&'a str, &'a str) {
+    let name_attribute = format!(" name=\"{name}\"");
+    document
+        .split(&format!("<{tag}"))
+        .skip(1)
+        .filter_map(|tail| tail.split_once('>'))
+        .find(|(attributes, _)| attributes.contains(&name_attribute))
+        .unwrap_or_else(|| panic!("no <{tag}> named {name}"))
 }
 
 /// Asserts that every asset `document` links is served, minified under a fingerprinted URL

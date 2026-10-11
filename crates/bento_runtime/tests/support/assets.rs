@@ -77,6 +77,26 @@ pub fn check(
     }
 }
 
+/// The fixture's `remix.json` allows `app/routes.ts` and public files, denies test files, and
+/// never allows other server modules, so neither of the latter is served in either mode.
+/// Production serves files only under fingerprinted URLs, so the allowed module is requested by
+/// its source path in development.
+pub fn check_rules(port: u16, development: bool) {
+    for (url, source) in [
+        ("/assets/app/actions/guest-book/controller.test.ts", "guest-book.test"),
+        ("/assets/app/router.ts", "createRouter"),
+    ] {
+        let response = http::request(port, "GET", url, "").unwrap();
+        assert_ne!(response.status, 200, "{url} was served: {}", response.body);
+        assert!(!response.body.contains(source), "{url} leaked its source: {}", response.body);
+    }
+    if development {
+        let routes = http::request(port, "GET", "/assets/app/routes.ts", "").unwrap();
+        assert_eq!(routes.status, 200, "{}", routes.body);
+        assert!(routes.body.contains("guestBook"), "{}", routes.body);
+    }
+}
+
 fn check_source_map(port: u16, url: &str, source: &str) {
     let map = source
         .rsplit_once("sourceMappingURL=")

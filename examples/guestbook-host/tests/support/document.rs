@@ -32,6 +32,27 @@ pub fn assert_page(page: &Response, entries: &[(&str, &str)]) {
     }
 }
 
+/// The page's sign form is blank: neither field echoes a submitted value.
+pub fn assert_form_cleared(page: &Response) {
+    let (name, _) = named_element(&page.body, "input", "name");
+    let value = name.split_once(" value=\"").map(|(_, value)| value.split('"').next().unwrap());
+    assert!(value.unwrap_or_default().is_empty(), "the name field kept a value: <input{name}>");
+    let (_, after_message) = named_element(&page.body, "textarea", "message");
+    let message = after_message.split_once("</textarea>").expect("unclosed textarea").0;
+    assert!(message.is_empty(), "the message field kept {message:?}");
+}
+
+/// The attributes of the first `<tag>` in `document` named `name`, and what follows its `>`.
+fn named_element<'a>(document: &'a str, tag: &str, name: &str) -> (&'a str, &'a str) {
+    let name_attribute = format!(" name=\"{name}\"");
+    document
+        .split(&format!("<{tag}"))
+        .skip(1)
+        .filter_map(|tail| tail.split_once('>'))
+        .find(|(attributes, _)| attributes.contains(&name_attribute))
+        .unwrap_or_else(|| panic!("no <{tag}> named {name}"))
+}
+
 /// Every `/assets/` URL the document references through `href`, `src`, or its import map.
 pub fn asset_urls(document: &str) -> BTreeSet<String> {
     let mut urls = BTreeSet::new();
