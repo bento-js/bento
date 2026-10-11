@@ -28,20 +28,25 @@ deno_resolver = { workspace = true, features = ["sync"] }
 deno_runtime.workspace = true
 deno_semver.workspace = true
 deno_snapshots.workspace = true
+deno_signals.workspace = true
+deno_tls.workspace = true
 node_resolver = { workspace = true, features = ["sync"] }
 sys_traits = { workspace = true, features = ["getrandom", "filetime", "libc", "real", "strip_unc"] }
 
 anyhow.workspace = true
+async-trait = "0.1"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+parking_lot = "0.12"
 
 oxc = { version = "=0.153.0", features = ["ast_visit"] }
 oxc_resolver = "=11.24.3"
 
 [dev-dependencies]
 tempfile.workspace = true
+libc = "0.2"
 
 # deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features
 # apart from normal dependencies and nothing upstream enables deno_core's engine feature.
