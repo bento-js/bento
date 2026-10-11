@@ -1,5 +1,10 @@
 mod support;
 
+use std::collections::BTreeSet;
+use std::fs;
+
+use bento_host::Scope;
+use bento_runtime::{ErrorKind, RunOutcome};
 use support::{completed, config, run};
 
 #[test]
@@ -67,4 +72,107 @@ fn malformed_tsconfig_fails_start_as_a_transform_error() {
     };
     assert_eq!(error.kind, bento_runtime::ErrorKind::Transform, "{error:?}");
     assert!(error.message.contains("tsconfig.json"), "{error}");
+}
+
+#[test]
+fn external_tsx_uses_project_settings_when_included() {
+    completed(external_tsx_outcome(
+        r#"{"compilerOptions":{"jsx":"react","jsxFactory":"h"},"include":["*.ts","../shared/view.tsx"]}"#,
+    ));
+}
+
+#[test]
+fn external_tsx_uses_project_settings_without_include() {
+    completed(external_tsx_outcome(r#"{"compilerOptions":{"jsx":"react","jsxFactory":"h"}}"#));
+}
+
+fn external_tsx_outcome(tsconfig: &str) -> RunOutcome {
+    let workspace = support::project();
+    let root = workspace.path().join("app");
+    let sibling = workspace.path().join("shared");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+    fs::write(workspace.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
+    fs::write(root.join("tsconfig.json"), tsconfig).unwrap();
+    fs::write(
+        sibling.join("view.tsx"),
+        r#"
+function h(tag: string, props: unknown, ...children: unknown[]) { return { tag, children }; }
+export const view = <section>external</section>;
+"#,
+    )
+    .unwrap();
+    let mut launch = config(&root);
+    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    run(
+        launch,
+        "entry.ts",
+        r#"
+import assert from 'node:assert/strict';
+import { view } from '../shared/view.tsx';
+assert.deepEqual(view, { tag: 'section', children: ['external'] });
+"#,
+    )
+}
+
+#[test]
+fn external_node_modules_typescript_uses_default_class_field_settings() {
+    let workspace = support::project();
+    let root = workspace.path().join("app");
+    let dependency = workspace.path().join("node_modules/fields");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&dependency).unwrap();
+    fs::write(workspace.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
+    fs::write(
+        root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"useDefineForClassFields":false}}"#,
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("entry.ts"),
+        "class Base { set field(value: string) { throw new Error('dependency inherited project settings'); } } class Derived extends Base { field = 'own'; } export default new Derived().field;",
+    )
+    .unwrap();
+    let mut launch = config(&root);
+    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    completed(run(
+        launch,
+        "entry.ts",
+        r#"
+import assert from 'node:assert/strict';
+import field from '../node_modules/fields/entry.ts';
+assert.equal(field, 'own');
+"#,
+    ));
+}
+
+#[test]
+fn node_modules_tsx_does_not_inherit_the_project_jsx_settings() {
+    let workspace = support::project();
+    let root = workspace.path().join("app");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(workspace.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
+    fs::write(
+        root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"jsx":"react","jsxFactory":"h"}}"#,
+    )
+    .unwrap();
+    for directory in [root.join("node_modules/view"), workspace.path().join("node_modules/view")] {
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join("entry.tsx"),
+            "function h(tag, props, child) { return child; } export default <div>dependency</div>;",
+        )
+        .unwrap();
+    }
+    let mut launch = config(&root);
+    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    for import in ["./node_modules/view/entry.tsx", "../node_modules/view/entry.tsx"] {
+        let source = format!("import view from '{import}'; void view;");
+        let RunOutcome::Failed(error) = run(launch.clone(), "entry.ts", &source) else {
+            panic!("dependency JSX inherited project settings: {import}");
+        };
+        assert_eq!(error.kind, ErrorKind::Transform, "{error:?}");
+        assert!(error.message.contains("compilerOptions \"jsx\" is not set"), "{error:?}");
+    }
 }
