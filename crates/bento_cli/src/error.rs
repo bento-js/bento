@@ -7,9 +7,10 @@ use thiserror::Error;
 
 use crate::diagnostic::{self, Diagnostic};
 use crate::grant_flags::GrantError;
+use crate::runtime_report;
 use bento_package::InstallError;
-use bento_runtime::{ErrorKind, RuntimeError};
-use bento_task::{PlanError, Signal, TaskError};
+use bento_runtime::RuntimeError;
+use bento_task::{PlanError, TaskError};
 use bento_workspace::{EnvironmentError, ManifestError, ProjectError, TargetError};
 
 #[derive(Debug, Error)]
@@ -44,7 +45,7 @@ pub enum CliError {
         "--watch restarts a script when its source changes, so it cannot run task `{0}`; give the task a command that runs `bento run --watch <script>`"
     )]
     WatchedTask(String),
-    #[error("{}: {}", describe_failure(.0.kind), .0)]
+    #[error("{}: {}", runtime_report::describe(.0.kind), runtime_report::plain_text(&.0.message))]
     Script(RuntimeError),
     #[error("cannot watch {} for changes: {source}", .path.display())]
     Watch { path: PathBuf, source: notify::Error },
@@ -67,20 +68,15 @@ impl CliError {
         match self {
             CliError::Target(TargetError::Project(ProjectError::Manifest(error)))
             | CliError::Project(ProjectError::Manifest(error)) => manifest_diagnostic(error),
+            CliError::Script(error) => runtime_report::diagnostic(error),
             _ => None,
         }
     }
 
-    /// `130` or `143` for a run stopped by SIGINT or SIGTERM, the failing child's status
-    /// when a task command or pnpm failed, and `1` for everything else.
+    /// The failing child's status when a task command or pnpm failed, and `1` for everything
+    /// else.
     pub fn exit_code(&self) -> ExitCode {
         match self {
-            CliError::Task(TaskError::Cancelled { signal: Signal::Interrupt, .. }) => {
-                ExitCode::from(130)
-            }
-            CliError::Task(TaskError::Cancelled { signal: Signal::Terminate, .. }) => {
-                ExitCode::from(143)
-            }
             CliError::Task(TaskError::Failed { status, .. }) => shell_status(status),
             CliError::Install(InstallError::Failed(status)) => shell_status(status),
             _ => ExitCode::FAILURE,
@@ -89,7 +85,7 @@ impl CliError {
 }
 
 /// A child's status as a shell reports it: its exit code, or 128 plus the signal that ended it.
-fn shell_status(status: &ExitStatus) -> ExitCode {
+pub fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
     code.and_then(|code| u8::try_from(code).ok()).map_or(ExitCode::FAILURE, ExitCode::from)
 }
@@ -107,15 +103,6 @@ fn manifest_diagnostic(error: &ManifestError) -> Option<Diagnostic<'_>> {
         line: source.line(),
         column: source.column(),
         label: described.strip_suffix(&position).unwrap_or(&described).to_owned(),
+        trace: String::new(),
     })
-}
-
-fn describe_failure(kind: ErrorKind) -> &'static str {
-    match kind {
-        ErrorKind::Startup => "the script could not start",
-        ErrorKind::Resolution => "a module could not be resolved",
-        ErrorKind::Transform => "a module could not be transformed",
-        ErrorKind::Permission => "permission denied",
-        ErrorKind::Uncaught => "uncaught exception",
-    }
 }

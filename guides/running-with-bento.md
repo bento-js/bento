@@ -76,9 +76,7 @@ Loading a variable does not grant guest code access to it; `--allow-env` does. T
 
 `bento run --allow-read=. server.mjs` executes the file in Bento's own runtime, inside the `bento` process. Nothing else needs to be installed to run it: Bento never starts Node, Deno, Bun, or pnpm, and runs the same with none of them on `PATH`.
 
-> Executing TypeScript, JSX, and TSX is completed in the next stage of the Bento CLI. Until then, `bento run` executes JavaScript modules, and a TypeScript, JSX, or TSX module fails to load with a transform error. The rest of this section describes the finished behavior.
-
-`bento run server.ts` executes TypeScript, JSX, and TSX directly. They need no build step, no prebuilt JavaScript entrypoint, and no `--import remix/node-tsx`. Bento follows the execution settings in `tsconfig.json` and the files it extends, such as `jsx` and `jsxImportSource`, and reports an execution-affecting setting it cannot honor rather than choosing another JSX runtime. It does not type-check; run your type checker as a task.
+`bento run server.ts` executes TypeScript, JSX, and TSX directly. They need no build step, no prebuilt JavaScript entrypoint, and no `--import remix/node-tsx`, and Bento writes no JavaScript next to your sources: it transforms each module in memory as it loads. Bento follows the execution settings in `tsconfig.json` and the files it extends, such as `jsx` and `jsxImportSource`, and reports an execution-affecting setting it cannot honor rather than choosing another JSX runtime. It does not type-check; run your type checker as a task.
 
 Modules resolve the way Node resolves them for the project: `package.json` `imports` and `exports`, ESM and CommonJS packages, and pnpm's `node_modules` layout. Packages resolve from the script's project even when you run `bento` from another directory. `tsconfig.json` `paths` never change resolution. Execution never installs or downloads anything; a missing package names the import that failed and points you to `bento install`.
 
@@ -90,7 +88,9 @@ The script sees what a Node script would see of its launch, limited by its grant
 
 Packages with Node-API native addons, such as the compilers `remix/assets` uses, load into the `bento` process when `--allow-addons` covers their installed location. Without that grant, loading the addon is a permission denial and its native code never runs.
 
-Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. The error's message and source location follow, and `bento` exits with status 1.
+An addon runs as native code in the `bento` process, so it sees the environment `bento` itself was started with, not the variables granted to the script. The Oxc resolver that `remix/assets` loads honors `NODE_PATH` there: launched with `NODE_PATH` pointing at another project's packages, it can resolve packages outside your project, which a scoped read grant then denies. Start `bento` without `NODE_PATH` set.
+
+Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. It shows the error's message and where it happened, as [Read error reports](#read-error-reports) describes, and `bento` exits with status 1.
 
 ### Read error reports
 
@@ -106,7 +106,22 @@ Error: /Users/you/guest-book/package.json is not valid JSON
 ───╯
 ```
 
-An error without such a place, or one whose file cannot be read, is a single line that starts with `error:`. Bento colors its reports only when standard error is a terminal, so redirected output and logs stay plain text.
+A script's failure is shown the same way when Bento knows where it happened: a syntax error, an uncaught exception, an import that cannot be resolved, or a denied operation. The place is in the source file as you wrote it, so a TypeScript or TSX error shows your TypeScript line, not the JavaScript Bento transformed it into. The marker says what happened there, such as `cannot be transformed here`, `thrown here`, `imported here`, or `denied here`. The stack trace and any errors that caused this one follow the quoted source:
+
+```text
+Error: uncaught exception: /Users/you/app/throw.ts: Uncaught (in promise) Error: no 42
+   ╭─[ /Users/you/app/throw.ts:6:24 ]
+   │
+ 6 │ const failure: Error = new Error(`no ${answer}`);
+   │                        ┬
+   │                        ╰── thrown here
+───╯
+    at file:///Users/you/app/throw.ts:6:24
+```
+
+`bento run --watch` reports a failed load or reload in the same form before it waits for the next change.
+
+An error without such a place, or one whose file cannot be read, is a single line that starts with `error:`. Bento colors its reports only when standard error is a terminal, so redirected output and logs stay plain text, even where the runtime would style parts of an error message for your terminal.
 
 Environment files are never shown, because their values are often secrets. An error in `.env` names the file and the line, as in `.env:2: quoted value is never closed`, and nothing of its contents.
 
@@ -137,12 +152,12 @@ Stopping the command stops both the application and the watching. Ctrl-C or a te
 
 ### Stop a run
 
-When you press Ctrl-C or send `bento` a termination signal while a task runs, Bento forwards the signal to the task command's whole process group, including servers started by nested `bento` commands. Processes still running after a 10-second grace period are killed. `bento` exits once nothing from the task is left running, so its port is free again. The same holds while Bento is stopping processes a finished command left running in the background: the signal reaches them too, and `bento` exits with `130` or `143` rather than the command's own status.
+When you press Ctrl-C or send `bento` a termination signal while a task runs, Bento forwards the signal to the task command's whole process group, including servers started by nested `bento` commands. Processes still running after a 10-second grace period are killed. `bento` exits once nothing from the task is left running, so its port is free again. It prints that the task was cancelled and exits with the status the command ended with, as a shell reports it: `0` when the command handles the signal and exits cleanly, as a nested `bento` does when its script's listener closes the script, and `130` or `143` when the signal ends it. When Bento had to kill anything in the group, it exits with `130` or `143`. The same holds while Bento is stopping processes a finished command left running in the background: the signal reaches them too, and `bento` exits with `130` or `143` rather than the command's own status.
 
 When `bento` runs a script, the first Ctrl-C or termination signal goes to the script, which then has five seconds to end:
 
 - If the script listens for that signal with `process.on("SIGINT")` or `process.on("SIGTERM")`, its listeners run and decide what happens, as under Node. When the script then ends, by closing its servers and calling `process.exit(code)` or by running out of work, `bento` exits with the script's code.
-- Without a listener, Bento shuts the script down: it closes the script's servers and their connections and cancels its pending work. A `process.on("SIGTERM")` listener is told first, so a script that listens only for termination still cleans up after Ctrl-C. `bento` exits with `130` for an interrupt or `143` for a termination signal, unless the script calls `process.exit` with a nonzero code while it shuts down; `bento` then exits with that code.
+- Without a listener, Bento shuts the script down: it closes the script's servers and their connections and cancels its pending work. A `process.on("SIGTERM")` listener is told first, so a script that listens only for termination still cleans up after Ctrl-C. When Bento ends the script, `bento` exits with `130` for an interrupt or `143` for a termination signal. When the script ends itself first, for example by calling `process.exit(code)` from its termination listener, `bento` exits with the script's code, `0` included.
 
 A script still running five seconds after the signal is stopped then, whether its listeners have not finished or its JavaScript never yields, as in an endless loop. `bento` exits with `130` or `143`, and the script's port is freed with it. A listener that throws is reported like any uncaught exception, and `bento` exits with `1`.
 
@@ -153,35 +168,39 @@ A second Ctrl-C or termination signal does not wait: `bento` exits immediately w
 | Code | When |
 | --- | --- |
 | `0` | The script or task finished successfully. |
-| The script's code | The script called `process.exit(code)`, including from a signal listener before the deadline. While Bento shuts a script down, a code of `0` gives `130` or `143` instead. |
-| The command's code | A task command failed; a command killed by signal `N` gives `128 + N`, as shells report it. |
+| The script's code | The script called `process.exit(code)` before the deadline, including from a signal listener or while Bento shut it down. |
+| The command's code | A task command failed, or ended after Bento forwarded a signal to it; a command killed by signal `N` gives `128 + N`, as shells report it. |
 | pnpm's code | `pnpm install` failed. |
-| `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
+| `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
 | `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
 | `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, or threw an uncaught exception. |
 
 ## Worked example
 
-The guest book needs to read its project, write its database directory, listen on the network, see three variables, and load the native compilers installed in `node_modules`:
+The guest book needs to read files, write its database directory, listen on the network, see three variables, and load the native compilers installed in `node_modules`:
 
 ```sh
 cd fixtures/remix-guest-book
 bento install --frozen-lockfile
-bento run --allow-read=. --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
+bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
 ```
 
-`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Editing a file under `app/` restarts the server without rerunning the migrations. Ctrl-C stops the watcher, the server, and its listener, and `bento` exits with `130`.
+The read grant is not limited to the project because `remix/assets` looks for optional packages in the `node_modules` directory of every ancestor of the project, up to `/`, as Node's package lookup does. With only `--allow-read=.`, that lookup is a permission denial and the server does not start.
 
-If a task in the same project ran `bento run --allow-read=/ server.ts` under those grants, the nested launch would stop before running anything with an error like:
+`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Editing a file under `app/`, whether a module the server imports or a browser module under a `public/` directory, restarts the server without rerunning the migrations; saving entries, which writes the database, does not. Ctrl-C reaches the guest book's own `SIGINT` listener through the nested `bento`, which closes its server and database and exits with `0`; both `bento` processes then exit with `0`. Running `bento run ... server.ts` with the same grants instead, Ctrl-C reaches the same listener, and `bento` exits with `0` too.
+
+`dev` itself selects no mode, so it and its `db:migrate` task read only `.env`; only the nested watch launch also reads `.env.development`. When `.env.development` alone sets `DATABASE_URL`, migrate that database first with `NODE_ENV=development bento run db:migrate`, as the guest book's README shows.
+
+If a task in the same project ran `bento run --allow-write=. server.ts` under those grants, the nested launch would stop before running anything with an error like:
 
 ```text
-error: --allow-read=/ asks for more than the inherited read grant: /Users/you/guest-book
+error: --allow-write=/Users/you/guest-book asks for more than the inherited write grant: /Users/you/guest-book/db
 ```
 
 ## Limits and edge cases
 
 - Bento options after the target are not Bento options. They belong to the script, or make a task invocation fail because they come without `--`.
-- A cancelled run exits with `130` or `143` even when the task's processes handle the signal and exit cleanly.
+- A cancelled task stops at the command the signal reached, even when that command handles the signal and exits with `0`; its later commands and the tasks that depend on it do not run.
 - Bento needs every environment variable it starts with to be valid UTF-8, and reports the first one that is not.
 - Grants restrict guest code, not task commands. A task is a trusted operation on your behalf.
 - A `BENTO_GRANT_CEILING` that Bento cannot read stops the launch instead of granting anything. Bento sets it for task commands; you do not set it yourself.

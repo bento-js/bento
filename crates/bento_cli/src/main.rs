@@ -11,6 +11,7 @@ mod instance;
 mod launch;
 mod process_environment;
 mod run;
+mod runtime_report;
 mod script;
 mod signals;
 mod task;

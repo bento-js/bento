@@ -19,6 +19,8 @@ pub struct Diagnostic<'a> {
     pub column: usize,
     /// What is wrong at that place.
     pub label: String,
+    /// Shown after the quoted source as it is, such as a stack trace; may be empty.
+    pub trace: String,
 }
 
 /// `diagnostic` as a report quoting the source around its place, styled with colors when
@@ -43,7 +45,12 @@ fn render_source(diagnostic: &Diagnostic, source: &str, color: bool) -> Option<S
         .finish()
         .write((name, Source::from(source)), &mut report)
         .ok()?;
-    String::from_utf8(report).ok()
+    let mut report = String::from_utf8(report).ok()?;
+    if !diagnostic.trace.is_empty() {
+        report.push_str(&diagnostic.trace);
+        report.push('\n');
+    }
+    Some(report)
 }
 
 /// The characters to mark for one-based `line` and `column` in `source`: the character there,
@@ -97,6 +104,7 @@ mod tests {
             line,
             column,
             label: "thrown here".to_owned(),
+            trace: String::new(),
         }
     }
 
@@ -114,6 +122,18 @@ mod tests {
         let marker_line = report.lines().find(|line| line.contains('┬')).expect("a marker");
         let source_line = report.lines().find(|line| line.contains("throw new")).unwrap();
         assert_eq!(marker_line.find('┬'), source_line.find("new"), "{report}");
+    }
+
+    #[test]
+    fn a_trace_follows_the_quoted_source() {
+        let directory = scratch();
+        let path = write(&directory, "boom.mjs", SOURCE);
+        let trace = "    at file:///boom.mjs:2:7\n    at file:///main.mjs:1:1";
+
+        let diagnostic = Diagnostic { trace: trace.to_owned(), ..thrown_at(&path, 2, 7) };
+        let report = render(&diagnostic, false).expect("the file can be shown");
+
+        assert!(report.ends_with(&format!("╯\n{trace}\n")), "{report}");
     }
 
     #[test]

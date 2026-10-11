@@ -85,6 +85,7 @@ fn a_permission_violation_exits_1_and_says_it_was_denied() {
     let message = stderr(&output);
     assert!(message.contains("permission denied"), "{message}");
     assert!(message.contains("note.txt"), "{message}");
+    assert!(message.contains("note.mjs:2:4") && message.contains("denied here"), "{message}");
     assert!(stdout(&output).is_empty(), "{}", stdout(&output));
     assert!(!temp.exists("note.txt"));
 }

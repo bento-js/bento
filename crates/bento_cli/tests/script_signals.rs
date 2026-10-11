@@ -92,6 +92,17 @@ fn a_termination_handler_s_exit_code_during_shutdown_becomes_bento_s() {
     assert_eq!(code, Some(7), "{}", serving.bento.stderr.text());
 }
 
+/// A script that exits with 0 while being shut down ended cleanly by its own choice, so `bento`
+/// reports that rather than the signal.
+#[test]
+fn a_termination_handler_that_exits_0_during_shutdown_makes_bento_exit_0() {
+    let mut serving = serve("process.on('SIGTERM', () => server.close(() => process.exit(0)));\n");
+
+    let code = serving.stop_with(libc::SIGINT, Duration::from_secs(4));
+
+    assert_eq!(code, Some(0), "{}", serving.bento.stderr.text());
+}
+
 #[test]
 fn interrupt_without_a_handler_shuts_the_script_down_with_130() {
     let mut serving = serve("");

@@ -19,6 +19,15 @@ echo $$ > server.pid
 sh -c 'echo $$ > listener.pid; exec nc -l 127.0.0.1 "$1"' listener "$PORT"
 "#;
 
+/// `graceful.sh` stands in for a server that closes its listener and exits 0 when interrupted.
+/// A non-interactive shell's background command ignores SIGINT, so only the trap stops it.
+const GRACEFUL_SCRIPT: &str = r#"#!/bin/sh
+echo $$ > server.pid
+sh -c 'echo $$ > listener.pid; exec nc -l 127.0.0.1 "$1"' listener "$PORT" &
+trap 'kill $!; exit 0' INT
+wait
+"#;
+
 fn process_is_gone(pid: i32) -> bool {
     // SAFETY: signal 0 only checks whether the process exists.
     let result = unsafe { libc::kill(pid, 0) };
@@ -44,9 +53,13 @@ fn read_pid(temp: &TempProject, file: &str) -> i32 {
 fn signal_serving_task(task: &str, signal: libc::c_int) -> ExitStatus {
     let port = free_port();
     let address = loopback(port);
-    let temp =
-        TempProject::with_tasks(json!({ "serve": "sh ./serve.sh", "dev": "bento run serve" }));
+    let temp = TempProject::with_tasks(json!({
+        "serve": "sh ./serve.sh",
+        "graceful": "sh ./graceful.sh",
+        "dev": "bento run serve",
+    }));
     temp.write_executable("serve.sh", SERVE_SCRIPT);
+    temp.write_executable("graceful.sh", GRACEFUL_SCRIPT);
     let mut bento = temp
         .bento(&["run", task])
         .env("PORT", port.to_string())
@@ -85,6 +98,13 @@ fn interrupt_reaches_a_server_started_by_a_nested_bento() {
     let status = signal_serving_task("dev", libc::SIGINT);
 
     assert_eq!(status.code(), Some(130));
+}
+
+#[test]
+fn interrupting_a_command_that_ends_itself_exits_with_the_command_s_code() {
+    let status = signal_serving_task("graceful", libc::SIGINT);
+
+    assert_eq!(status.code(), Some(0));
 }
 
 const LEFTOVER_PROBE: &str = "BENTO_CLI_LEFTOVER_PROBE";

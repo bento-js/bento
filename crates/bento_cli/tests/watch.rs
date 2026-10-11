@@ -171,6 +171,9 @@ fn a_script_that_finishes_keeps_watching_in_development_mode() {
 
     temp.write("mode.mjs", "console.log(`again ${process.env.NODE_ENV}`);\n");
     bento.wait_for_stdout("again development", 1);
+    // A script that ends by itself after the interrupt reached it ends `bento` with its own
+    // code, so the interrupt waits until no script runs.
+    wait_until(Duration::from_secs(5), || bento.stderr.count("watch: mode.mjs finished") == 2);
     bento.signal(libc::SIGINT);
 
     assert_eq!(bento.wait(Duration::from_secs(5)).code(), Some(130));

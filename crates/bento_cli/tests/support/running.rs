@@ -5,6 +5,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -12,9 +13,18 @@ use parking_lot::Mutex;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+/// Ports for test servers, below the system's ephemeral range so that no connection's local
+/// port can occupy one.
+const SERVER_PORTS: std::ops::Range<u16> = 17950..18000;
 
+/// A port no other test in this process serves on. It is chosen without binding it to check:
+/// on macOS a new socket becomes close-on-exec only after it is created, so a probe can leak
+/// into a `bento` another test starts at that moment and keep the port from its server.
 pub fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+    static NEXT: AtomicU16 = AtomicU16::new(SERVER_PORTS.start);
+    let port = NEXT.fetch_add(1, Ordering::Relaxed);
+    assert!(SERVER_PORTS.contains(&port), "no ports left for test servers");
+    port
 }
 
 pub fn loopback(port: u16) -> SocketAddr {
@@ -156,8 +166,16 @@ impl Background {
     }
 }
 
+/// Shows what `bento` wrote when a test fails, and kills it if it still runs.
 impl Drop for Background {
     fn drop(&mut self) {
+        if thread::panicking() {
+            eprintln!(
+                "bento stdout:\n{}\nbento stderr:\n{}",
+                self.stdout.text(),
+                self.stderr.text()
+            );
+        }
         if self.is_running() {
             let _ = self.child.kill();
             let _ = self.child.wait();

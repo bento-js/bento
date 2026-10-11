@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+pub mod guest_book;
+pub mod guest_book_page;
+pub mod http;
 pub mod running;
 
 use std::env;

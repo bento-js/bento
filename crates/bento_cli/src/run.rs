@@ -25,8 +25,7 @@ pub fn run(arguments: &RunArguments) -> Result<ExitCode, CliError> {
                 &invocation_directory,
                 LaunchKind::Run,
             )?;
-            task::run(&launch, &name, task_arguments)?;
-            Ok(ExitCode::SUCCESS)
+            task::run(&launch, &name, task_arguments)
         }
         Target::Script(entry) => {
             let kind = if arguments.watch { LaunchKind::Watch } else { LaunchKind::Run };

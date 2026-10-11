@@ -37,20 +37,19 @@ impl Stop {
     }
 
     /// `bento`'s exit code once the instance has ended with `outcome`: the script's own when it
-    /// ended by itself, and the signal's when it was shut down, unless the script exited with a
-    /// failure code while shutting down.
+    /// ended by itself or exited while shutting down, and the signal's when Bento ended it.
     pub fn exit_code(&self, outcome: RunOutcome) -> Result<ExitCode, CliError> {
         let RunOutcome::Shutdown(ShutdownReport { outcome }) = outcome else {
             return finished(outcome);
         };
         match outcome {
             ShutdownOutcome::Failed(error) => Err(CliError::Script(error)),
-            // The runtime reports a script it closed for want of a listener as exiting with 0,
-            // so only a nonzero code is certainly the script's own.
-            ShutdownOutcome::Graceful { exit_code } if exit_code != 0 => {
+            ShutdownOutcome::Graceful { exit_code: Some(exit_code) } => {
                 Ok(process_exit_code(exit_code))
             }
-            _ => Ok(signals::exit_code(self.signal)),
+            ShutdownOutcome::Graceful { exit_code: None }
+            | ShutdownOutcome::Interrupted
+            | ShutdownOutcome::TimedOut => Ok(signals::exit_code(self.signal)),
         }
     }
 }

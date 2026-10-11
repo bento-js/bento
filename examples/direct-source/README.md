@@ -4,8 +4,6 @@ A small project that Bento runs straight from its TypeScript and TSX source, wit
 
 ## Run it
 
-> Executing TypeScript and TSX is completed in the next stage of the Bento CLI. Until then, `bento run main.ts` stops with a transform error.
-
 Install the locked dependencies once. This needs pnpm 12; the lockfile pins the exact version pnpm uses.
 
 ```sh
@@ -19,15 +17,12 @@ Then run the entry point:
 bento run --allow-read=. main.ts
 ```
 
-It prints:
+It prints the rendered component, on one line:
 
-```html
-<ul>
-    <li>Tamagoyaki: 10 minutes</li>
-    <li>Onigiri: 5 minutes</li>
-</ul>
+```text
+<ul><li>Tamagoyaki: 10 minutes</li><li>Onigiri: 5 minutes</li></ul>
 ```
 
-Running needs only Bento: not Node, Deno, Bun, or pnpm. The only grant is `--allow-read=.`, which lets Bento load the project's own modules and its installed packages. Rendering loads no native addon, so the example grants none.
+Running needs only Bento: not Node, Deno, Bun, or pnpm, which need not be on `PATH`. Bento transforms the TypeScript and TSX in memory, so running writes no JavaScript, or any other file, into the project. The only grant is `--allow-read=.`, which lets Bento load the project's own modules and its installed packages. Rendering loads no native addon, so the example grants none.
 
 `remix` depends on esbuild, whose install script this example never needs, so `pnpm-workspace.yaml` leaves it denied. That file also keeps the example a project of its own rather than part of the repository's workspace.
