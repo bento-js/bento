@@ -1,1 +1,0 @@
-import{t as e}from"./framework.Bs3iLdTo.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.LniFvxRE.js`),[])};export{t as default};
