@@ -146,19 +146,19 @@ fn late_unsupported_feature_is_an_uncaught_error_with_its_source_location() {
 #[test]
 fn reuse_port_is_rejected_before_binding_a_listener() {
     let root = project();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    // Keeping the port bound proves rejection precedes binding: a bind attempt would be AddrInUse.
+    let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = occupied.local_addr().unwrap().port();
     let mut settings = config(root.path());
     settings.grants.net = bento_host::Scope::All;
     completed(run(
         settings,
         "entry.mjs",
         &format!(
-            "let rejected = false; try {{ Deno.listen({{hostname:'127.0.0.1',port:{port},reusePort:true}}); }} catch(error) {{ rejected = error.name === 'NotSupported'; }} if (!rejected) throw Error('reusePort did not throw'); const listener = Deno.listen({{hostname:'127.0.0.1',port:{port}}}); listener.close();"
+            "let name = 'none'; try {{ Deno.listen({{hostname:'127.0.0.1',port:{port},reusePort:true}}); }} catch(error) {{ name = error.name; }} if (name !== 'NotSupported') throw Error(`reusePort failed with ${{name}}`); const listener = Deno.listen({{hostname:'127.0.0.1',port:0}}); listener.close();"
         ),
     ));
-    std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    drop(occupied);
 }
 
 #[test]
