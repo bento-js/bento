@@ -76,6 +76,29 @@ test("every raw result file carries the environment and options that produced it
     expect(memory.series[0].outcome.samples[0].detail).toEqual({ samples: [1, 2] });
 });
 
+test("each runtime's gate outcome is in its workload's raw file, not in run.json", async () => {
+    let directory = await mkdtemp(path.join(tmpdir(), "bento-bench-results-"));
+    directories.push(directory);
+    let run = runRecord();
+    run.workloads[0]!.series.push({
+        runtime: "bun",
+        variant: "production",
+        outcome: {
+            status: "incompatible",
+            check: "document",
+            failures: ["response body is empty"],
+            evidence: [],
+        },
+    });
+
+    await writeResults(directory, run);
+
+    let header = JSON.parse(await readFile(path.join(directory, "run.json"), "utf8"));
+    let memory = JSON.parse(await readFile(path.join(directory, "memory.json"), "utf8"));
+    expect(Object.keys(header).sort()).toEqual(["environment", "options", "startedAt"]);
+    expect(memory.series[1].outcome).toMatchObject({ status: "incompatible", check: "document" });
+});
+
 test("result directories are named by UTC timestamp", () => {
     expect(timestampName(new Date("2026-10-10T23:05:09.123Z"))).toBe("2026-10-10T23-05-09Z");
 });

@@ -38,7 +38,7 @@ export function evaluateDocument(
     if (!hasSignForm(html)) {
         problems.push("sign form needs a name input, a message textarea, and a POST action of /");
     }
-    if (importMapOf(html) === undefined) {
+    if (importMapTargets(html) === undefined) {
         problems.push("import map is missing or is not JSON with an imports object");
     }
     if (entryScriptUrl(html) === undefined) problems.push("module script with a src is missing");
@@ -62,7 +62,7 @@ export function assetUrlsOf(html: string): string[] {
     }
     let script = entryScriptUrl(html);
     if (script !== undefined) urls.add(script);
-    for (let url of Object.values(importMapOf(html)?.imports ?? {})) urls.add(url);
+    for (let url of importMapTargets(html) ?? []) urls.add(url);
     return [...urls];
 }
 
@@ -115,7 +115,8 @@ function hasSignForm(html: string): boolean {
     });
 }
 
-function importMapOf(html: string): { imports: Record<string, string> } | undefined {
+/** Every URL the import map points at, under `imports` and under each of `scopes`. */
+function importMapTargets(html: string): string[] | undefined {
     let script = findTags(html, "script").find(tag => tag.attributes.type === "importmap");
     let source = script && textAfter(html, script, "script");
     if (source === undefined) return undefined;
@@ -127,8 +128,12 @@ function importMapOf(html: string): { imports: Record<string, string> } | undefi
     }
     let imports = lookup(parsed, "imports");
     if (typeof imports !== "object" || imports === null) return undefined;
-    let urls = Object.entries(imports).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string",
-    );
-    return { imports: Object.fromEntries(urls) };
+    let scopes = lookup(parsed, "scopes");
+    let scopedMappings = typeof scopes === "object" && scopes !== null ? Object.values(scopes) : [];
+    return [imports, ...scopedMappings].flatMap(mappingTargets);
+}
+
+function mappingTargets(mapping: unknown): string[] {
+    if (typeof mapping !== "object" || mapping === null) return [];
+    return Object.values(mapping).filter(target => typeof target === "string");
 }

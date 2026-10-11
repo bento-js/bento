@@ -56,7 +56,7 @@ export async function launchServer(request: LaunchRequest): Promise<AppServer> {
         mode: request.mode,
     });
     let spawnedAt = performance.now();
-    let child = spawnManaged(command, { cwd: request.fixture.directory, env });
+    let child = await spawnManaged(command, { cwd: request.fixture.directory, env });
     return {
         runtime: request.runtime,
         process: child,

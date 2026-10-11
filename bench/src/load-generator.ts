@@ -24,6 +24,9 @@ export interface LoadResult {
 
 const SECONDS_TO_MS = 1_000;
 
+/** What `oha` may add beyond its duration: connecting, and awaiting the requests still running. */
+const LOAD_OVERRUN_MS = 60_000;
+
 /**
  * Drives `oha` for a fixed duration at fixed concurrency. Ongoing requests are awaited at the
  * deadline (`-w`) so that every request the server received is also counted.
@@ -45,7 +48,12 @@ export async function runLoad(spec: LoadSpec): Promise<LoadResult> {
     ];
     let stdout = await runToCompletion(
         { command: spec.ohaExecutable, args },
-        { cwd: process.cwd(), env: baseEnvironment(), label: `oha ${spec.method} ${spec.url}` },
+        {
+            cwd: process.cwd(),
+            env: baseEnvironment(),
+            label: `oha ${spec.method} ${spec.url}`,
+            timeoutMs: spec.durationSeconds * SECONDS_TO_MS + LOAD_OVERRUN_MS,
+        },
     );
     return parseLoadResult(JSON.parse(stdout));
 }

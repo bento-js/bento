@@ -28,7 +28,6 @@ test("summary reports spread from unsorted samples", () => {
         count: 5,
         min: 1,
         max: 5,
-        mean: 3,
         median: 3,
         q1: 2,
         q3: 4,

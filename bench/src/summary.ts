@@ -124,14 +124,19 @@ function explainIncompatibility(
     let listed = outcome.failures.slice(0, MAX_LISTED_FAILURES);
     let omitted = outcome.failures.length - listed.length;
     let omission = omitted > 0 ? ` (and ${omitted} more in the raw JSON)` : "";
-    let evidence = outcome.evidence
-        .slice(0, MAX_LISTED_FAILURES)
-        .map(
-            seen =>
-                `  - ${seen.method} ${seen.url} → ${seen.status}, ${seen.bodyBytes} bytes, ${seen.contentType ?? "no content type"}`,
-        );
+    let evidence = outcome.evidence.slice(0, MAX_LISTED_FAILURES).map(describeResponse);
     return [
         `**${runtime}** incompatible at the ${outcome.check} check: ${listed.join("; ")}${omission}`,
         ...(evidence.length > 0 ? ["  Response evidence:", ...evidence] : []),
     ].join("\n");
+}
+
+function describeResponse(seen: HttpEvidence): string {
+    let details = [
+        `${seen.status}`,
+        `${seen.bodyBytes} bytes`,
+        seen.contentType ?? "no content type",
+        ...(seen.location === null ? [] : [`Location: ${seen.location}`]),
+    ];
+    return `  - ${seen.method} ${seen.url} → ${details.join(", ")}`;
 }

@@ -1,8 +1,13 @@
+import type { ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
+
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Command } from "./launch-commands.ts";
 
+import { handleInterruption, throwIfInterrupted } from "./interruption.ts";
 import { lookup } from "./json-values.ts";
 
 export interface ExitStatus {
@@ -35,35 +40,33 @@ const GRACE_MS = 5_000;
 const OUTPUT_TAIL_CHARACTERS = 16_384;
 const STDOUT_CAP_CHARACTERS = 4 * 1024 * 1024;
 
+/** Long enough for a first `pnpm install` from the registry, short enough to report a hang. */
+const COMMAND_TIMEOUT_MS = 10 * 60_000;
+
 // Every process group the harness has started and not yet confirmed gone.
 let liveGroups = new Set<number>();
 
-export function spawnManaged(command: Command, options: SpawnOptions): ManagedProcess {
-    let child = spawn(command.command, command.args, {
-        cwd: options.cwd,
-        env: options.env,
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-    });
-    let startError: Error | undefined;
-    child.on("error", error => (startError = error));
-    if (child.pid === undefined) {
-        let reason = startError?.message ?? "unknown error";
-        throw new Error(`Could not start ${command.command}: ${reason}`);
-    }
-    let pid = child.pid;
+/** The process could not be started at all, as opposed to starting and then failing. */
+export class LaunchError extends Error {}
+
+export async function spawnManaged(
+    command: Command,
+    options: SpawnOptions,
+): Promise<ManagedProcess> {
+    throwIfInterrupted();
+    let { child, pid } = await launch(command, options);
     liveGroups.add(pid);
 
     let tail = "";
     let stdout = "";
+    let remember = (text: string) => (tail = (tail + text).slice(-OUTPUT_TAIL_CHARACTERS));
+    child.on("error", error => remember(`${error.message}\n`));
     child.stdout.on("data", (chunk: Buffer) => {
         let text = chunk.toString("utf8");
-        tail = (tail + text).slice(-OUTPUT_TAIL_CHARACTERS);
+        remember(text);
         if (stdout.length < STDOUT_CAP_CHARACTERS) stdout += text;
     });
-    child.stderr.on("data", (chunk: Buffer) => {
-        tail = (tail + chunk.toString("utf8")).slice(-OUTPUT_TAIL_CHARACTERS);
-    });
+    child.stderr.on("data", (chunk: Buffer) => remember(chunk.toString("utf8")));
 
     let exitStatus: ExitStatus | undefined;
     let exited = new Promise<ExitStatus>(resolve => {
@@ -98,16 +101,26 @@ export function spawnManaged(command: Command, options: SpawnOptions): ManagedPr
     };
 }
 
-/** Runs a command to completion and returns its stdout; a non-zero exit throws with its output. */
+/**
+ * Runs a command to completion and returns its stdout. A non-zero exit, or a run past
+ * `timeoutMs`, stops the command's process group and throws with its output.
+ */
 export async function runToCompletion(
     command: Command,
-    options: SpawnOptions & { label: string },
+    options: SpawnOptions & { label: string; timeoutMs?: number },
 ): Promise<string> {
-    let child = spawnManaged(command, options);
-    let status = await child.closed;
+    let timeoutMs = options.timeoutMs ?? COMMAND_TIMEOUT_MS;
+    let child = await spawnManaged(command, options);
+    let { promise: expired, resolve: expire } = Promise.withResolvers<"expired">();
+    let timer = setTimeout(expire, timeoutMs, "expired");
+    let outcome = await Promise.race([child.closed, expired]);
+    clearTimeout(timer);
     await child.stop();
-    if (status.code !== 0) {
-        throw new Error(`${options.label} failed (${describeExit(status)}):\n${child.output()}`);
+    if (outcome === "expired") {
+        throw new Error(`${options.label} timed out after ${timeoutMs} ms:\n${child.output()}`);
+    }
+    if (outcome.code !== 0) {
+        throw new Error(`${options.label} failed (${describeExit(outcome)}):\n${child.output()}`);
     }
     return child.stdout();
 }
@@ -124,15 +137,32 @@ export function killAllNow(): void {
 
 export function installCleanupHandlers(): void {
     process.on("exit", killAllNow);
-    for (let [signal, code] of [
-        ["SIGINT", 130],
-        ["SIGTERM", 143],
-    ] as const) {
-        process.on(signal, () => {
-            killAllNow();
-            process.exit(code);
+    handleInterruption(killAllNow);
+}
+
+async function launch(
+    command: Command,
+    options: SpawnOptions,
+): Promise<{ child: ChildProcessByStdio<null, Readable, Readable>; pid: number }> {
+    let child;
+    try {
+        child = spawn(command.command, command.args, {
+            cwd: options.cwd,
+            env: options.env,
+            detached: true,
+            stdio: ["ignore", "pipe", "pipe"],
         });
+    } catch (error) {
+        throw launchError(command, error);
     }
+    if (child.pid !== undefined) return { child, pid: child.pid };
+    let [error] = await once(child, "error");
+    throw launchError(command, error);
+}
+
+function launchError(command: Command, cause: unknown): LaunchError {
+    let reason = cause instanceof Error ? cause.message : String(cause);
+    return new LaunchError(`Could not start ${command.command}: ${reason}`);
 }
 
 function signalGroup(pid: number, signal: NodeJS.Signals): void {
