@@ -40,6 +40,12 @@ export interface Workload {
     variants: Array<{ label: string; mode: Mode }>;
     /** Whether a runtime must pass the application's acceptance gates before being timed. */
     requiresApplicationGate: boolean;
+    /**
+     * Whether one failed trial fails the runtime, discarding its other trials' timings. Set when
+     * each trial checks the correctness of the work it times, so that a failure means the runtime
+     * did the work wrongly rather than that one attempt went wrong.
+     */
+    everyTrialMustSucceed?: boolean;
     /** Runs one measured trial against a freshly reset database. */
     runTrial(input: TrialInput): Promise<SampleRow>;
     notes?(series: Series[]): string[];

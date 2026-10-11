@@ -25,6 +25,8 @@ export const assetOperations: Workload = {
     ]),
     variants: [{ label: "", mode: "production" }],
     requiresApplicationGate: false,
+    // With no application gate, each probe run is the correctness check of the calls it times.
+    everyTrialMustSucceed: true,
     async runTrial({ runtime, executable, fixture, trial, context }) {
         let iterations = context.options.iterations;
         let command = scriptCommand(runtime, executable, ".bench/probe.ts", [String(iterations)]);

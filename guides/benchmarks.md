@@ -10,7 +10,7 @@ describes: [proposal.0001]
 
 The benchmark harness measures one real application, the Remix 3 guest book in `fixtures/remix-guest-book`, under Node, Bun, and Bento, and records raw samples plus a summary you can read and re-run. Every runtime receives the same source, the same locked packages, the same seeded database, the same environment mode, and equivalent authority.
 
-Correctness comes before timing. Before any workload measures a runtime, an acceptance checker proves that the runtime serves the actual guest book: the full document, every asset, a valid submission, and the refusal of invalid ones. A runtime that fails a gate is reported as `incompatible`, with the failing check and the response that failed it; one that cannot be launched, exits, or never listens is reported the same way at a `startup` check, with the operating system's error or its output. It never gets a timing row, because an empty page returned quickly is not a fast result.
+Correctness comes before timing. Before any workload that runs the application measures a runtime, an acceptance checker proves that the runtime serves the actual guest book: the full document, every asset, a valid submission, and the refusal of invalid ones. A runtime that fails a gate is reported as `incompatible`, with the failing check and the response that failed it; one that cannot be launched, exits, or never listens is reported the same way at a `startup` check, with the operating system's error or its output. It never gets a timing row, because an empty page returned quickly is not a fast result. `asset-operations`, which times the native compiler calls without the application, checks every call it times instead: a call that reports an error fails the runtime for that workload, with no timing.
 
 The harness is tooling, written in TypeScript and run by Node. It does not execute the application itself; each runtime does that through its own launch path.
 
@@ -20,7 +20,7 @@ The harness is tooling, written in TypeScript and run by Node. It does not execu
 | --- | --- |
 | `cold-launch` | How long from spawning the process until the port accepts connections, and until the first response that passes the document gate. The two milestones are reported separately, because the second includes application initialization (imports, database, native asset compilation of the entry graph). Measured in development and production modes. |
 | `assets` | How long the first request for each JavaScript, TSX, and CSS asset the page references takes, compared with repeat requests in the same process, which hit the fixture's in-memory cache. Measured in development and production modes. The fixture compiles the entry graph while the server starts, so first requests can already be warm for those assets; the cold cost shows up in `cold-launch`. |
-| `asset-operations` | Where time goes inside the asset pipeline: parsing, resolving, transforming, minifying, and Lightning CSS processing, each timed on the fixture's own files through the locked npm packages with identical options. It runs without the application, so it is valid for a runtime whose full-app render is still incompatible. |
+| `asset-operations` | Where time goes inside the asset pipeline: parsing, resolving, transforming, minifying, and Lightning CSS processing, each timed on the fixture's own files through the locked npm packages with identical options. It runs without the application, so it is valid for a runtime whose full-app render is still incompatible. In place of the application's gates, every native call it times must succeed; see [Correctness gates](#correctness-gates). |
 | `steady-state` | Throughput and latency percentiles for a rendered `GET /`, an asset `GET`, and a persisted valid `POST /` at fixed concurrency, after a warmup, in production mode. The database is reset for every trial, and persisted rows are counted afterwards so a response that was not really stored is caught. |
 | `watch-reload` | How long from editing a file until the first response that shows the change, with each runtime's watch mode running: once for a source file the entry imports (a visible string in `app/actions/guest-book/page.tsx`) and once for the entry itself (`server.ts`, observed through a response header). It also confirms that the database contents and the listener survive each reload. Edited files are restored afterwards. |
 | `memory` | Resident memory of the whole process tree: idle after startup, and the peak sampled from spawn through startup and the first request for every asset. This is the footprint of the usable application with its native dependencies, not an empty isolate. |
@@ -81,6 +81,16 @@ The acceptance checker (`bench/src/acceptance.ts`) runs against a base URL and s
 
 The same checker is meant to be reused by the end-to-end tests of the Bento CLI and the Rust host.
 
+`asset-operations` does not run the application, so these gates do not apply to it. Instead, its probe checks every native call it times, in each pass, through the way that call reports failure:
+
+- the Oxc parser, transformer, and minifier fail on any entry in their `errors` array, as `remix/assets` treats them;
+- the resolver fails on an error for an import that names a file, a package, or a remote URL;
+- any call fails when it throws, rejects, or returns no result. Lightning CSS reports invalid CSS this way; its warnings are not failures.
+
+A `node:` built-in such as `node:path`, or a `host:` module such as `host:guestbook`, both imported by the fixture's server modules, is provided by the runtime rather than found as a file. The resolver's not-found answer for it is that import's recorded outcome, not a failure. Any other scheme, such as `https:`, names a remote import, which execution never performs, so its resolver error is a failure.
+
+The first failure stops the probe before it prints a report, and the trial fails with the operation, the file, and the first diagnostic, for example `parse failed on app/actions/public/entry.ts: Unexpected token`. Each probe run is this workload's correctness check, so a single failed trial, for this or any other reason, fails the runtime: it is shown as `failed`, and the timings of its other trials are discarded rather than reported. For runtimes that do produce timings, the summary notes whether their output digests match, which shows they did identical work.
+
 ### Reading the results
 
 A run writes `bench/results/<UTC timestamp>/` with:
@@ -93,7 +103,7 @@ A runtime's column shows one of:
 
 - numbers: the metric over the successful trials;
 - `incompatible`: it failed a correctness gate or could not be launched. The check, the failures, and the response evidence (method, URL, status, content type, `Location`, body size) are listed under the table; a runtime that could not be launched has no responses, only the error;
-- `failed`: every trial failed after the gates passed. Each trial's reason is listed.
+- `failed`: every trial failed after the gates passed or, for `asset-operations`, any trial failed. Each failed trial's reason is listed.
 
 Trials alternate runtime order, so no runtime always runs first. Compare medians and look at the spread before drawing a conclusion; a wide interquartile range means the run was noisy and should be repeated.
 
