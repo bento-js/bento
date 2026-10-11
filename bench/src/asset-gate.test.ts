@@ -4,7 +4,10 @@ import type { ResponseSnapshot } from "./document-gate.ts";
 
 import { evaluateAsset } from "./asset-gate.ts";
 
-const MINIFIED_SCRIPT = `export function render(a){return a.map(b=>b.name).join(", ")}`.repeat(30);
+const MINIFIED_SCRIPT = Array.from(
+    { length: 30 },
+    (_, index) => `export function render${index}(a){return a.map(b=>b.name).join(", ")}`,
+).join("");
 const READABLE_SCRIPT = Array.from(
     { length: 60 },
     (_, line) => `    let value${line} = compute(${line});`,
@@ -70,6 +73,56 @@ describe("every asset the page references", () => {
             ),
         ).toEqual([]);
     });
+
+    test("an empty body fails for a script and for a stylesheet", () => {
+        for (let [url, contentType] of [
+            ["/assets/app/entry.ts", "application/javascript; charset=utf-8"],
+            ["/assets/app/preflight.css", "text/css; charset=utf-8"],
+        ] as const) {
+            expect(evaluateAsset(url, asset(contentType, ""), "development")).toEqual([
+                "response body is empty",
+            ]);
+        }
+    });
+
+    test("a whitespace-only body fails for a script and for a stylesheet", () => {
+        for (let [url, contentType] of [
+            ["/assets/app/entry.ts", "application/javascript; charset=utf-8"],
+            ["/assets/app/preflight.css", "text/css; charset=utf-8"],
+        ] as const) {
+            expect(evaluateAsset(url, asset(contentType, " \n\t\n"), "development")).toEqual([
+                "response body contains only whitespace",
+            ]);
+        }
+    });
+
+    test("a script that is not a JavaScript module fails", () => {
+        for (let body of ["<!DOCTYPE html><html></html>", "let count: number = 1;"]) {
+            let problems = evaluateAsset(
+                "/assets/app/entry.ts",
+                asset("application/javascript; charset=utf-8", body),
+                "development",
+            );
+
+            expect(problems).toHaveLength(1);
+            expect(problems[0]).toMatch(/^script does not parse as a JavaScript module: /);
+        }
+    });
+
+    test("a script with no statements fails", () => {
+        for (let body of [
+            "// compiled by nothing",
+            "/* */\n;;\n//# sourceMappingURL=entry.js.map",
+        ]) {
+            expect(
+                evaluateAsset(
+                    "/assets/app/entry.ts",
+                    asset("application/javascript; charset=utf-8", body),
+                    "development",
+                ),
+            ).toEqual(["script contains no code"]);
+        }
+    });
 });
 
 describe("development mode", () => {
@@ -131,5 +184,30 @@ describe("production mode", () => {
         );
 
         expect(problems).toEqual([]);
+    });
+
+    test("a tiny script still needs content", () => {
+        let url = "/assets/pkg/self.@893yhP.js";
+        let contentType = "application/javascript; charset=utf-8";
+
+        expect(evaluateAsset(url, asset(contentType, ""), "production")).toEqual([
+            "response body is empty",
+        ]);
+        expect(evaluateAsset(url, asset(contentType, "\n\n"), "production")).toEqual([
+            "response body contains only whitespace",
+        ]);
+        expect(evaluateAsset(url, asset(contentType, "//"), "production")).toEqual([
+            "script contains no code",
+        ]);
+    });
+
+    test("an empty production stylesheet fails", () => {
+        expect(
+            evaluateAsset(
+                "/assets/app/actions/public/preflight.@DeqRbq.css",
+                asset("text/css; charset=utf-8", ""),
+                "production",
+            ),
+        ).toEqual(["response body is empty"]);
     });
 });
