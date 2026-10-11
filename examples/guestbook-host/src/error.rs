@@ -1,21 +1,24 @@
 use std::io;
-use std::path::PathBuf;
 
 use thiserror::Error;
 
+use bento_guestbook_host::launch::LaunchError;
+use bento_guestbook_host::lifecycle::ServeError;
 use bento_guestbook_host::store::StoreError;
+use bento_runtime::RuntimeError;
 
 #[derive(Debug, Error)]
 pub enum CommandError {
     #[error(transparent)]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    Launch(#[from] LaunchError),
+    #[error(transparent)]
+    Serve(#[from] ServeError),
+    #[error(transparent)]
+    Guest(RuntimeError),
     #[error("cannot start the async executor: {0}")]
     Executor(#[source] io::Error),
     #[error("cannot write the entries: {0}")]
     Output(#[source] io::Error),
-    #[error(
-        "cannot serve `{}`: serving requires host modules and lifecycle control from the runtime, which this build does not include",
-        .0.display()
-    )]
-    RuntimeUnavailable(PathBuf),
 }

@@ -82,6 +82,62 @@ fn serve_requires_a_project_and_a_database() {
 }
 
 #[test]
+fn serve_names_the_missing_entrypoint_inside_a_relative_project() {
+    let scratch = scratch_dir();
+    std::fs::create_dir(scratch.path().join("project")).unwrap();
+    let arguments = ["serve", "--project", "project", "--database", "book.db", "--port", "0"];
+    let output = host_command(scratch.path(), &arguments).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    let entry = scratch.path().canonicalize().unwrap().join("project/server.embedded.ts");
+    assert!(message.contains(entry.to_str().unwrap()), "{message}");
+    assert!(!message.contains("project/project"), "{message}");
+}
+
+#[test]
+fn serve_reports_a_missing_project_before_touching_the_database() {
+    let scratch = scratch_dir();
+    let arguments = ["serve", "--project", "absent", "--database", "book.db", "--port", "0"];
+    let output = host_command(scratch.path(), &arguments).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("absent"), "{}", stderr(&output));
+    assert!(!scratch.path().join("book.db").exists(), "a failed serve created the database");
+}
+
+#[test]
+fn serve_refuses_a_database_inside_the_project_without_creating_it() {
+    let scratch = scratch_dir();
+    std::fs::create_dir(scratch.path().join("project")).unwrap();
+    let arguments =
+        ["serve", "--project", "project", "--database", "project/book.db", "--port", "0"];
+    let output = host_command(scratch.path(), &arguments).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    assert!(message.contains("inside the project"), "{message}");
+    assert!(
+        !scratch.path().join("project/book.db").exists(),
+        "a refused serve created the database"
+    );
+}
+
+#[test]
+fn serve_refuses_a_database_that_resolves_inside_the_project_through_a_symlink() {
+    let scratch = scratch_dir();
+    std::fs::create_dir(scratch.path().join("project")).unwrap();
+    std::os::unix::fs::symlink("project", scratch.path().join("elsewhere")).unwrap();
+    let arguments =
+        ["serve", "--project", "project", "--database", "elsewhere/book.db", "--port", "0"];
+    let output = host_command(scratch.path(), &arguments).output().unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    assert!(message.contains("inside the project"), "{message}");
+    assert!(
+        !scratch.path().join("project/book.db").exists(),
+        "a refused serve created the database"
+    );
+}
+
+#[test]
 fn serve_rejects_an_unknown_mode() {
     let scratch = scratch_dir();
     let arguments = ["serve", "--project", ".", "--database", "book.db", "--mode", "staging"];

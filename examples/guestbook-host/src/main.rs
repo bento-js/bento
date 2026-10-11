@@ -4,17 +4,13 @@
 mod arguments;
 mod entries;
 mod error;
+mod serve;
 
 use std::process::ExitCode;
 
 use clap::Parser;
 
-// The Node-API symbols the build script exports are defined in the runtime's dependency graph,
-// so the executable links it even before `serve` drives it.
-use bento_runtime as _;
-
 use crate::arguments::{Cli, Command};
-use crate::error::CommandError;
 
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
@@ -25,14 +21,11 @@ fn main() -> ExitCode {
         }
     };
     let outcome = match cli.command {
-        Command::Serve(arguments) => Err(CommandError::RuntimeUnavailable(arguments.project)),
+        Command::Serve(arguments) => serve::serve(&arguments),
         Command::Entries(arguments) => entries::entries(&arguments),
     };
-    match outcome {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        }
-    }
+    outcome.unwrap_or_else(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
 }

@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
+
+use bento_guestbook_host::launch::Mode;
 
 /// Run the Remix guest book in-process, with entries stored in SQLite that Rust owns.
 #[derive(Debug, Parser)]
@@ -23,7 +25,7 @@ pub struct ServeArguments {
     /// The guest book project: the fixture, or a copy with installed dependencies
     #[arg(long, value_name = "DIR")]
     pub project: PathBuf,
-    /// The SQLite file the host owns; created with its table when missing
+    /// The SQLite file the host owns, outside the project; created with its table when missing
     #[arg(long, value_name = "PATH")]
     pub database: PathBuf,
     /// The port the application listens on
@@ -35,14 +37,6 @@ pub struct ServeArguments {
     /// The NODE_ENV the guest sees
     #[arg(long, value_enum, default_value_t = Mode::Production)]
     pub mode: Mode,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum Mode {
-    /// Log requests and serve unminified assets
-    Development,
-    /// Serve minified, fingerprinted assets
-    Production,
 }
 
 #[derive(Debug, Args)]
