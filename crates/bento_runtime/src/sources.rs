@@ -115,12 +115,11 @@ impl Sources {
     }
 
     pub fn is_project_source(&self, path: &Path) -> bool {
-        self.is_local_source(path)
-            && path.strip_prefix(&self.root).is_ok_and(|relative| !in_node_modules(relative))
+        is_watch_source(&self.root, path)
     }
 
     pub fn is_local_source(&self, path: &Path) -> bool {
-        path.starts_with(&self.root) && !is_environment_file(path)
+        !is_environment_file(path)
     }
 }
 
@@ -169,6 +168,28 @@ mod tests {
                         sources.transform(&path, "export const view = <section />;".into());
                     let dependency = ancestor_dependency || *nested_dependency;
                     assert_eq!(transformed.is_ok(), !dependency, "{path:?}: {transformed:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn diagnostic_sources_follow_dependency_classification_for_generated_paths() {
+        let workspace = tempfile::tempdir().unwrap();
+        let source_paths = generated_tsx_paths();
+        for project_directory in ["app", "node_modules/app"] {
+            let root = workspace.path().join(project_directory);
+            std::fs::create_dir_all(&root).unwrap();
+            let sources = Sources::load(&root).unwrap();
+            for (base, ancestor_dependency) in [
+                (root.join("src"), false),
+                (workspace.path().join("shared"), false),
+                (workspace.path().join("node_modules/shared"), true),
+            ] {
+                for (relative, nested_dependency) in &source_paths {
+                    let path = base.join(relative);
+                    let dependency = ancestor_dependency || *nested_dependency;
+                    assert_eq!(sources.is_project_source(&path), !dependency, "{path:?}");
                 }
             }
         }
