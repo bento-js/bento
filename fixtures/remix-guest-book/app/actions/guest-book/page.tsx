@@ -4,7 +4,7 @@ import type { Issue } from "remix/data-schema";
 import { css } from "remix/component";
 
 import type { GuestBookFormValues } from "#app/actions/guest-book/schema.ts";
-import type { GuestBookEntry } from "#app/data/schema.ts";
+import type { GuestBookEntry } from "#app/data/guest-book-store.ts";
 
 import { EntryList } from "#app/actions/guest-book/entry-list.tsx";
 import { SignForm } from "#app/actions/guest-book/sign-form.tsx";
