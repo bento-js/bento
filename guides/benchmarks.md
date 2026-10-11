@@ -30,6 +30,7 @@ The harness is tooling, written in TypeScript and run by Node. It does not execu
 ### Prerequisites
 
 - Node 26.11.1 and `pnpm` 12 on `PATH`. The harness runs on Node, and each run installs the fixture with `pnpm install --frozen-lockfile`, which needs registry access the first time.
+- The repository's own dependencies, installed with `vp install`. The asset gate parses every served script with the repository's `oxc-parser`.
 - `rsync`, which macOS provides.
 - Bun 1.4.3 on `PATH` for the Bun runtime. A missing Bun is reported as unavailable.
 - `oha` for the `steady-state` workload. Install it with `cargo install --locked oha`; the harness records the version it finds.
@@ -74,7 +75,7 @@ The launch paths are the ones the proposal fixes:
 The acceptance checker (`bench/src/acceptance.ts`) runs against a base URL and stops at the first failing gate:
 
 1. `GET /` returns 200 with the whole document: the guest-book heading, the seeded entries in order, the sign form with name and message fields, the import map, the module script, and the stylesheet link. An empty or truncated body fails. This is how Bun's server-side rendering failure (issue #2) appears: Bun answers 200 with no body.
-2. Every asset URL the page references returns 200 with a JavaScript or `text/css` content type: stylesheets, the module script, preloads, and every import-map target, including those under `scopes`. In production the URLs are fingerprinted and the scripts are minified.
+2. Every asset URL the page references returns 200 with a JavaScript or `text/css` content type and real content: stylesheets, the module script, preloads, and every import-map target, including those under `scopes`. An empty or whitespace-only body fails, naming the URL. A script must parse as a JavaScript module and contain code, not only comments; a stylesheet must not be blank. In production the URLs are fingerprinted and the scripts are minified. A script too short to judge is exempt from the minification check, never from the content checks.
 3. A valid `POST /` returns 303 with `Location: /`, and the new entry then renders after the seeded ones.
 4. A submission with whitespace-only fields returns 400 with a field error for each, keeping the submitted values in the form. A 281-character message returns 400 with the length error. Neither adds an entry.
 

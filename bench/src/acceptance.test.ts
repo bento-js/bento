@@ -12,8 +12,10 @@ import { failingCheck, runAcceptance } from "./acceptance.ts";
 
 type Behavior =
     | "accepts-invalid"
+    | "blank-assets"
     | "correct"
     | "drops-entry"
+    | "empty-assets"
     | "empty-document"
     | "unminified-assets";
 
@@ -23,7 +25,7 @@ const SEEDED: readonly ExpectedEntry[] = [
 ];
 
 const READABLE_SCRIPT = Array.from({ length: 40 }, (_, line) => `    let v${line} = ${line};`);
-const MINIFIED_SCRIPT = "export const a=1;".repeat(80);
+const MINIFIED_SCRIPT = Array.from({ length: 80 }, (_, index) => `export const a${index}=1;`);
 
 function escapeHtml(text: string): string {
     return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -104,13 +106,7 @@ async function startFakeGuestBook(behavior: Behavior, mode: Mode) {
                     ? "text/css; charset=utf-8"
                     : "application/javascript; charset=utf-8",
             });
-            response.end(
-                isStylesheet
-                    ? "body{margin:0}"
-                    : readable
-                      ? READABLE_SCRIPT.join("\n")
-                      : MINIFIED_SCRIPT,
-            );
+            response.end(assetBody(behavior, isStylesheet, readable));
             return;
         }
         response.writeHead(200, { "content-type": "text/html; charset=UTF-8" });
@@ -128,6 +124,13 @@ async function startFakeGuestBook(behavior: Behavior, mode: Mode) {
     }
 
     return { baseUrl: `http://127.0.0.1:${port}`, close };
+}
+
+function assetBody(behavior: Behavior, isStylesheet: boolean, readable: boolean): string {
+    if (behavior === "empty-assets") return "";
+    if (behavior === "blank-assets") return "\n  \n";
+    if (isStylesheet) return "body{margin:0}";
+    return readable ? READABLE_SCRIPT.join("\n") : MINIFIED_SCRIPT.join("");
 }
 
 let running: Array<{ close: () => Promise<void> }> = [];
@@ -183,6 +186,39 @@ describe("an incompatible guest book", () => {
         expect(failed?.name).toBe("assets");
         expect(failed?.failures.join("\n")).toContain("/assets/entry.@Abc123.ts");
         expect(failed?.failures.join("\n")).toContain("script is not minified");
+    });
+
+    test("empty and whitespace-only assets fail the asset gate naming each URL", async () => {
+        let cases = [
+            ["empty-assets", "response body is empty", 0],
+            ["blank-assets", "response body contains only whitespace", 4],
+        ] as const;
+        for (let [behavior, problem, bodyBytes] of cases) {
+            for (let mode of ["development", "production"] as const) {
+                let fingerprint = mode === "production" ? ".@Abc123" : "";
+                let report = await accept(behavior, mode);
+
+                let failed = failingCheck(report);
+                expect(report.passed).toBe(false);
+                expect(failed?.name).toBe("assets");
+                expect(failed?.failures).toEqual(
+                    expect.arrayContaining([
+                        `/assets/page${fingerprint}.css: ${problem}`,
+                        `/assets/dep${fingerprint}.js: ${problem}`,
+                        `/assets/entry${fingerprint}.ts: ${problem}`,
+                    ]),
+                );
+                expect(failed?.evidence).toContainEqual(
+                    expect.objectContaining({
+                        method: "GET",
+                        url: expect.stringMatching(new RegExp(`/assets/entry${fingerprint}\\.ts$`)),
+                        status: 200,
+                        bodyBytes,
+                    }),
+                );
+                expect(report.checks).toHaveLength(2);
+            }
+        }
     });
 
     test("a server that stores nothing fails the valid-submission gate", async () => {
