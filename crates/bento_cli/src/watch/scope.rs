@@ -36,9 +36,13 @@ impl WatchScope {
     }
 }
 
-/// Whether `module` belongs to an installed package rather than to an application.
-pub fn is_dependency(module: &Path) -> bool {
-    module.components().any(|component| component.as_os_str() == DEPENDENCIES)
+/// Ancestors of the project do not make its own files dependencies, even if named `node_modules`.
+pub fn is_dependency(project_root: &Path, module: &Path) -> bool {
+    module
+        .strip_prefix(project_root)
+        .unwrap_or(module)
+        .components()
+        .any(|component| component.as_os_str() == DEPENDENCIES)
 }
 
 /// Whether `relative`, a path inside the project, is source rather than something running or

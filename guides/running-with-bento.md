@@ -141,6 +141,8 @@ Environment files are never shown, because their values are often secrets. An er
 
 `bento run --watch server.ts` runs the script and restarts it completely when its source changes; it does not replace modules in place. Bento watches the project directory, so browser modules compiled by `remix/assets` count even though the server never imports them. It also watches every module the script loads from outside the project, including ones first loaded after startup, such as by a dynamic `import()` while serving a request; Bento starts watching those within a fraction of a second of their loading. When it cannot watch one yet, for example because its directory has been moved away, it prints a warning once and keeps trying while the script runs. It watches the configuration that changes how modules resolve and transform, too: `package.json`, `tsconfig.json`, and every file `tsconfig.json` extends, even from another directory or a package. Bento reads `tsconfig.json` again on each change, so a file that an edit makes it extend is watched from the restart that edit causes. Edits, replaced files, deletions, and a newly created file that fixes a missing import all trigger a restart.
 
+A missing file that `tsconfig.json` extends can be repaired the same way: creating it restarts the run, even when its parent directories must also be created. This also works through directory symlinks and for a missing configuration package installed into the project's own `node_modules`. If Bento cannot watch an extended configuration, it warns once for that file and retries on later source changes.
+
 Inside the project, Bento ignores what running or building the application writes, so requests that write to them do not cause restarts:
 
 - dependencies and version control: `node_modules` and `.git`;
@@ -148,7 +150,7 @@ Inside the project, Bento ignores what running or building the application write
 - databases and SQLite side files: `*.db`, `*.sqlite`, `*.sqlite3`, `*-wal`, `*-shm`, and `*-journal`;
 - environment files: `.env` and `.env.*`, because a restart would not reload them.
 
-A module the script actually loads from one of those places, such as an entrypoint in `dist`, is still watched. Modules loaded from a `node_modules` directory are not.
+A module the script actually loads from one of those places, such as an entrypoint in `dist`, is still watched. Modules loaded from `node_modules` directories inside the project are excluded, as are modules in `node_modules` directories outside it. A `node_modules` ancestor above the project root does not exclude the project's own loaded files.
 
 Edits within about a tenth of a second of each other cause one restart. Bento says on standard error which file changed each time it restarts. The new instance starts only after the old one has shut down, as it would for a termination signal, and released its port. When loading fails, Bento reports the error, says it is waiting for changes, and keeps watching, so fixing the file or creating the missing one recovers; it never keeps serving the old code as though the reload had worked. A script that ends by itself, by finishing its work or calling `process.exit`, does not end the watch either: Bento reports how it ended and runs it again after the next change.
 

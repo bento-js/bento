@@ -9,35 +9,51 @@ use oxc_resolver::{
 };
 use parking_lot::Mutex;
 
-/// The files `tsconfig.json` is read from: itself and every file it extends, directly or
-/// through other extended files, with the `package.json` files that locate extended packages.
-///
-/// They are found by loading `tsconfig.json` the way the compiler loads it and recording
-/// what that reads. A configuration that fails to load still yields the files read before
-/// the failure, so that fixing one of them counts as a change.
+/// Configuration reads and missing resolution candidates, so repairing either can restart a run.
 pub fn files(project_root: &Path) -> BTreeSet<PathBuf> {
-    let file_system = RecordingFileSystem::new();
+    let file_system =
+        RecordingFileSystem { project_root: project_root.to_owned(), ..RecordingFileSystem::new() };
     let read = Arc::clone(&file_system.read);
     let resolver = ResolverGeneric::new_with_file_system(file_system, ResolveOptions::default());
     let _ = resolver.resolve_tsconfig(project_root.join("tsconfig.json"));
     mem::take(&mut *read.lock())
 }
 
-/// The operating system's file system, remembering every file read through it.
+/// Records reads and failed metadata probes without treating existing directories as inputs.
 struct RecordingFileSystem {
     inner: FileSystemOs,
+    project_root: PathBuf,
     read: Arc<Mutex<BTreeSet<PathBuf>>>,
 }
 
 impl RecordingFileSystem {
     fn record(&self, path: &Path) {
-        self.read.lock().insert(path.to_owned());
+        let mut read = self.read.lock();
+        if !read.contains(path) {
+            read.insert(path.to_owned());
+        }
+    }
+
+    fn record_missing(&self, path: &Path) {
+        // Failed package lookups above the project would otherwise watch ancestors up to `/`.
+        if path.file_name().is_some_and(|name| name == "node_modules")
+            && path.parent().is_some_and(|parent| {
+                parent != self.project_root && self.project_root.starts_with(parent)
+            })
+        {
+            return;
+        }
+        self.record(path);
     }
 }
 
 impl FileSystem for RecordingFileSystem {
     fn new() -> Self {
-        RecordingFileSystem { inner: FileSystemOs::new(), read: Arc::default() }
+        RecordingFileSystem {
+            inner: FileSystemOs::new(),
+            project_root: PathBuf::new(),
+            read: Arc::default(),
+        }
     }
 
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
@@ -51,11 +67,19 @@ impl FileSystem for RecordingFileSystem {
     }
 
     fn metadata(&self, path: &Path) -> io::Result<FileMetadata> {
-        self.inner.metadata(path)
+        let metadata = self.inner.metadata(path);
+        if metadata.is_err() {
+            self.record_missing(path);
+        }
+        metadata
     }
 
     fn symlink_metadata(&self, path: &Path) -> io::Result<FileMetadata> {
-        self.inner.symlink_metadata(path)
+        let metadata = self.inner.symlink_metadata(path);
+        if metadata.is_err() {
+            self.record_missing(path);
+        }
+        metadata
     }
 
     fn read_link(&self, path: &Path) -> Result<PathBuf, ResolveError> {

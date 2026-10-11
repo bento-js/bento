@@ -26,18 +26,16 @@ pub struct SourceWatcher {
     watcher: RecommendedWatcher,
     scope: Arc<Mutex<WatchScope>>,
     directories_outside_project: BTreeSet<PathBuf>,
-    /// Loaded modules being watched.
-    modules: BTreeSet<PathBuf>,
-    /// Loaded modules that could not be watched and have been reported as such.
-    unwatched_modules: BTreeSet<PathBuf>,
+    watched_files: BTreeSet<PathBuf>,
+    /// Failed watch registrations are retried without repeating their warnings.
+    unwatched_files: BTreeSet<PathBuf>,
 }
 
-/// A loaded module that cannot be watched, and why.
-pub type UnwatchedModule = (PathBuf, notify::Error);
+/// A source or configuration file that cannot be watched, and why.
+pub type UnwatchedFile = (PathBuf, notify::Error);
 
 impl SourceWatcher {
-    /// Watches `project_root` and the configuration that decides how its modules resolve and
-    /// transform, and calls `on_change` with the paths changed in each burst of changes.
+    /// Watches `project_root` and calls `on_change` once for each burst of source changes.
     pub fn start(
         project_root: &Path,
         on_change: impl FnMut(Vec<PathBuf>) + Send + 'static,
@@ -53,57 +51,71 @@ impl SourceWatcher {
         let scope = Arc::new(Mutex::new(WatchScope::new(project_root)));
         let reported_scope = Arc::clone(&scope);
         thread::spawn(move || coalesce::report_bursts(&notifications, &reported_scope, on_change));
-        let mut source_watcher = SourceWatcher {
+        Ok(SourceWatcher {
             watcher,
             scope,
             directories_outside_project: BTreeSet::new(),
-            modules: BTreeSet::new(),
-            unwatched_modules: BTreeSet::new(),
-        };
-        source_watcher.watch_configuration()?;
-        Ok(source_watcher)
+            watched_files: BTreeSet::new(),
+            unwatched_files: BTreeSet::new(),
+        })
     }
 
     /// Watches the files `tsconfig.json` is read from as it is now. An edit can make it extend
     /// other files, so this is worth repeating after each change.
-    pub fn watch_configuration(&mut self) -> notify::Result<()> {
+    pub fn watch_configuration(&mut self) -> Vec<UnwatchedFile> {
         let project_root = self.scope.lock().project_root().to_owned();
         configuration::files(&project_root)
             .into_iter()
-            // The compiler looks for extended files in directories that need not exist.
-            .filter(|file| file.parent().is_some_and(Path::is_dir))
-            .try_for_each(|file| self.watch_file(file))
+            .filter_map(|file| self.watch_input(file))
+            .collect()
     }
 
-    /// Also watches `modules`, files the script has loaded, except those installed in a
-    /// `node_modules` directory. Returns the modules that cannot be watched the first time
-    /// each fails; every later call tries them again.
+    /// Returns each registration failure once and retries it on later calls.
+    /// Dependency checks ignore ancestors of the project, which may itself be in `node_modules`.
     pub fn watch_modules(
         &mut self,
         modules: impl IntoIterator<Item = PathBuf>,
-    ) -> Vec<UnwatchedModule> {
-        let new: Vec<PathBuf> = modules
-            .into_iter()
-            .filter(|module| !scope::is_dependency(module) && !self.modules.contains(module))
-            .collect();
-        new.into_iter().filter_map(|module| self.watch_module(module)).collect()
+    ) -> Vec<UnwatchedFile> {
+        let mut failures = Vec::new();
+        for module in modules {
+            if self.watched_files.contains(&module)
+                || scope::is_dependency(self.scope.lock().project_root(), &module)
+            {
+                continue;
+            }
+            if let Some(failure) = self.watch_input(module) {
+                failures.push(failure);
+            }
+        }
+        failures
     }
 
-    /// Watches `module`, and returns why it cannot be watched unless that was reported before.
-    fn watch_module(&mut self, module: PathBuf) -> Option<UnwatchedModule> {
-        match self.watch_file(module.clone()) {
+    /// Retries registration but returns each failure only once.
+    fn watch_input(&mut self, file: PathBuf) -> Option<UnwatchedFile> {
+        match self.watch_file(&file) {
             Ok(()) => {
-                self.modules.insert(module);
+                self.watched_files.insert(file);
                 None
             }
-            Err(error) => self.unwatched_modules.insert(module.clone()).then_some((module, error)),
+            Err(error) => self.unwatched_files.insert(file.clone()).then_some((file, error)),
         }
     }
 
     /// Watches an outside file recursively from its nearest existing ancestor, so creations
     /// of missing parent directories and replacement of the file are noticed.
-    fn watch_file(&mut self, file: PathBuf) -> notify::Result<()> {
-        let file = file.canonicalize().unwrap_or(file);
+    fn watch_file(&mut self, file: &Path) -> notify::Result<()> {
+        let mut ancestor = file;
+        let file = loop {
+            match ancestor.canonicalize() {
+                Ok(canonical) => {
+                    break canonical.join(file.strip_prefix(ancestor).expect("a path's ancestor"));
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    ancestor = ancestor.parent().ok_or_else(|| notify::Error::io(error))?;
+                }
+                Err(error) => return Err(notify::Error::io(error)),
+            }
+        };
         let mut directory = file.parent().expect("a file has a parent directory").to_owned();
         while !directory.is_dir() {
             let Some(parent) = directory.parent() else { break };

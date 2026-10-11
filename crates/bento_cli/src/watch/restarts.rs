@@ -46,6 +46,7 @@ pub fn run(
         watcher,
         state: State::Waiting,
     };
+    restarts.watch_configuration();
     restarts.start();
     restarts.supervise(&received)
 }
@@ -163,20 +164,12 @@ impl Restarts {
     }
 
     fn watch_new_modules(&mut self, modules: Vec<PathBuf>) {
-        for (module, error) in self.watcher.watch_modules(modules) {
-            eprintln!(
-                "warning: watch: cannot watch {} for changes yet, so Bento will keep trying: \
-                 {error}",
-                module.display()
-            );
-        }
+        report_unwatched_files(self.watcher.watch_modules(modules));
     }
 
     /// Watches the files `tsconfig.json` extends now, since the change may have been to it.
     fn watch_configuration(&mut self) {
-        if let Err(error) = self.watcher.watch_configuration() {
-            eprintln!("warning: watch: cannot watch the files tsconfig.json extends: {error}");
-        }
+        report_unwatched_files(self.watcher.watch_configuration());
     }
 
     fn announce_restart(&self, paths: &[PathBuf]) {
@@ -207,5 +200,14 @@ fn report_failure(outcome: RunOutcome) {
             CliError::Script(error).report();
         }
         _ => {}
+    }
+}
+
+fn report_unwatched_files(files: Vec<super::UnwatchedFile>) {
+    for (file, error) in files {
+        eprintln!(
+            "warning: watch: cannot watch {} for changes yet, so Bento will keep trying: {error}",
+            file.display()
+        );
     }
 }

@@ -249,6 +249,121 @@ fn a_file_tsconfig_begins_to_extend_after_an_edit_is_watched() {
     bento.wait_for_stdout("listening", 3);
 }
 
+fn recover_missing_configuration(extended: &str, create_parent: bool) {
+    let temp = TempProject::new(json!({}));
+    temp.write("app/package.json", &json!({ "type": "module" }).to_string());
+    temp.write("app/tsconfig.json", &json!({ "extends": extended }).to_string());
+    temp.write("app/main.ts", "console.log('configuration recovered');\n");
+    let configuration = temp.path("app").join(extended);
+    if create_parent {
+        fs::create_dir_all(configuration.parent().unwrap()).unwrap();
+    }
+    let mut command =
+        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    command.env_remove("NODE_PATH");
+    let mut bento = Background::spawn(command);
+    bento.wait_for_stderr("waiting for changes");
+    assert!(bento.is_running());
+    assert!(bento.stderr.text().contains("base.json"), "{}", bento.stderr.text());
+
+    fs::create_dir_all(configuration.parent().unwrap()).unwrap();
+    fs::write(configuration, "{}\n").unwrap();
+
+    bento.wait_for_stdout("configuration recovered", 1);
+}
+
+#[test]
+fn proposal_0001_creating_a_missing_extended_configuration_recovers_watch() {
+    recover_missing_configuration("../configs/base.json", true);
+}
+
+#[test]
+fn proposal_0001_creating_missing_configuration_parent_directories_recovers_watch() {
+    recover_missing_configuration("../configs/deep/base.json", false);
+}
+
+#[test]
+fn proposal_0001_installing_a_missing_configuration_package_recovers_watch() {
+    let temp = TempProject::new(json!({ "type": "module" }));
+    temp.write("tsconfig.json", &json!({ "extends": "@configs/strict/tsconfig.json" }).to_string());
+    temp.write("main.ts", "console.log('package configuration recovered');\n");
+    let mut command = temp.bento(&["run", "--allow-read", "--watch", "main.ts"]);
+    command.env_remove("NODE_PATH");
+    let bento = Background::spawn(command);
+    bento.wait_for_stderr("waiting for changes");
+
+    temp.write("node_modules/@configs/strict/tsconfig.json", "{}\n");
+
+    bento.wait_for_stdout("package configuration recovered", 1);
+}
+
+#[test]
+fn proposal_0001_creating_a_configuration_through_a_directory_symlink_recovers_watch() {
+    let temp = TempProject::new(json!({}));
+    temp.write("app/package.json", &json!({ "type": "module" }).to_string());
+    temp.write("app/tsconfig.json", &json!({ "extends": "../shared/deep/base.json" }).to_string());
+    temp.write("app/main.ts", "console.log('symlink configuration recovered');\n");
+    fs::create_dir(temp.path("real")).unwrap();
+    std::os::unix::fs::symlink(temp.path("real"), temp.path("shared")).unwrap();
+    let command =
+        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    let bento = Background::spawn(command);
+    bento.wait_for_stderr("waiting for changes");
+
+    temp.write("real/deep/base.json", "{}\n");
+
+    bento.wait_for_stdout("symlink configuration recovered", 1);
+}
+
+#[test]
+fn an_unwatchable_configuration_warns_once_and_retries_after_source_changes() {
+    let temp = TempProject::new(json!({}));
+    temp.write("app/package.json", &json!({ "type": "module" }).to_string());
+    temp.write("app/tsconfig.json", &json!({ "extends": "../loop/base.json" }).to_string());
+    temp.write("app/main.ts", "console.log('unwatchable configuration recovered');\n");
+    std::os::unix::fs::symlink("loop", temp.path("loop")).unwrap();
+    let command =
+        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    let bento = Background::spawn(command);
+    bento.wait_for_stderr("waiting for changes");
+    let configuration = temp.path("").canonicalize().unwrap().join("loop/base.json");
+    let configuration = configuration.display();
+    let warning = format!(
+        "warning: watch: cannot watch {configuration} for changes yet, so Bento will keep trying:"
+    );
+    let warning_count =
+        || bento.stderr.all().iter().filter(|line| line.starts_with(&warning)).count();
+    assert_eq!(warning_count(), 1, "{}", bento.stderr.text());
+
+    temp.write("app/main.ts", "console.log('retry configuration');\n");
+    wait_until(RESPONSE_DEADLINE, || {
+        bento.stderr.count("watch: waiting for changes before restarting") >= 2
+    });
+    assert_eq!(warning_count(), 1, "{}", bento.stderr.text());
+    fs::remove_file(temp.path("loop")).unwrap();
+    temp.write("loop/base.json", "{}\n");
+    temp.write("app/main.ts", "console.log('unwatchable configuration recovered');\n");
+
+    bento.wait_for_stdout("unwatchable configuration recovered", 1);
+    assert_eq!(warning_count(), 1, "{}", bento.stderr.text());
+}
+
+#[test]
+fn proposal_0001_a_loaded_entry_beneath_a_node_modules_ancestor_is_watched() {
+    let temp = TempProject::new(json!({}));
+    let project = temp.path("node_modules/application");
+    temp.write("node_modules/application/package.json", &json!({ "type": "module" }).to_string());
+    temp.write("node_modules/application/dist/main.mjs", "console.log('version one');\n");
+    let command = support::bento_in(&project, &["run", "--allow-read", "--watch", "dist/main.mjs"]);
+    let bento = Background::spawn(command);
+    bento.wait_for_stdout("version one", 1);
+    bento.wait_for_stderr("waiting for changes");
+
+    temp.write("node_modules/application/dist/main.mjs", "console.log('version two');\n");
+
+    bento.wait_for_stdout("version two", 1);
+}
+
 /// A module loaded before its directory moves remains watched through the nearest existing ancestor.
 #[test]
 fn a_loaded_module_stays_watched_when_its_directory_is_moved_and_restored() {

@@ -51,10 +51,11 @@ impl Workspace {
     /// pass, so that each test observes only its own changes.
     fn watch(&self) -> (SourceWatcher, Receiver<Vec<PathBuf>>) {
         let (sender, changes) = mpsc::channel();
-        let watcher = SourceWatcher::start(&self.root(), move |changed| {
+        let mut watcher = SourceWatcher::start(&self.root(), move |changed| {
             let _ = sender.send(changed);
         })
         .unwrap();
+        assert!(watcher.watch_configuration().is_empty());
         thread::sleep(SETTLE);
         while changes.try_recv().is_ok() {}
         (watcher, changes)
@@ -252,6 +253,138 @@ fn the_tsconfig_extends_chain_is_watched_outside_the_project_and_in_node_modules
 
     fs::write(&package_config, r#"{ "compilerOptions": { "strict": false } }"#).unwrap();
     assert_eq!(next_change(&changes), vec![package_config]);
+}
+
+#[test]
+fn refreshing_configuration_watches_a_retargeted_extended_symlink() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "../shared/base.json" }"#);
+    let original = workspace.write("original/base.json", "{}\n");
+    let replacement = workspace.write("replacement/base.json", "{}\n");
+    fs::create_dir(workspace.path("shared")).unwrap();
+    let link = workspace.path("shared/base.json");
+    symlink(&original, &link).unwrap();
+    let (mut watcher, changes) = workspace.watch();
+    fs::remove_file(&link).unwrap();
+    symlink(&replacement, &link).unwrap();
+
+    assert!(watcher.watch_configuration().is_empty());
+    thread::sleep(SETTLE);
+    while changes.try_recv().is_ok() {}
+    fs::write(&replacement, r#"{ "compilerOptions": { "strict": true } }"#).unwrap();
+
+    assert_eq!(next_change(&changes), vec![replacement]);
+}
+
+#[test]
+fn proposal_0001_missing_extended_configuration_candidates_are_retained() {
+    let workspace = Workspace::new();
+    for (extended, expected) in [
+        ("../configs/base.json", "configs/base.json"),
+        ("../configs/deep/base.json", "configs/deep/base.json"),
+        ("../configs/base", "configs/base.json"),
+    ] {
+        workspace.write("app/tsconfig.json", &format!(r#"{{ "extends": "{extended}" }}"#));
+
+        let candidates = super::configuration::files(&workspace.root());
+
+        assert!(candidates.contains(&workspace.path(expected)), "{candidates:?}");
+    }
+}
+
+#[test]
+fn proposal_0001_creating_a_missing_configuration_outside_the_project_is_a_change() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "../configs/base.json" }"#);
+    fs::create_dir(workspace.path("configs")).unwrap();
+    let (_watcher, changes) = workspace.watch();
+
+    let configuration = workspace.write("configs/base.json", "{}\n");
+
+    assert_eq!(next_change(&changes), vec![configuration]);
+}
+
+#[test]
+fn proposal_0001_creating_missing_configuration_directories_is_a_change() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "../configs/deep/base.json" }"#);
+    let (_watcher, changes) = workspace.watch();
+
+    let configuration = workspace.write("configs/deep/base.json", "{}\n");
+
+    assert_eq!(next_change(&changes), vec![configuration]);
+}
+
+#[test]
+fn proposal_0001_missing_configuration_packages_do_not_watch_project_ancestors() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
+
+    let candidates = super::configuration::files(&workspace.root());
+    assert!(candidates.iter().all(|path| path.starts_with(workspace.root())), "{candidates:?}");
+    let (watcher, _changes) = workspace.watch();
+    assert!(watcher.directories_outside_project.is_empty());
+}
+
+#[test]
+fn proposal_0001_installing_a_missing_configuration_package_is_a_change() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
+    let (_watcher, changes) = workspace.watch();
+
+    workspace.write("app/node_modules/@configs/strict/tsconfig.json", "{}\n");
+
+    assert!(!next_change(&changes).is_empty());
+}
+
+#[test]
+fn proposal_0001_a_missing_package_extended_by_an_outside_configuration_stays_watched() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "../shared/base.json" }"#);
+    workspace.write("shared/base.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
+    let (_watcher, changes) = workspace.watch();
+
+    workspace.write("shared/node_modules/@configs/strict/tsconfig.json", "{}\n");
+
+    assert!(!next_change(&changes).is_empty());
+}
+
+#[test]
+fn proposal_0001_creating_a_missing_configuration_through_a_directory_symlink_is_a_change() {
+    let workspace = Workspace::new();
+    workspace.write("app/tsconfig.json", r#"{ "extends": "../shared/deep/base.json" }"#);
+    fs::create_dir(workspace.path("real")).unwrap();
+    symlink(workspace.path("real"), workspace.path("shared")).unwrap();
+    let (_watcher, changes) = workspace.watch();
+
+    let configuration = workspace.write("real/deep/base.json", "{}\n");
+
+    assert_eq!(next_change(&changes), vec![configuration]);
+}
+
+#[test]
+fn a_missing_module_through_a_directory_symlink_is_a_change() {
+    let workspace = Workspace::new();
+    fs::create_dir(workspace.path("real")).unwrap();
+    symlink(workspace.path("real"), workspace.path("shared")).unwrap();
+    let (mut watcher, changes) = workspace.watch();
+    assert!(watcher.watch_modules([workspace.path("shared/deep/module.mjs")]).is_empty());
+
+    let module = workspace.write("real/deep/module.mjs", "export {};\n");
+
+    assert_eq!(next_change(&changes), vec![module]);
+}
+
+#[test]
+fn a_loaded_dependency_inside_the_project_is_not_watched() {
+    let workspace = Workspace::new();
+    let dependency = workspace.write("app/node_modules/dependency/index.js", "export {};\n");
+    let (mut watcher, changes) = workspace.watch();
+    assert!(watcher.watch_modules([dependency.clone()]).is_empty());
+
+    fs::write(dependency, "export const edited = true;\n").unwrap();
+
+    assert_quiet(&changes);
 }
 
 #[test]
