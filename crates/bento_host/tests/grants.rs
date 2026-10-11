@@ -60,6 +60,90 @@ fn net_target_parses_hosts_ports_and_bracketed_ipv6() {
 }
 
 #[test]
+fn net_target_rejects_anything_but_a_hostname_or_ip_address_with_an_optional_port() {
+    let long_label = format!("{}.com", "a".repeat(64));
+    let long_name = ["abcdefghi"; 26].join(".");
+    let malformed = [
+        "localhost/path",
+        "[bogus]:18540",
+        "white space",
+        "exa_mple.com",
+        "-leading.com",
+        "trailing-.com",
+        "double..dot",
+        ".leading.dot",
+        "trailing.dot.",
+        "*.example.com",
+        "http://example.com",
+        "[127.0.0.1]:80",
+        "[::1]x",
+        "::1",
+        "localhost:",
+        "localhost:+80",
+        "localhost:65536",
+        "127.1",
+        "0x7f.0.0.1",
+        "0x7f000001",
+        "127.000.0.1",
+        "256.0.0.1",
+        long_label.as_str(),
+        long_name.as_str(),
+    ];
+    for text in malformed {
+        assert!(text.parse::<NetTarget>().is_err(), "`{text}` parsed");
+    }
+}
+
+#[test]
+fn net_target_accepts_hostnames_ipv4_and_bracketed_ipv6() {
+    let valid = [
+        "localhost",
+        "example.com:443",
+        "1password.com",
+        "xn--bcher-kva.example",
+        "a-b.c-d.e",
+        "127.0.0.1:80",
+        "[::1]",
+        "[2001:db8::1]:8080",
+    ];
+    for text in valid {
+        assert_eq!(text.parse::<NetTarget>().unwrap().to_string(), text);
+    }
+}
+
+#[test]
+fn equivalent_spellings_of_an_endpoint_are_one_target() {
+    let spellings = [
+        ("[0:0:0:0:0:0:0:1]:18540", "[::1]:18540"),
+        ("[0000::0001]", "[::1]"),
+        ("[2001:DB8::1]:80", "[2001:db8::1]:80"),
+        ("[::ffff:127.0.0.1]:80", "127.0.0.1:80"),
+        ("LocalHost:3000", "localhost:3000"),
+        ("localhost:03000", "localhost:3000"),
+    ];
+    for (spelling, canonical) in spellings {
+        let target: NetTarget = spelling.parse().unwrap();
+        assert_eq!(target, canonical.parse().unwrap(), "{spelling}");
+        assert_eq!(target.to_string(), canonical, "{spelling}");
+    }
+    assert_eq!(NetTarget::new("0:0:0:0:0:0:0:1", Some(1)), "[::1]:1".parse().unwrap());
+    assert_eq!(NetTarget::new("EXAMPLE.com", None), "example.com".parse().unwrap());
+}
+
+#[test]
+fn nested_request_spelling_an_inherited_endpoint_differently_fits_the_ceiling() {
+    let ceiling = Grants { net: nets(&["[::1]:18540", "Example.com"]), ..Grants::none() };
+    let request = GrantRequest {
+        net: Some(nets(&["[0:0:0:0:0:0:0:1]:18540", "example.COM:443"])),
+        ..GrantRequest::default()
+    };
+    assert_eq!(
+        request.resolve(Some(&ceiling)).unwrap().net,
+        nets(&["[::1]:18540", "example.com:443"])
+    );
+}
+
+#[test]
 fn nested_request_without_options_inherits_the_ceiling() {
     let ceiling = GrantRequest {
         read: Some(paths(&["/project"])),
@@ -168,4 +252,84 @@ fn symlinked_request_cannot_escape_a_canonical_ceiling() {
         ..GrantRequest::default()
     };
     assert_eq!(request.resolve(Some(&ceiling)).unwrap_err().kind, GrantKind::Read);
+}
+
+/// `allowed/link` points at `outside/child`, and both `allowed` and `outside` hold a `secret.txt`.
+struct LinkedLayout {
+    _root: tempfile::TempDir,
+    allowed: PathBuf,
+    outside: PathBuf,
+}
+
+fn linked_layout() -> LinkedLayout {
+    let root = tempfile::tempdir().unwrap();
+    let allowed = root.path().join("allowed");
+    let outside = root.path().join("outside");
+    std::fs::create_dir_all(outside.join("child")).unwrap();
+    std::fs::create_dir_all(&allowed).unwrap();
+    std::fs::write(allowed.join("secret.txt"), "allowed").unwrap();
+    std::fs::write(outside.join("secret.txt"), "outside").unwrap();
+    std::os::unix::fs::symlink(outside.join("child"), allowed.join("link")).unwrap();
+    let allowed = std::fs::canonicalize(allowed).unwrap();
+    let outside = std::fs::canonicalize(outside).unwrap();
+    LinkedLayout { _root: root, allowed, outside }
+}
+
+#[test]
+fn canonical_path_applies_parent_steps_after_a_symlink_to_the_link_target() {
+    let layout = linked_layout();
+    let through_link = layout.allowed.join("link/../secret.txt");
+
+    assert_eq!(canonical_path(&through_link).unwrap(), layout.outside.join("secret.txt"));
+    assert_eq!(
+        canonical_path(&layout.allowed.join("link/../not-yet/created.db")).unwrap(),
+        layout.outside.join("not-yet/created.db")
+    );
+    let read = Scope::only([layout.allowed.clone()]);
+    assert!(!read.allows(&canonical_path(&through_link).unwrap()));
+}
+
+#[test]
+fn canonical_path_resolves_names_after_a_missing_directory_is_left() {
+    let layout = linked_layout();
+
+    assert_eq!(
+        canonical_path(&layout.allowed.join("missing/../link/../secret.txt")).unwrap(),
+        layout.outside.join("secret.txt")
+    );
+    assert_eq!(
+        canonical_path(&layout.allowed.join("missing/deeper/../file.db")).unwrap(),
+        layout.allowed.join("missing/file.db")
+    );
+}
+
+#[test]
+fn canonical_path_follows_a_dangling_symlink_to_the_file_it_would_create() {
+    let layout = linked_layout();
+    std::os::unix::fs::symlink(layout.outside.join("new.db"), layout.allowed.join("new.db"))
+        .unwrap();
+    std::os::unix::fs::symlink("../outside/fresh/dir", layout.allowed.join("relative")).unwrap();
+
+    assert_eq!(
+        canonical_path(&layout.allowed.join("new.db")).unwrap(),
+        layout.outside.join("new.db")
+    );
+    assert_eq!(
+        canonical_path(&layout.allowed.join("relative/file.db")).unwrap(),
+        layout.outside.join("fresh/dir/file.db")
+    );
+    let write = Scope::only([layout.allowed.clone()]);
+    assert!(!write.allows(&canonical_path(&layout.allowed.join("new.db")).unwrap()));
+}
+
+#[test]
+fn canonical_path_reports_symlink_loops() {
+    let layout = linked_layout();
+    std::os::unix::fs::symlink(layout.allowed.join("loop-b"), layout.allowed.join("loop-a"))
+        .unwrap();
+    std::os::unix::fs::symlink(layout.allowed.join("loop-a"), layout.allowed.join("loop-b"))
+        .unwrap();
+
+    assert!(canonical_path(&layout.allowed.join("loop-a")).is_err());
+    assert!(canonical_path(&layout.allowed.join("loop-a/missing")).is_err());
 }

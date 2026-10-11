@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde_json::json;
 
 use bento_host::{Grants, NetTarget, Scope};
-use support::{TempProject, bento_in, stderr};
+use support::{TempProject, bento_in, stderr, stdout};
 
 /// A project whose `ceiling` task records the grants its launch handed to task commands.
 fn project() -> TempProject {
@@ -15,6 +15,7 @@ fn project() -> TempProject {
         "nested": "bento run ceiling",
         "narrowed": "bento run --allow-read=data/inner --allow-net=localhost:3000 ceiling",
         "widened": "bento run --allow-read=. ceiling",
+        "respelled": "bento run '--allow-net=[0:0:0:0:0:0:0:1]:18540' ceiling",
     }));
     temp.write("data/inner/entry.txt", "");
     temp.write("db/.keep", "");
@@ -138,6 +139,17 @@ fn a_nested_launch_may_narrow_the_outer_grants() {
 }
 
 #[test]
+fn a_nested_launch_may_spell_an_inherited_endpoint_differently() {
+    let temp = project();
+
+    let output = temp.bento(&["run", "--allow-net=[::1]:18540", "respelled"]).output().unwrap();
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let endpoint = "[::1]:18540".parse::<NetTarget>().unwrap();
+    assert_eq!(recorded_grants(&temp).net, Scope::only([endpoint]));
+}
+
+#[test]
 fn a_wider_nested_request_fails_before_its_task_runs() {
     let temp = project();
 
@@ -183,6 +195,26 @@ fn malformed_grant_flags_fail_before_anything_runs() {
         assert_eq!(output.status.code(), Some(1), "{flag}");
         assert!(stderr(&output).contains(named), "{flag}: {}", stderr(&output));
         assert!(!temp.exists("ceiling.json"), "{flag}");
+    }
+}
+
+#[test]
+fn malformed_network_targets_fail_before_a_task_or_script_runs() {
+    let temp = project();
+    temp.write("show.mjs", "console.log('ran');\n");
+    let malformed =
+        ["--allow-net=localhost/path", "--allow-net=[bogus]:18540", "--allow-net=white space"];
+
+    for flag in malformed {
+        let task = temp.bento(&["run", flag, "ceiling"]).output().unwrap();
+        let script = temp.bento(&["run", "--allow-read=.", flag, "show.mjs"]).output().unwrap();
+
+        for output in [&task, &script] {
+            assert_eq!(output.status.code(), Some(1), "{flag}");
+            assert!(stderr(output).contains("--allow-net"), "{flag}: {}", stderr(output));
+        }
+        assert!(!temp.exists("ceiling.json"), "{flag}");
+        assert_eq!(stdout(&script), "", "{flag}");
     }
 }
 
