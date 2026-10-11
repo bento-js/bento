@@ -18,6 +18,9 @@ import {
 } from "@oh-my-pi/pi-coding-agent/task/settings";
 import { buildOutputValidator } from "@oh-my-pi/pi-coding-agent/tools/output-schema-validator";
 
+import type { WorkflowCoordination } from "./runs.js";
+
+import { agentIdFromLabel, appendIrcBlock } from "./irc.js";
 import {
     WorkflowAgentFailure,
     type WorkflowAgentOutcome,
@@ -60,6 +63,33 @@ const DEFAULT_DEPENDENCIES: OmpWorkflowAgentDependencies = Object.freeze({
 });
 
 /**
+ * The session surface the adapter reads. A custom-tool context and an extension
+ * context both satisfy it; the extension supplies `settings` itself, since its
+ * context does not carry one.
+ */
+export interface WorkflowSessionContext {
+    sessionManager: CustomToolContext["sessionManager"];
+    modelRegistry: CustomToolContext["modelRegistry"];
+    settings?: CustomToolContext["settings"];
+    localProtocolOptions?: CustomToolContext["localProtocolOptions"];
+}
+
+export interface OmpWorkflowAgentOptions {
+    cwd: string;
+    context: WorkflowSessionContext;
+    /** Tool call that started the run, so child rows nest under it in the UI. */
+    parentToolCallId?: string;
+    dependencies?: Partial<OmpWorkflowAgentDependencies>;
+    /**
+     * Id allocator shared across the session's runs. Concurrent runs must draw
+     * from one allocator or two agents could claim the same registry id.
+     */
+    outputManager?: AgentOutputManager;
+    /** Peer and coordinator identities for the IRC block in each agent prompt. */
+    coordination?: WorkflowCoordination;
+}
+
+/**
  * Runs each workflow agent request as an in-process OMP subagent. Resolves the
  * requested profile, hardens it against recursion, forwards session context to
  * `runSubprocess`, and normalizes the result into a {@link WorkflowAgentOutcome}
@@ -67,15 +97,20 @@ const DEFAULT_DEPENDENCIES: OmpWorkflowAgentDependencies = Object.freeze({
  */
 export class OmpWorkflowAgent implements WorkflowAgentRunner {
     readonly #cwd: string;
-    readonly #context: CustomToolContext;
+    readonly #context: WorkflowSessionContext;
     readonly #parentToolCallId: string | undefined;
     readonly #dependencies: OmpWorkflowAgentDependencies;
     readonly #outputManager: AgentOutputManager;
+    readonly #coordination: WorkflowCoordination | undefined;
     #index = 0;
     // Serializes per-instance ID allocation so the manager's initial disk scan
     // completes before the next allocation runs — concurrent runs then never
     // reuse an existing artifact id.
     #allocationChain: Promise<unknown> = Promise.resolve();
+    // Every id handed out so far. A caller awaits these before reading the peer
+    // table: a consumer's own reservation callback is attached to the same
+    // promise first, so by then the peer rows carry their ids.
+    readonly #reservations: Array<Promise<string>> = [];
     // A fresh, unconnected MCP manager handed to every child run. The executor
     // reads a supplied manager as "MCP already provided" (sets enableMCP = false),
     // so the child never rediscovers .mcp.json servers, and an empty manager makes
@@ -88,20 +123,32 @@ export class OmpWorkflowAgent implements WorkflowAgentRunner {
     // against a single, stable agent-profile set instead of rescanning each call.
     #discovery: Promise<DiscoveryResult> | undefined;
 
-    constructor(
-        cwd: string,
-        context: CustomToolContext,
-        parentToolCallId?: string,
-        dependencies: Partial<OmpWorkflowAgentDependencies> = {},
-    ) {
-        this.#cwd = cwd;
-        this.#context = context;
-        this.#parentToolCallId = parentToolCallId;
-        this.#dependencies = { ...DEFAULT_DEPENDENCIES, ...dependencies };
-        this.#mcpManager = new MCPManager(cwd);
-        this.#outputManager = new AgentOutputManager(() =>
-            context.sessionManager.getArtifactsDir(),
-        );
+    constructor(options: OmpWorkflowAgentOptions) {
+        this.#cwd = options.cwd;
+        this.#context = options.context;
+        this.#parentToolCallId = options.parentToolCallId;
+        this.#dependencies = { ...DEFAULT_DEPENDENCIES, ...options.dependencies };
+        this.#coordination = options.coordination;
+        this.#mcpManager = new MCPManager(options.cwd);
+        this.#outputManager =
+            options.outputManager ??
+            new AgentOutputManager(() => options.context.sessionManager.getArtifactsDir());
+    }
+
+    /**
+     * Claim this agent's registry id from its label while the agent is queued.
+     * Returns the allocation promise itself so a consumer that attached to it
+     * earlier (to record the id) always observes the reservation first.
+     */
+    reserve(request: { label: string }): Promise<string> {
+        let allocated = this.#allocateId(agentIdFromLabel(request.label));
+        this.#reservations.push(allocated);
+        return allocated;
+    }
+
+    /** Resolve once every reservation issued so far has been recorded. */
+    async settleReservations(): Promise<void> {
+        await Promise.allSettled(this.#reservations);
     }
 
     async run(request: WorkflowAgentRequest): Promise<WorkflowAgentOutcome> {
@@ -142,9 +189,9 @@ export class OmpWorkflowAgent implements WorkflowAgentRunner {
 
         let settingsModels = settings ? cfgTaskAgentModelOverrides.get(settings) : {};
         let modelOverride = request.model ?? settingsModels[profile.name];
-
         let index = ++this.#index;
-        let id = await this.#allocateId(`Workflow${index}`);
+        let id = request.agentId ?? (await this.reserve(request));
+        let prompt = await this.#promptWithIrcBlock(request.prompt, id);
 
         let activeSkills = dependencies.getActiveSkills();
         let autoloadNames = safeProfile.autoloadSkills ?? [];
@@ -158,7 +205,7 @@ export class OmpWorkflowAgent implements WorkflowAgentRunner {
         let result = await dependencies.runSubprocess({
             cwd: this.#cwd,
             agent: safeProfile,
-            task: request.prompt,
+            task: prompt,
             assignment: request.prompt,
             description: request.label,
             parentToolCallId: this.#parentToolCallId,
@@ -237,6 +284,26 @@ export class OmpWorkflowAgent implements WorkflowAgentRunner {
         }
 
         return { value: result.output, tokens: result.tokens };
+    }
+
+    /**
+     * Append the run's IRC block to a prompt. Waits for the reservations issued
+     * so far to settle first: the agents of a wave are all queued in one tick, so
+     * this is what lets each of them name the others.
+     */
+    async #promptWithIrcBlock(prompt: string, selfId: string): Promise<string> {
+        let coordination = this.#coordination;
+        if (!coordination) return prompt;
+        await this.settleReservations();
+        let { peers, foreignPeers } = coordination.peers(selfId);
+        return appendIrcBlock(prompt, {
+            selfId,
+            coordinatorId: coordination.coordinatorId,
+            runId: coordination.runId,
+            runName: coordination.runName,
+            peers,
+            foreignPeers,
+        });
     }
 
     /**
