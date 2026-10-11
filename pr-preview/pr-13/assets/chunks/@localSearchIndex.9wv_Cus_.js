@@ -1,1 +1,0 @@
-import{t as e}from"./framework.WSUfugzE.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.CDXnBP2S.js`),[])};export{t as default};
