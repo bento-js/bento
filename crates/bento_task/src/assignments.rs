@@ -1,52 +1,127 @@
-//! The variables a task command assigns itself. A nested `bento` launch must treat them as
-//! explicit even when they repeat a value loaded from a file, and the environment it
-//! inherits is identical either way, so only the command text can tell.
+//! The variables a task command assigns for a nested `bento` launch. The launch must treat
+//! them as explicit even when they repeat a value loaded from a file, and the environment
+//! it inherits is identical either way, so only the command text can tell. Where the text
+//! alone cannot decide, a name counts: that keeps the user's value.
 
+use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::mem;
-use std::str::Chars;
+
+use crate::env_arguments;
+use crate::shell_words::{simple_commands, unquoted};
 
 /// Words that may precede a command without being its name.
 const RESERVED_WORDS: [&str; 9] = ["!", "{", "if", "then", "elif", "else", "while", "until", "do"];
 
-/// Commands whose `NAME=value` arguments assign variables.
-const ASSIGNING_COMMANDS: [&str; 2] = ["export", "readonly"];
+/// Regular builtins that start no program, so a prefix assignment on them reaches nothing.
+/// Special builtins such as `:` and `exec` are absent: a prefix assignment on them persists
+/// in the shell.
+const NON_LAUNCHING_BUILTINS: [&str; 21] = [
+    "[", "alias", "bg", "cd", "echo", "false", "fg", "getopts", "hash", "jobs", "kill", "printf",
+    "pwd", "read", "test", "true", "type", "ulimit", "umask", "unalias", "wait",
+];
 
-/// Names assigned by `NAME=value` words before a command and by the `NAME=value`
-/// arguments of `export`, `readonly`, and `env`, in any simple command of `command`.
+/// Builtins whose `NAME=value` arguments assign variables for the rest of the shell.
+const EXPORTING_BUILTINS: [&str; 2] = ["export", "readonly"];
+
+/// Utilities that run their first operand as a command, with the same environment.
+const WRAPPERS: [&str; 3] = ["command", "exec", "nohup"];
+
+/// Names assigned in `command`'s text that a nested `bento` launch it starts may see.
 pub(crate) fn assigned_names(command: &str) -> BTreeSet<String> {
-    simple_commands(command)
-        .iter()
-        .flat_map(|words| assignments_in(words))
-        .map(str::to_owned)
-        .collect()
+    simple_commands(command).iter().flat_map(|words| names_reaching_a_launch(words)).collect()
 }
 
-fn assignments_in(words: &[String]) -> Vec<&str> {
-    let mut words = words
-        .iter()
-        .map(String::as_str)
-        .skip_while(|word| RESERVED_WORDS.contains(word))
-        .peekable();
-    let mut names = Vec::new();
-    while let Some(name) = words.peek().and_then(|word| assigned_name(word)) {
-        names.push(name);
-        words.next();
-    }
-    match words.next() {
-        Some(command) if ASSIGNING_COMMANDS.contains(&command) => {
-            names.extend(words.filter_map(assigned_name));
-        }
-        Some("env") => {
-            names.extend(words.filter(|word| !word.starts_with('-')).map_while(assigned_name));
-        }
-        _ => {}
-    }
-    names
+/// What a simple command does with the variables assigned around it.
+enum Effect {
+    /// A command such as `true` or `echo` that starts no program; prefix assignments on it
+    /// reach nothing.
+    NoProgram,
+    /// Names assigned for the program the command runs or for the rest of the shell.
+    Assigns(Vec<String>),
 }
 
-/// The name a word assigns. Quotes are kept in the words, so a quoted name never matches.
-fn assigned_name(word: &str) -> Option<&str> {
+/// The names a nested launch started by this simple command, or by a later command in the
+/// same shell, sees assigned by the command text.
+fn names_reaching_a_launch(words: &[String]) -> Vec<String> {
+    let reserved = words.iter().take_while(|word| RESERVED_WORDS.contains(&word.as_str())).count();
+    let words = &words[reserved..];
+    let prefixes = words.iter().take_while(|word| assignment_name(word).is_some()).count();
+    let (prefix_words, command) = words.split_at(prefixes);
+    match command_effect(command) {
+        Effect::NoProgram => Vec::new(),
+        Effect::Assigns(names) => {
+            assignment_names(prefix_words.iter().map(String::as_str)).chain(names).collect()
+        }
+    }
+}
+
+/// `command` follows the prefix assignments; empty for a bare assignment statement, which
+/// assigns for the rest of the shell.
+fn command_effect(command: &[String]) -> Effect {
+    let Some((name, arguments)) = command.split_first() else {
+        return Effect::Assigns(Vec::new());
+    };
+    let name = unquoted(name);
+    let arguments: Vec<Cow<'_, str>> = arguments.iter().map(|word| unquoted(word)).collect();
+    if EXPORTING_BUILTINS.contains(&name.as_ref()) {
+        let operands = arguments.iter().filter(|word| !word.starts_with('-'));
+        return Effect::Assigns(assignment_names(operands.map(Cow::as_ref)).collect());
+    }
+    program_effect(&name, &arguments)
+}
+
+/// The effect of running the program `name` with `arguments`, all already unquoted. Any
+/// program other than a known builtin may be, or may start, a nested `bento`.
+fn program_effect(name: &str, arguments: &[Cow<'_, str>]) -> Effect {
+    if NON_LAUNCHING_BUILTINS.contains(&name) {
+        return Effect::NoProgram;
+    }
+    if WRAPPERS.contains(&name) {
+        return operands_effect(skip_options(arguments), Vec::new());
+    }
+    if name == "env" {
+        return env_effect(arguments);
+    }
+    Effect::Assigns(Vec::new())
+}
+
+/// `env`'s `NAME=value` operands apply to the utility it runs. Without a utility it prints
+/// the environment, and they reach nothing.
+fn env_effect(arguments: &[Cow<'_, str>]) -> Effect {
+    let operands = env_arguments::operands(arguments);
+    let assignments = operands.iter().take_while(|word| assignment_name(word).is_some()).count();
+    let (assignment_words, utility) = operands.split_at(assignments);
+    if utility.is_empty() {
+        return Effect::NoProgram;
+    }
+    let names = assignment_names(assignment_words.iter().map(Cow::as_ref)).collect();
+    operands_effect(utility, names)
+}
+
+/// The effect of `names`, assigned for the program that `command` names. Without one they
+/// are kept: `exec` alone is a special builtin, whose prefix assignments persist.
+fn operands_effect(command: &[Cow<'_, str>], names: Vec<String>) -> Effect {
+    let Some((name, arguments)) = command.split_first() else {
+        return Effect::Assigns(names);
+    };
+    match program_effect(name, arguments) {
+        Effect::NoProgram => Effect::NoProgram,
+        Effect::Assigns(inner) => Effect::Assigns(names.into_iter().chain(inner).collect()),
+    }
+}
+
+fn skip_options<'a, 'b>(arguments: &'a [Cow<'b, str>]) -> &'a [Cow<'b, str>] {
+    let options = arguments.iter().take_while(|word| word.starts_with('-')).count();
+    &arguments[options..]
+}
+
+fn assignment_names<'a>(words: impl Iterator<Item = &'a str>) -> impl Iterator<Item = String> {
+    words.filter_map(assignment_name).map(str::to_owned)
+}
+
+/// The name a word assigns, when it starts with a name and `=`. Quotes and escapes are not
+/// name characters, so a raw word with a quoted name never matches.
+fn assignment_name(word: &str) -> Option<&str> {
     let (name, _) = word.split_once('=')?;
     let mut characters = name.chars();
     let starts_a_name =
@@ -54,66 +129,4 @@ fn assigned_name(word: &str) -> Option<&str> {
     let is_name = starts_a_name
         && characters.all(|character| character.is_ascii_alphanumeric() || character == '_');
     is_name.then_some(name)
-}
-
-/// Splits `command` into the raw words of its simple commands, honoring quotes, escapes,
-/// and comments. Unquoted parentheses and backticks also separate commands, so command
-/// and arithmetic substitutions count as commands of their own.
-fn simple_commands(command: &str) -> Vec<Vec<String>> {
-    let mut splitter = Splitter::default();
-    let mut characters = command.chars();
-    while let Some(character) = characters.next() {
-        match character {
-            '\\' => {
-                splitter.word.push(character);
-                splitter.word.extend(characters.next());
-            }
-            '\'' | '"' => push_quoted(&mut splitter.word, &mut characters, character),
-            '#' if splitter.word.is_empty() => {
-                characters.by_ref().find(|&character| character == '\n');
-                splitter.end_command();
-            }
-            ' ' | '\t' => splitter.end_word(),
-            '\n' | ';' | '&' | '|' | '(' | ')' | '`' => splitter.end_command(),
-            _ => splitter.word.push(character),
-        }
-    }
-    splitter.end_command();
-    splitter.commands
-}
-
-/// Appends a quoted span to `word`, quotes included.
-fn push_quoted(word: &mut String, characters: &mut Chars<'_>, quote: char) {
-    word.push(quote);
-    while let Some(character) = characters.next() {
-        word.push(character);
-        if character == quote {
-            return;
-        }
-        if character == '\\' && quote == '"' {
-            word.extend(characters.next());
-        }
-    }
-}
-
-#[derive(Default)]
-struct Splitter {
-    commands: Vec<Vec<String>>,
-    words: Vec<String>,
-    word: String,
-}
-
-impl Splitter {
-    fn end_word(&mut self) {
-        if !self.word.is_empty() {
-            self.words.push(mem::take(&mut self.word));
-        }
-    }
-
-    fn end_command(&mut self) {
-        self.end_word();
-        if !self.words.is_empty() {
-            self.commands.push(mem::take(&mut self.words));
-        }
-    }
 }

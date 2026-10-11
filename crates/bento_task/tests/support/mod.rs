@@ -64,9 +64,12 @@ impl TempProject {
     }
 
     /// A stand-in for the running `bento` executable that records how it was invoked in
-    /// `bento.txt`.
+    /// `bento.txt` and the environment it received in `bento.env`.
     pub fn bento_executable(&self) -> PathBuf {
-        self.write_executable("bento-bin/bento", "#!/bin/sh\necho running \"$@\" > bento.txt\n")
+        self.write_executable(
+            "bento-bin/bento",
+            "#!/bin/sh\necho running \"$@\" > bento.txt\nenv -0 > bento.env\n",
+        )
     }
 
     pub fn runner(&self, inherited: &[(&str, &str)], grants: &Grants) -> TaskRunner {

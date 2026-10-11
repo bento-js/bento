@@ -57,9 +57,18 @@ A command finishes when its shell exits. If the shell leaves processes running i
 A task command that runs `bento` again receives two variables from the launch that started the task:
 
 - `BENTO_GRANT_CEILING` carries that launch's grants. The nested launch inherits them for any kind of grant it does not mention, and may narrow them; asking for a wider grant fails before any guest code runs.
-- `BENTO_ENV_FILE_KEYS` records which variables Bento loaded from `.env` files, with a fingerprint of each loaded value. The nested launch treats those variables as file values it may load again for its own mode, rather than as values you exported. A variable the task command assigns itself is left out, so it stays explicit even when it repeats the value from `.env`: `DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. A variable whose value no longer matches its fingerprint is explicit too.
+- `BENTO_ENV_FILE_KEYS` records which variables Bento loaded from `.env` files, with a fingerprint of each loaded value. The nested launch treats those variables as file values it may load again for its own mode, rather than as values you exported. A variable the task command assigns for the nested launch is left out, so it stays explicit even when it repeats the value from `.env`: `DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. A variable whose value no longer matches its fingerprint is explicit too.
 
 These variables describe the trusted host's policy; they are not authority that guest code can claim.
+
+Bento reads a command's own assignments from its text, following the shell's scoping rules:
+
+- `NAME=value` words before a command apply to that command alone. `DATABASE_URL=base true; bento run --watch server.ts` leaves `DATABASE_URL` to the nested launch's mode file, because the assignment never reached `bento`.
+- A `NAME=value` statement on its own, and the `NAME=value` arguments of `export` and `readonly`, apply to every command in the task command.
+- The `NAME=value` operands of `env`, after its options such as `-i`, `-u NAME`, and `--`, apply to the command `env` runs: `env -u UNUSED DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. An `env -S` string is split into words the way `env` splits it, so `env -S 'DATABASE_URL=base bento run --watch server.ts'` keeps it too. When `env` runs no command, as in `env DATABASE_URL=base > /dev/null`, it prints the environment and its assignments reach nothing.
+- Quotes are removed first, so `env "DATABASE_URL=base" …` and `export 'DATABASE_URL'=base` count, while `echo DATABASE_URL=base`, a comment, and text inside quotes do not. Redirections such as `> /dev/null` and `2>&1` are not words of the command.
+
+Bento cannot see which program a command starts, so it assumes any program may be, or may start, a nested `bento`: `DATABASE_URL=base remix dev` keeps the value explicit for a `bento` that `remix` starts. Only shell builtins that start no program, such as `true`, `false`, `echo`, `printf`, `test`, `cd`, `read`, and `wait`, are known to reach nothing. A prefix assignment on a special builtin such as `:` or `exec` persists in the shell, as POSIX specifies, and counts.
 
 ### Write `.env` files
 
@@ -115,6 +124,6 @@ Running `DATABASE_URL=mine bento run dev` instead keeps `DATABASE_URL=mine` at b
 ## Limits and edge cases
 
 - There is no parallel task scheduling, task caching, or hot reloading of `.env` files.
-- Bento recognizes a task command's own assignments from its text: `NAME=value` before a command, and the `NAME=value` arguments of `export`, `readonly`, and `env`. A script the command runs that sets a variable to exactly the value loaded from a file cannot be told apart from the forwarded value, so a nested launch may still replace it with its mode file's value. Assign it in the task command instead.
+- Bento recognizes a task command's own assignments from its text and keeps your value whenever the text alone cannot decide: a bare assignment or `export` counts wherever it appears in the command, even after the nested launch, and a prefix assignment on any program counts because the program might start `bento`. Only literal `NAME=value` words are recognized; a variable set by `.` sourcing a file, by a script the command runs, or through a `${NAME}` substitution is not. A script that sets a variable to exactly the value loaded from a file cannot be told apart from the forwarded value, so a nested launch may still replace it with its mode file's value. Assign it in the task command instead.
 - A mode is used as part of a file name, so a `NODE_ENV` containing `/` is rejected. An empty `NODE_ENV` that you set means no mode, and Bento leaves it empty.
 - When a signal does not stop a process, the 10-second grace period ends with a kill, which skips any further cleanup inside that process.

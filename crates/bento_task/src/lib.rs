@@ -7,9 +7,11 @@
 mod assignments;
 mod cancellation;
 mod definition;
+mod env_arguments;
 mod plan;
 mod process_group;
 mod runner;
+mod shell_words;
 
 pub use cancellation::{Cancellation, Signal};
 pub use definition::ShapeProblem;
