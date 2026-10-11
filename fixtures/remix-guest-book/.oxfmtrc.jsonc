@@ -1,4 +1,6 @@
 {
+    // pnpm writes pnpm-workspace.yaml in its own style, and it stays exactly as imported.
+    "ignorePatterns": ["pnpm-workspace.yaml"],
     "printWidth": 100,
     "tabWidth": 4,
     "arrowParens": "avoid",

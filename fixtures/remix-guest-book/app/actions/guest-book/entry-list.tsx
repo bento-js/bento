@@ -2,7 +2,7 @@ import type { Handle } from "remix/component";
 
 import { css } from "remix/component";
 
-import type { GuestBookEntry } from "#app/data/schema.ts";
+import type { GuestBookEntry } from "#app/data/guest-book-store.ts";
 
 import { theme } from "#app/ui/public/theme.tsx";
 

@@ -4,20 +4,19 @@ import { createController } from "remix/router";
 
 import { GuestBookPage } from "#app/actions/guest-book/page.tsx";
 import { guestBookForm } from "#app/actions/guest-book/schema.ts";
-import { guestBook } from "#app/data/schema.ts";
 import { routes } from "#app/routes.ts";
 
 export default createController(routes.guestBook, {
     actions: {
-        async index({ db, render }) {
-            let entries = await db.findMany(guestBook);
+        async index({ guestBook, render }) {
+            let entries = await guestBook.list();
             return render(<GuestBookPage entries={entries} />);
         },
-        async action({ db, formData, render }) {
+        async action({ formData, guestBook, render }) {
             let submission = s.parseSafe(guestBookForm, formData);
 
             if (!submission.success) {
-                let entries = await db.findMany(guestBook);
+                let entries = await guestBook.list();
                 let values = {
                     name: readText(formData, "name"),
                     message: readText(formData, "message"),
@@ -29,7 +28,7 @@ export default createController(routes.guestBook, {
                 );
             }
 
-            await db.create(guestBook, submission.value);
+            await guestBook.append(submission.value);
             return redirect(routes.guestBook.index.href(), 303);
         },
     },

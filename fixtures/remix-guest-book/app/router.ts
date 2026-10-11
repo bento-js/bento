@@ -1,5 +1,3 @@
-import type { Database } from "remix/data-table";
-
 import { asyncContext } from "remix/middleware/async-context";
 import { compression } from "remix/middleware/compression";
 import { formData } from "remix/middleware/form-data";
@@ -8,13 +6,14 @@ import { render } from "remix/middleware/render";
 import { staticFiles } from "remix/middleware/static";
 import { createRouter, type MiddlewareContext } from "remix/router";
 
+import type { GuestBookStore } from "#app/data/guest-book-store.ts";
 import type { AssetEntryMiddleware } from "#app/middleware/asset-entry.ts";
-import type { DatabaseMiddleware } from "#app/middleware/database.ts";
+import type { GuestBookStoreMiddleware } from "#app/middleware/guest-book-store.ts";
 
 import rootController from "#app/actions/controller.ts";
 import guestBookController from "#app/actions/guest-book/controller.tsx";
 import { loadAssetEntry } from "#app/middleware/asset-entry.ts";
-import { loadDatabase } from "#app/middleware/database.ts";
+import { loadGuestBookStore } from "#app/middleware/guest-book-store.ts";
 import { routes } from "#app/routes.ts";
 import { assets } from "#app/utils/assets.ts";
 
@@ -22,7 +21,12 @@ let formDataMiddleware = formData();
 let renderMiddleware = render({ assets });
 
 type AppContext = MiddlewareContext<
-    [typeof formDataMiddleware, DatabaseMiddleware, AssetEntryMiddleware, typeof renderMiddleware]
+    [
+        typeof formDataMiddleware,
+        GuestBookStoreMiddleware,
+        AssetEntryMiddleware,
+        typeof renderMiddleware,
+    ]
 >;
 
 declare module "remix" {
@@ -32,10 +36,10 @@ declare module "remix" {
 }
 
 export interface AppRouterOptions {
-    db: Database;
+    guestBook: GuestBookStore;
 }
 
-export function createAppRouter({ db }: AppRouterOptions) {
+export function createAppRouter({ guestBook }: AppRouterOptions) {
     let router = createRouter<AppContext>({
         middleware: [
             ...(process.env.NODE_ENV === "development" ? [logger()] : []),
@@ -43,7 +47,7 @@ export function createAppRouter({ db }: AppRouterOptions) {
             staticFiles("./public", { index: false }),
             formDataMiddleware,
             asyncContext(),
-            loadDatabase(db),
+            loadGuestBookStore(guestBook),
             loadAssetEntry(),
             renderMiddleware,
         ],

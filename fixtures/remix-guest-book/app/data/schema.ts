@@ -1,4 +1,4 @@
-import { column as c, table, type TableRow } from "remix/data-table";
+import { column as c, table } from "remix/data-table";
 
 export let guestBook = table({
     name: "guest_book",
@@ -9,5 +9,3 @@ export let guestBook = table({
         createdAt: c.timestamp().defaultNow(),
     },
 });
-
-export type GuestBookEntry = TableRow<typeof guestBook>;
