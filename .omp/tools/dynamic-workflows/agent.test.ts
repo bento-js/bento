@@ -13,6 +13,8 @@ import {
 } from "@oh-my-pi/pi-coding-agent/task";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import type { WorkflowCoordination } from "./runs.js";
+
 import { OmpWorkflowAgent, type OmpWorkflowAgentDependencies } from "./agent.js";
 import { WorkflowAgentFailure, type WorkflowAgentRequest } from "./workflow.js";
 
@@ -240,6 +242,7 @@ function setup(config: {
     context?: CustomToolContext;
     skills?: Skill[];
     runSubprocess?: (options: ExecutorOptions) => Promise<SingleResult>;
+    coordination?: WorkflowCoordination;
 }) {
     let impl = config.runSubprocess ?? (async (_options: ExecutorOptions) => makeResult());
     let runSubprocess = vi.fn(impl);
@@ -252,8 +255,24 @@ function setup(config: {
         runSubprocess,
     };
     let context = config.context ?? makeContext();
-    let agent = new OmpWorkflowAgent("/repo", context, "parent-call", dependencies);
+    let agent = new OmpWorkflowAgent({
+        cwd: "/repo",
+        context,
+        parentToolCallId: "parent-call",
+        dependencies,
+        coordination: config.coordination,
+    });
     return { agent, runSubprocess, discoverAgents, getActiveSkills };
+}
+
+function coordination(overrides: Partial<WorkflowCoordination> = {}): WorkflowCoordination {
+    return {
+        runId: "wf-1",
+        runName: "scan_repo",
+        coordinatorId: "Main",
+        peers: () => ({ peers: [], foreignPeers: [] }),
+        ...overrides,
+    };
 }
 
 function request(overrides: Partial<WorkflowAgentRequest> = {}): WorkflowAgentRequest {
@@ -405,8 +424,11 @@ describe("OmpWorkflowAgent", () => {
 
         // Only `runSubprocess` overridden; `discoverAgents` and `getActiveSkills`
         // must still come from the untouched, frozen defaults.
-        let agent = new OmpWorkflowAgent("/repo", makeContext(), "parent-call", {
-            runSubprocess,
+        let agent = new OmpWorkflowAgent({
+            cwd: "/repo",
+            context: makeContext(),
+            parentToolCallId: "parent-call",
+            dependencies: { runSubprocess },
         });
         let outcome = await agent.run(request({ schema: undefined }));
 
@@ -416,26 +438,37 @@ describe("OmpWorkflowAgent", () => {
         expect(defaultGetActiveSkills).toHaveBeenCalled();
     });
 
-    it("allocates sequential IDs through the manager", async () => {
+    it("derives each agent id from its label and uniquifies repeats", async () => {
         let { agent, runSubprocess } = setup({ agents: [REVIEWER] });
 
-        await agent.run(request());
-        await agent.run(request());
+        await agent.run(request({ label: "runtime core" }));
+        await agent.run(request({ label: "runtime core" }));
 
-        expect(allocateCalls).toEqual(["Workflow1", "Workflow2"]);
+        expect(allocateCalls).toEqual(["RuntimeCore", "RuntimeCore"]);
         expect(runSubprocess).toHaveBeenNthCalledWith(
             1,
-            expect.objectContaining({ id: "Workflow1", index: 1 }),
+            expect.objectContaining({ id: "RuntimeCore", index: 1 }),
         );
         expect(runSubprocess).toHaveBeenNthCalledWith(
             2,
-            expect.objectContaining({ id: "Workflow2", index: 2 }),
+            expect.objectContaining({ id: "RuntimeCore-2", index: 2 }),
         );
     });
 
+    it("uses the id reserved while the agent was queued", async () => {
+        let { agent, runSubprocess } = setup({ agents: [REVIEWER] });
+
+        let reserved = await agent.reserve({ label: "docs sweep" });
+        await agent.run(request({ agentId: reserved }));
+
+        expect(reserved).toBe("DocsSweep");
+        expect(allocateCalls).toEqual(["DocsSweep"]);
+        expect(runSubprocess).toHaveBeenCalledWith(expect.objectContaining({ id: "DocsSweep" }));
+    });
+
     it("serializes allocation so concurrent runs never reuse an existing artifact", async () => {
-        fakeDisk.add("Workflow1.md");
-        fakeDisk.add("Workflow2.md");
+        fakeDisk.add("ReviewTheChange.md");
+        fakeDisk.add("ReviewTheChange-2.md");
         let context = makeContext({ artifactsDir: "/artifacts" });
         let ids: string[] = [];
         let { agent } = setup({
@@ -452,8 +485,8 @@ describe("OmpWorkflowAgent", () => {
         // Serialized: the second allocate never runs while the first is mid-scan.
         expect(allocation.overlapped).toBe(false);
         expect(new Set(ids).size).toBe(2);
-        expect(ids).not.toContain("Workflow1");
-        expect(ids).not.toContain("Workflow2");
+        expect(ids).not.toContain("ReviewTheChange");
+        expect(ids).not.toContain("ReviewTheChange-2");
     });
 
     it("returns raw text output when no schema is requested", async () => {
@@ -671,5 +704,59 @@ describe("OmpWorkflowAgent", () => {
         await agent.run(request());
 
         expect(discoverAgents).toHaveBeenCalledTimes(1);
+    });
+
+    it("appends the IRC block to the prompt and leaves the assignment clean", async () => {
+        let { agent, runSubprocess } = setup({
+            agents: [REVIEWER],
+            coordination: coordination({
+                peers: () => ({
+                    peers: [{ agentId: "DocsSweep", label: "docs sweep", status: "running" }],
+                    foreignPeers: [
+                        {
+                            agentId: "ApiProbe",
+                            label: "api probe",
+                            status: "queued",
+                            runName: "api_scan",
+                        },
+                    ],
+                }),
+            }),
+        });
+
+        await agent.run(request({ prompt: "inspect module", label: "runtime core" }));
+
+        let options = runSubprocess.mock.calls[0][0];
+        expect(options.task.startsWith("inspect module\n\n## IRC")).toBe(true);
+        expect(options.task).toContain("You are `RuntimeCore` in workflow `scan_repo` (run wf-1)");
+        expect(options.task).toContain("Coordinator: `Main`");
+        expect(options.task).toContain("- `DocsSweep` — docs sweep [running]");
+        expect(options.task).toContain("- `ApiProbe` — api probe [queued] in `api_scan`");
+        expect(options.assignment).toBe("inspect module");
+    });
+
+    it("asks for peers under the agent's own reserved id", async () => {
+        let selfIds: string[] = [];
+        let { agent } = setup({
+            agents: [REVIEWER],
+            coordination: coordination({
+                peers: selfId => {
+                    selfIds.push(selfId);
+                    return { peers: [], foreignPeers: [] };
+                },
+            }),
+        });
+
+        await agent.run(request({ label: "runtime core" }));
+
+        expect(selfIds).toEqual(["RuntimeCore"]);
+    });
+
+    it("sends the prompt unchanged when the run has no coordination", async () => {
+        let { agent, runSubprocess } = setup({ agents: [REVIEWER] });
+
+        await agent.run(request({ prompt: "inspect module" }));
+
+        expect(runSubprocess.mock.calls[0][0].task).toBe("inspect module");
     });
 });

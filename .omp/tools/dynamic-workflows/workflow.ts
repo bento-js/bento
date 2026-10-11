@@ -34,6 +34,8 @@ export interface WorkflowAgentRequest {
     label: string;
     schema?: unknown;
     phase?: string;
+    /** Host-side agent id reserved for this agent, when the runner reserves ids. */
+    agentId?: string;
     signal?: AbortSignal;
     onProgress?: (message: string) => void;
 }
@@ -45,6 +47,13 @@ export interface WorkflowAgentOutcome {
 
 export interface WorkflowAgentRunner {
     run(request: WorkflowAgentRequest): Promise<WorkflowAgentOutcome>;
+    /**
+     * Claim the host-side agent id for an agent the script just created, before
+     * it queues for a concurrency permit. Reserving early is what lets every
+     * agent in a wave address the others: an id allocated at start time would
+     * not exist yet when its siblings' prompts are built.
+     */
+    reserve?(request: { label: string; phase?: string; index: number }): Promise<string>;
 }
 
 export class WorkflowAgentFailure extends Error {
@@ -70,6 +79,8 @@ export interface WorkflowRunOptions {
     // concurrency permit. Lets a consumer show a queued row for an agent that may
     // never start (e.g. an abort drains the limiter queue before its turn).
     onAgentQueued?: (event: { id: number; label: string; phase?: string; prompt: string }) => void;
+    /** Fires once the runner's reservation for a queued agent resolves. */
+    onAgentReserved?: (event: { id: number; agentId: string }) => void;
     onAgentStart?: (event: { id: number; label: string; phase?: string; prompt: string }) => void;
     onAgentProgress?: (event: {
         id: number;
@@ -194,12 +205,28 @@ export async function runWorkflow<T = unknown>(
         // it even if an abort drains the limiter queue before it ever starts.
         options.onAgentQueued?.({ id, label, phase: assignedPhase, prompt: taskPrompt });
 
+        // Reserve the host-side id while the agent queues rather than when it starts,
+        // so every agent of a wave can address its siblings in its own prompt.
+        let reservation = options.runner.reserve?.({ label, phase: assignedPhase, index: id });
+        if (reservation) {
+            void reservation.then(
+                agentId => {
+                    if (closeSignal.aborted) return;
+                    options.onAgentReserved?.({ id, agentId });
+                },
+                () => undefined,
+            );
+        }
+
         let run = limiter(async () => {
             throwIfAborted();
             if (closeSignal.aborted)
                 throw new Error("workflow is closing; no new agents may start");
             options.onAgentStart?.({ id, label, phase: assignedPhase, prompt: taskPrompt });
             try {
+                let agentId = reservation
+                    ? await raceAbort(reservation, options.signal)
+                    : undefined;
                 let outcome = await raceAbort(
                     options.runner.run({
                         prompt: taskPrompt,
@@ -208,6 +235,7 @@ export async function runWorkflow<T = unknown>(
                         label,
                         schema: normalizedOptions.schema,
                         phase: assignedPhase,
+                        agentId,
                         signal: options.signal,
                         onProgress: message => {
                             // Drop progress that lands after the workflow has closed
