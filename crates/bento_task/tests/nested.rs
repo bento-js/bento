@@ -11,6 +11,9 @@ use support::{SYSTEM_PATH, TempProject, parse_env_dump};
 
 const NESTED_WATCH: &str = "bento run --watch server.ts";
 
+/// A backslash ending a line, which the shell removes to join the line to the next.
+const LINE_CONTINUATION: &str = "\\\n";
+
 /// Runs `task` from an outer, non-watch launch and returns the environment the `bento` it
 /// started received.
 fn nested_bento_environment(
@@ -243,6 +246,122 @@ fn env_split_string_assignments_still_win_in_the_nested_launch() {
         let nested = nested_launch_started_by(&command);
 
         assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn assignment_after_a_line_continuation_still_wins_in_the_nested_launch() {
+    for command in [
+        format!("{LINE_CONTINUATION}DATABASE_URL=base {NESTED_WATCH}"),
+        format!("UNUSED=1 {LINE_CONTINUATION} DATABASE_URL=base {NESTED_WATCH}"),
+        format!("true && {LINE_CONTINUATION}DATABASE_URL=base {NESTED_WATCH}"),
+        format!("export {LINE_CONTINUATION}DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("true # comment {LINE_CONTINUATION}DATABASE_URL=base {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+#[test]
+fn env_operands_after_a_line_continuation_still_win_in_the_nested_launch() {
+    for command in [
+        format!("env {LINE_CONTINUATION} DATABASE_URL=base {NESTED_WATCH}"),
+        format!("/usr/bin/env {LINE_CONTINUATION} DATABASE_URL=base {NESTED_WATCH}"),
+        format!("env -u UNUSED {LINE_CONTINUATION}DATABASE_URL=base {NESTED_WATCH}"),
+        format!("env -S {LINE_CONTINUATION}'DATABASE_URL=base {NESTED_WATCH}'"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+#[test]
+fn env_word_split_by_a_line_continuation_still_passes_its_assignments_to_the_nested_launch() {
+    for command in [
+        format!("e{LINE_CONTINUATION}nv DATABASE_URL=base {NESTED_WATCH}"),
+        format!("/usr/bin/en{LINE_CONTINUATION}v DATABASE_URL=base {NESTED_WATCH}"),
+        format!("exec e{LINE_CONTINUATION}nv DATABASE_URL=base {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+#[test]
+fn line_continuation_inside_double_quotes_joins_the_assignment() {
+    for command in [
+        format!("DATABASE_URL=\"ba{LINE_CONTINUATION}se\" {NESTED_WATCH}"),
+        format!("env \"DATABASE_URL=ba{LINE_CONTINUATION}se\" {NESTED_WATCH}"),
+        format!("env \"DATABASE_{LINE_CONTINUATION}URL=base\" {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+#[test]
+fn backslash_newline_inside_single_quotes_stays_literal() {
+    let other_name = nested_launch_started_by(&format!(
+        "env 'DATABASE_{LINE_CONTINUATION}URL=base' {NESTED_WATCH}"
+    ));
+    let literal_value =
+        nested_launch_started_by(&format!("DATABASE_URL='ba{LINE_CONTINUATION}se' {NESTED_WATCH}"));
+
+    assert_eq!(value(&other_name, "DATABASE_URL"), Some("dev"));
+    assert_eq!(value(&literal_value, "DATABASE_URL"), Some("ba\\\nse"));
+}
+
+#[test]
+fn redirection_operator_split_by_a_line_continuation_leaves_the_assignment_on_its_command() {
+    let nested = nested_launch_started_by(&format!(
+        "env DATABASE_URL=base 2>{LINE_CONTINUATION}&1 {NESTED_WATCH}"
+    ));
+
+    assert_eq!(value(&nested, "DATABASE_URL"), Some("base"));
+}
+
+#[test]
+fn here_document_body_leaves_the_file_value_to_the_nested_mode() {
+    for command in [
+        format!("cat <<EOF >/dev/null\nDATABASE_{LINE_CONTINUATION}URL=base\nEOF\n{NESTED_WATCH}"),
+        format!(
+            "cat <<'EOF' >/dev/null\nDATABASE_{LINE_CONTINUATION}URL=base\nEOF\n{NESTED_WATCH}"
+        ),
+        format!("cat <<EOF >/dev/null\nDATABASE_URL=base\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<-EOF >/dev/null\n\tDATABASE_URL=base\n\tEOF\n{NESTED_WATCH}"),
+        format!(
+            "cat <<EOF >/dev/null\nx{LINE_CONTINUATION}EOF\nDATABASE_URL=base\nEOF\n{NESTED_WATCH}"
+        ),
+        format!("cat <<E{LINE_CONTINUATION}OF >/dev/null\nDATABASE_URL=base\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<EOF >/dev/null # comment\nDATABASE_URL=base\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<A >/dev/null; cat <<B >/dev/null\nA\nDATABASE_URL=base\nB\n{NESTED_WATCH}"),
+        format!("echo $(cat <<EOF\nDATABASE_URL=base\nEOF\n) >/dev/null\n{NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command:?}");
+    }
+}
+
+#[test]
+fn assignment_around_a_here_document_still_wins_in_the_nested_launch() {
+    for command in [
+        format!("cat <<EOF >/dev/null\nbody\nEOF\nDATABASE_URL=base {NESTED_WATCH}"),
+        format!(
+            "cat <<'EOF' >/dev/null\nbody{LINE_CONTINUATION}EOF\nDATABASE_URL=base {NESTED_WATCH}"
+        ),
+        format!("cat <<EOF >/dev/null; DATABASE_URL=base {NESTED_WATCH}\nbody\nEOF"),
+        format!("DATABASE_URL=base {NESTED_WATCH} <<EOF\nbody\nEOF"),
+        format!("cat <<<body >/dev/null\nDATABASE_URL=base {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
     }
 }
 
