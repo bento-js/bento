@@ -10,8 +10,9 @@ use here_document::HereDocument;
 
 /// Splits `command` into the raw words of its simple commands, honoring line continuations,
 /// quotes, escapes, comments, redirections, and here-documents, whose bodies are input rather
-/// than commands. Unquoted parentheses and backticks also separate commands, so command and
-/// arithmetic substitutions count as commands of their own.
+/// than commands unless they run a command substitution. Unquoted parentheses and backticks
+/// also separate commands, so command and arithmetic substitutions count as commands of their
+/// own.
 pub(crate) fn simple_commands(command: &str) -> Vec<Vec<String>> {
     let mut splitter = Splitter::default();
     let mut characters = CommandText(command.chars());
@@ -203,11 +204,17 @@ impl Splitter {
     }
 
     /// Ends the command at a newline, then consumes from `text` the bodies of the
-    /// here-documents the line opened, in order.
+    /// here-documents the line opened, in order, splitting the command text of each body that
+    /// runs a command substitution.
     fn end_line(&mut self, text: &mut Chars<'_>) {
         self.end_command();
         for here_document in self.here_documents.drain(..) {
-            here_document.skip_body(text);
+            let Some(body) = here_document.consume_body(text) else {
+                continue;
+            };
+            for command_text in here_document::command_texts(&body) {
+                self.commands.extend(simple_commands(command_text));
+            }
         }
     }
 }

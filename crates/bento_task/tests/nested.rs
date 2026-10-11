@@ -341,6 +341,81 @@ fn here_document_body_leaves_the_file_value_to_the_nested_mode() {
         format!("cat <<EOF >/dev/null # comment\nDATABASE_URL=base\nEOF\n{NESTED_WATCH}"),
         format!("cat <<A >/dev/null; cat <<B >/dev/null\nA\nDATABASE_URL=base\nB\n{NESTED_WATCH}"),
         format!("echo $(cat <<EOF\nDATABASE_URL=base\nEOF\n) >/dev/null\n{NESTED_WATCH}"),
+        format!("cat <<EOF >/dev/null\nDATABASE_URL=$HOME\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<'EOF' >/dev/null\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF\n{NESTED_WATCH}"),
+        format!(
+            "cat <<\"EOF\" >/dev/null\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF\n{NESTED_WATCH}"
+        ),
+        format!("cat <<\\EOF >/dev/null\n`DATABASE_URL=base {NESTED_WATCH}`\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<E'O'F >/dev/null\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<EOF >/dev/null\n$(DATABASE_URL=base true)\nEOF\n{NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command:?}");
+    }
+}
+
+#[test]
+fn assignment_in_a_here_document_command_substitution_still_wins_in_the_nested_launch() {
+    for command in [
+        format!("cat <<EOF\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF"),
+        format!("cat <<EOF >/dev/null\n`DATABASE_URL=base {NESTED_WATCH}`\nEOF"),
+        format!(
+            "cat <<EOF >/dev/null\nname: app\nurl: $(env DATABASE_URL=base {NESTED_WATCH})\nEOF"
+        ),
+        format!("cat <<-EOF >/dev/null\n\t$(DATABASE_URL=base {NESTED_WATCH})\n\tEOF"),
+        format!(
+            "cat <<EOF >/dev/null\n$(DATABASE_URL=base {LINE_CONTINUATION}{NESTED_WATCH})\nEOF"
+        ),
+        format!(
+            "cat <<EOF >/dev/null\n${LINE_CONTINUATION}(DATABASE_URL=base {NESTED_WATCH})\nEOF"
+        ),
+        format!(
+            "cat <<A >/dev/null; cat <<B >/dev/null\nA\n$(DATABASE_URL=base {NESTED_WATCH})\nB"
+        ),
+        format!("cat <<EOF\n\\\\$(DATABASE_URL=base {NESTED_WATCH})\nEOF"),
+        format!("cat <<EOF\n$((echo) ; DATABASE_URL=base {NESTED_WATCH})\nEOF"),
+        format!("echo $(cat <<EOF\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF\n) >/dev/null"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+#[test]
+fn here_document_text_does_not_hide_a_command_substitution_from_the_nested_launch() {
+    for command in [
+        format!("cat <<EOF\n# $(DATABASE_URL=base {NESTED_WATCH})\nEOF"),
+        format!("cat <<EOF\n\"$(DATABASE_URL=base {NESTED_WATCH})\"\nEOF"),
+        format!("cat <<EOF\n'$(DATABASE_URL=base {NESTED_WATCH})'\nEOF"),
+        format!("cat <<EOF >/dev/null\n# `DATABASE_URL=base {NESTED_WATCH}`\nEOF"),
+        format!("cat <<EOF >/dev/null\nit's\n$(DATABASE_URL=base {NESTED_WATCH})\nEOF"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command:?}");
+    }
+}
+
+/// The shell reads the assignment line as input, but Bento does not find where a substitution
+/// ends, so it keeps the user's value for every line of a body that runs one.
+#[test]
+fn assignment_line_in_a_here_document_that_runs_a_substitution_keeps_the_value() {
+    let nested = nested_launch_started_by(&format!(
+        "cat <<EOF >/dev/null\nit's\nDATABASE_URL=base\n$(true)\nEOF\n{NESTED_WATCH}"
+    ));
+
+    assert_eq!(value(&nested, "DATABASE_URL"), Some("base"));
+}
+
+#[test]
+fn escaped_substitution_marker_leaves_the_here_document_body_as_input() {
+    for command in [
+        format!("cat <<EOF >/dev/null\nDATABASE_URL=base\n\\$(echo ignored)\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<EOF >/dev/null\nDATABASE_URL=base\n\\`echo ignored\\`\nEOF\n{NESTED_WATCH}"),
+        format!("cat <<EOF >/dev/null\n\\$(DATABASE_URL=base {NESTED_WATCH})\nEOF\n{NESTED_WATCH}"),
     ] {
         let nested = nested_launch_started_by(&command);
 
