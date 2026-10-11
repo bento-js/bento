@@ -106,6 +106,47 @@ fn virtual_signals_deliver_handlers_and_default_to_shutdown() {
 }
 
 #[test]
+fn default_shutdown_does_not_invent_a_guest_exit_code() {
+    let root = tempdir().unwrap();
+    let port = port();
+    let runtime = launch(root.path(), &server_source(port, "res.end('ok');", ""));
+    ready(root.path());
+    let ShutdownOutcome::Graceful { exit_code } = runtime.handle().shutdown().outcome else {
+        panic!("default shutdown was not graceful");
+    };
+    assert_eq!(exit_code, None);
+    assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));
+    bind_after(port);
+}
+
+#[test]
+fn signal_handler_draining_the_event_loop_preserves_the_guest_exit_code() {
+    for exit_code in [None, Some(0), Some(7)] {
+        let root = tempdir().unwrap();
+        let port = port();
+        let assignment =
+            exit_code.map(|code| format!("process.exitCode = {code};")).unwrap_or_default();
+        let runtime = launch(
+            root.path(),
+            &server_source(
+                port,
+                "res.end('ok');",
+                &format!(
+                    "process.on('SIGTERM', () => {{ {assignment} server.close(); server.closeAllConnections(); }});"
+                ),
+            ),
+        );
+        ready(root.path());
+        assert_eq!(
+            runtime.handle().shutdown().outcome,
+            ShutdownOutcome::Graceful { exit_code: Some(exit_code.unwrap_or(0)) }
+        );
+        assert!(matches!(runtime.wait(), RunOutcome::Shutdown(_)));
+        bind_after(port);
+    }
+}
+
+#[test]
 fn registering_guest_signals_does_not_change_os_signal_disposition() {
     fn disposition() -> libc::sigaction {
         let mut action = std::mem::MaybeUninit::uninit();
@@ -154,7 +195,7 @@ fn fixture_shaped_shutdown_drains_and_releases_the_listener() {
     }
     let start = Instant::now();
     let report = runtime.handle().shutdown();
-    assert_eq!(report.outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(report.outcome, ShutdownOutcome::Graceful { exit_code: Some(0) });
     assert!(start.elapsed() < Duration::from_secs(1));
     let mut response = Vec::new();
     match connection.read_to_end(&mut response) {
@@ -178,7 +219,7 @@ fn shutdown_without_handler_closes_pending_connections() {
     ready(root.path());
     let mut connection = request(port);
     let start = Instant::now();
-    assert_eq!(runtime.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: 0 });
+    assert_eq!(runtime.handle().shutdown().outcome, ShutdownOutcome::Graceful { exit_code: None });
     assert!(start.elapsed() < Duration::from_secs(1));
     let mut response = Vec::new();
     match connection.read_to_end(&mut response) {

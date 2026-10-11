@@ -29,7 +29,7 @@ impl Signal {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShutdownOutcome {
-    Graceful { exit_code: i32 },
+    Graceful { exit_code: Option<i32> },
     Failed(RuntimeError),
     Interrupted,
     TimedOut,
@@ -54,6 +54,7 @@ pub(crate) enum Command {
 struct State {
     isolate: Option<IsolateHandle>,
     requested: bool,
+    default_shutdown: bool,
     shutdown_at: Option<Instant>,
     workers: BTreeMap<u64, IsolateHandle>,
     next_id: u64,
@@ -180,6 +181,10 @@ impl Control {
         }
     }
 
+    pub fn default_shutdown(&self) {
+        self.state.lock().default_shutdown = true;
+    }
+
     // A completion report is retained for later shutdown calls, but returned only for requested shutdown.
     pub fn complete(&self, execution: &RunOutcome) -> Option<ShutdownReport> {
         let mut state = self.state.lock();
@@ -189,8 +194,13 @@ impl Control {
         let outcome = match execution {
             _ if state.interrupted => ShutdownOutcome::Interrupted,
             RunOutcome::Failed(error) => ShutdownOutcome::Failed(error.clone()),
-            RunOutcome::Exited(exit_code) => ShutdownOutcome::Graceful { exit_code: *exit_code },
-            _ => ShutdownOutcome::Graceful { exit_code: 0 },
+            RunOutcome::Exited(exit_code) => {
+                ShutdownOutcome::Graceful { exit_code: Some(*exit_code) }
+            }
+            RunOutcome::Completed if !state.default_shutdown => {
+                ShutdownOutcome::Graceful { exit_code: Some(0) }
+            }
+            _ => ShutdownOutcome::Graceful { exit_code: None },
         };
         let report = state.report.get_or_insert(ShutdownReport { outcome }).clone();
         self.changed.notify_all();
