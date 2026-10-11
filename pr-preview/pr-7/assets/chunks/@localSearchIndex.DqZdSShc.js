@@ -1,1 +1,0 @@
-import{t as e}from"./framework.Cd8SIfm3.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.CYGfZtp7.js`),[])};export{t as default};
