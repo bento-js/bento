@@ -39,7 +39,8 @@ pub struct GrantFlags {
         require_equals = true, value_delimiter = ','
     )]
     allow_env: Option<Vec<String>>,
-    /// Allow loading native addons beneath these paths, or anywhere
+    /// Allow loading native addons beneath these paths, or anywhere. A loaded addon runs native
+    /// code in this process, outside every other grant: grant only addons you trust
     #[arg(
         long, value_name = "PATH", num_args = 0.., action = ArgAction::Set,
         require_equals = true, value_delimiter = ','
