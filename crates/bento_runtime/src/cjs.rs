@@ -14,10 +14,13 @@ use oxc::parser::Parser;
 use oxc::span::SourceType;
 
 use crate::node::CjsTracker;
+use crate::sources::Sources;
+use crate::{ErrorKind, SourceLocation};
 
 pub(crate) struct Analyzer {
     pub tracker: Arc<CjsTracker>,
     pub permissions: PermissionsContainer,
+    pub sources: Arc<Sources>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -37,9 +40,14 @@ impl node_resolver::analyze::CjsCodeAnalyzer for Analyzer {
             let prefix = &source[..offset];
             let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
             let column = prefix.rsplit('\n').next().unwrap_or_default().chars().count() + 1;
-            return Err(JsErrorBox::new(
-                "SyntaxError",
-                format!("BENTO_PARSE {specifier}:{line}:{column}: {error}"),
+            return Err(self.sources.failure(
+                ErrorKind::Startup,
+                format!("{specifier}:{line}:{column}: {error}"),
+                specifier.to_file_path().ok().map(|path| SourceLocation {
+                    path,
+                    line: line as u32,
+                    column: column as u32,
+                }),
             ));
         }
         let is_script = !parsed.program.body.iter().any(Statement::is_module_declaration);

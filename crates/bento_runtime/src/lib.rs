@@ -111,6 +111,10 @@ impl RunningRuntime {
         self.handle.clone()
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.thread.as_ref().is_none_or(JoinHandle::is_finished)
+    }
+
     pub fn wait(mut self) -> RunOutcome {
         match self.thread.take().expect("runtime thread available").join() {
             Ok(outcome) => outcome,

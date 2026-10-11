@@ -75,3 +75,78 @@ fn unexecutable_jsx_settings_fail_only_the_jsx_module_with_the_setting_named() {
     assert!(location.path.ends_with("view.tsx"), "{location:?}");
     assert_eq!(location.line, 1);
 }
+
+#[test]
+fn a_project_beneath_node_modules_keeps_its_settings_locations_and_watch_sources() {
+    let directory = support::project();
+    let root = directory.path().join("node_modules/project");
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("package.json"), r#"{"type":"module"}"#).unwrap();
+    fs::write(
+        root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"jsx":"react","jsxFactory":"element"}}"#,
+    )
+    .unwrap();
+    completed(run(
+        config(&root),
+        "view.tsx",
+        "function element(tag, props, child) { return child; }\nconst view = <div>rendered</div>;\nif (view !== 'rendered') throw new Error('wrong JSX factory');\n",
+    ));
+    let entry = root.join("throw.ts");
+    fs::write(&entry, "enum Answer { Value = 42 }\nthrow new Error('project failure');\n").unwrap();
+    let runtime = bento_runtime::start(config(&root), &entry).unwrap();
+    let handle = runtime.handle();
+    let RunOutcome::Failed(error) = runtime.wait() else {
+        panic!("project exception succeeded");
+    };
+    assert_eq!(error.kind, ErrorKind::Uncaught, "{error:?}");
+    let location = error.location().expect("project source location");
+    assert_eq!(location.path, entry.canonicalize().unwrap(), "{error:?}");
+    assert_eq!((location.line, location.column), (2, 7));
+    assert!(handle.loaded_modules().contains(&location.path));
+}
+
+#[test]
+fn watch_sources_include_workspace_siblings_loaded_by_import_and_require() {
+    let workspace = support::project();
+    let root = workspace.path().join("app");
+    let sibling = workspace.path().join("sibling");
+    let dependency = workspace.path().join("node_modules/installed");
+    fs::create_dir_all(root.join("node_modules")).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+    fs::create_dir_all(&dependency).unwrap();
+    fs::write(root.join("package.json"), r#"{"type":"module"}"#).unwrap();
+    fs::write(sibling.join("package.json"), r#"{"type":"module","exports":"./entry.mjs"}"#)
+        .unwrap();
+    fs::write(sibling.join("entry.mjs"), "export const answer = 42;").unwrap();
+    fs::write(sibling.join("legacy.cjs"), "module.exports = 42;").unwrap();
+    fs::write(dependency.join("entry.mjs"), "export default 42;").unwrap();
+    std::os::unix::fs::symlink(&sibling, root.join("node_modules/sibling")).unwrap();
+    let entry = root.join("entry.mjs");
+    fs::write(
+        &entry,
+        r#"
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import installed from '../node_modules/installed/entry.mjs';
+const require = createRequire(import.meta.url);
+const { answer } = await import('sibling');
+assert.equal(answer, installed);
+assert.equal(require('../sibling/legacy.cjs'), answer);
+"#,
+    )
+    .unwrap();
+    let mut launch = config(&root);
+    launch.grants.read = bento_host::Scope::Only(std::collections::BTreeSet::from([workspace
+        .path()
+        .canonicalize()
+        .unwrap()]));
+    let runtime = bento_runtime::start(launch, &entry).unwrap();
+    let handle = runtime.handle();
+    completed(runtime.wait());
+    let loaded = handle.loaded_modules();
+    for path in [entry, sibling.join("entry.mjs"), sibling.join("legacy.cjs")] {
+        assert!(loaded.contains(&path.canonicalize().unwrap()), "{path:?} missing: {loaded:?}");
+    }
+    assert!(!loaded.contains(&dependency.join("entry.mjs").canonicalize().unwrap()), "{loaded:?}");
+}

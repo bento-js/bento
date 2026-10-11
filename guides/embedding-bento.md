@@ -56,7 +56,7 @@ match outcome {
 
 `RuntimeConfig::new(root)` initializes `cwd` to the project root, denies grants, leaves environment, arguments, and registrations empty, and sets the shutdown deadline to five seconds. Configure authority explicitly before execution.
 
-The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration errors return from `start` as `ErrorKind::Transform`; warnings go to stderr once per instance. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
+The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration diagnostics print once per instance at startup to the host process's stderr. Unsupported JSX execution settings such as `jsx: preserve` and `react-native` allow non-JSX modules to run; only modules containing JSX fail at transform time as `ErrorKind::Transform`, naming the setting and the JSX location. An unreadable or malformed `tsconfig.json` returns from `start` as `ErrorKind::Transform` before execution. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
 
 ## Grants and environment
 
@@ -82,17 +82,19 @@ const answer = await greet("Bento");
 console.log(answer.message);
 ```
 
-Return `HostError { name, message }` to reject the guest promise with a JavaScript `Error` carrying that name and message. Unknown `host:` imports fail at resolution; they never fall back to npm or the network. An instance without the registration cannot import the module, and two instances registering the same specifier retain separate handlers.
+Return `HostError { name, message }` to reject the guest promise with a JavaScript `Error` carrying that name and message. Unknown `host:` imports fail at resolution with a message saying the host did not register the module; they never fall back to npm or the network or suggest installing packages. An instance without the registration cannot import the module, and two instances registering the same specifier retain separate handlers.
 
 ## Observe execution and control its lifetime
 
 `start` returns a `RunningRuntime`; `wait` blocks until execution finishes and the instance is disposed. Startup, resolution, transformation, permission, and uncaught guest errors remain distinguishable. Guest `process.exit(code)` yields `RunOutcome::Exited(code)` rather than exiting the Rust process, including when called inside an HTTP request handler.
 
-Use `error.location()` when presenting source diagnostics. It returns `Option<&SourceLocation>` with a local `PathBuf` and one-based `line` and `column`. Compiler failures refer to the original source diagnostic; exception and rejection frames are source-mapped back to TypeScript; unresolved imports refer to their importing file and import position when available. `message` remains readable without a diagnostic renderer, and locations never select an environment file.
+Use `error.location()` when presenting source diagnostics. It returns `Option<&SourceLocation>` with a local `PathBuf` and one-based `line` and `column`. Compiler failures refer to the original source diagnostic; exception and rejection frames are source-mapped back to TypeScript; unresolved imports refer to their importing file and import position when available. `message` is plain text without ANSI escape sequences, regardless of terminal color settings, so the embedding host controls presentation. Unterminated terminal sequences in guest messages do not hide subsequent stack frames or causes, and ordinary tabs and line breaks are preserved. Locations never select an environment file. A new `Error` copying a caught module failure's message remains `Uncaught`, including when the text is identical. Guest `SyntaxError` exceptions, such as a failed `JSON.parse`, are also `Uncaught`; source parsing failures are `Startup`.
 
-Permission diagnostics can identify installed package source and follow a wrapped error's cause to the denied operation. This preserves the native permission error and its asset-code location when a framework adds a compilation-error wrapper.
+Permission diagnostics can identify installed package source and follow a wrapped error's cause to the denied operation. This preserves the native permission error and its asset-code location when a framework adds a compilation-error wrapper. Denied addon loading identifies the package or guest call site and names the host's `addons` grant (`--allow-addons` in the CLI).
 
-Clone the `RuntimeHandle` to control the instance from another thread. `loaded_modules()` returns the local source paths attempted so far, including dynamic imports discovered after startup and files whose parsing or transformation failed, excluding built-ins, host modules, and files in `node_modules`. Watch hosts can poll this snapshot to expand their watch input and observe repairs to failed source files.
+Clone the `RuntimeHandle` to control the instance from another thread. `loaded_modules()` returns the local source paths attempted so far, including dynamic imports discovered after startup, workspace siblings outside the project root, and files whose parsing or transformation failed. Built-ins, host modules, and environment files are excluded. Dependency exclusion checks `node_modules` components relative to the canonical project root for files inside it, and anywhere in the absolute path for files outside it. The project's own files remain included when its root has a `node_modules` ancestor. Watch hosts can poll this snapshot to expand their watch input and observe repairs to failed source files.
+
+`runtime.is_finished()` reports whether the execution thread has ended without requesting shutdown. A host waiting for a listener can check this state and use `handle.shutdown()` to retrieve the retained completion or failure report immediately when the instance has ended, instead of waiting for a connection timeout.
 
 `handle.signal(Signal::Terminate)` delivers virtual `SIGTERM`; `Signal::Interrupt` delivers virtual `SIGINT`. Guest `process.on` listeners receive these signals. If the signal has no guest listener, its default action requests shutdown. Embedded instances never register process-global OS signal handlers; the CLI owns OS signal handling and forwards the relevant signals to its guest.
 

@@ -54,3 +54,17 @@ assert.equal(second.seen, 'assigned');
 "#,
     ));
 }
+
+#[test]
+fn malformed_tsconfig_fails_start_as_a_transform_error() {
+    let root = support::project();
+    let entry = root.path().join("entry.ts");
+    std::fs::write(&entry, "console.log('must not execute');").unwrap();
+    std::fs::write(root.path().join("tsconfig.json"), "{ malformed").unwrap();
+    let error = match bento_runtime::start(config(root.path()), &entry) {
+        Ok(_) => panic!("malformed tsconfig started execution"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind, bento_runtime::ErrorKind::Transform, "{error:?}");
+    assert!(error.message.contains("tsconfig.json"), "{error}");
+}
