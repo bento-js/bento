@@ -1,5 +1,11 @@
 #![allow(dead_code)]
 
+pub mod guest_book;
+pub mod guest_book_page;
+pub mod http;
+pub mod running;
+
+use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -10,6 +16,7 @@ use tempfile::TempDir;
 
 pub const SYSTEM_PATH: &str = "/usr/bin:/bin";
 const SCRATCH: &str = "/tmp/bento-cli-tasks";
+const OTHER_RUNTIMES: [&str; 4] = ["node", "bun", "deno", "pnpm"];
 
 /// A disposable project under `/tmp/bento-cli-tasks/`.
 pub struct TempProject {
@@ -86,4 +93,33 @@ pub fn stdout(output: &Output) -> String {
 
 pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// `text` without terminal styling, which the runtime adds to source locations in errors.
+pub fn unstyled(text: &str) -> String {
+    let mut plain = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '\u{1b}' && characters.next_if_eq(&'[').is_some() {
+            characters.by_ref().find(|code| ('@'..='~').contains(code));
+        } else {
+            plain.push(character);
+        }
+    }
+    plain
+}
+
+/// The test's own `PATH` without every directory that holds `node`, `bun`, `deno`, or `pnpm`,
+/// so a script that runs under it cannot have been run by one of them.
+pub fn path_without_other_runtimes() -> String {
+    let inherited = env::var_os("PATH").unwrap_or_default();
+    let kept: Vec<PathBuf> = env::split_paths(&inherited)
+        .filter(|directory| !OTHER_RUNTIMES.iter().any(|name| directory.join(name).exists()))
+        .collect();
+    let stripped = env::join_paths(kept).unwrap().into_string().unwrap();
+    for runtime in OTHER_RUNTIMES {
+        let found = Command::new("/usr/bin/which").arg(runtime).env("PATH", &stripped).output();
+        assert!(!found.unwrap().status.success(), "`{runtime}` is still on {stripped}");
+    }
+    stripped
 }

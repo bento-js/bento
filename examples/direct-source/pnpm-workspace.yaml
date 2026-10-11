@@ -1,0 +1,4 @@
+# This example installs as its own project rather than as part of the repository's workspace.
+# remix depends on esbuild, whose install script this example never needs, so it stays denied.
+allowBuilds:
+    esbuild: false

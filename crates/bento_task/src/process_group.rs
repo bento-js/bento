@@ -12,7 +12,12 @@ const KILL_DEADLINE: Duration = Duration::from_secs(5);
 
 pub(crate) enum Outcome {
     Exited(ExitStatus),
-    Cancelled(Signal),
+    /// `status` is how the command ended after hearing `signal`: `None` when it had ended
+    /// before the signal arrived, or when anything in its group had to be killed.
+    Cancelled {
+        signal: Signal,
+        status: Option<ExitStatus>,
+    },
 }
 
 /// A command running as the leader of its own process group, so that everything it
@@ -43,8 +48,8 @@ impl ProcessGroup {
                 return self.stop_leftovers(status, cancellation, grace_period);
             }
             if let Some(signal) = cancellation.wait(POLL_INTERVAL) {
-                self.stop(signal, grace_period)?;
-                return Ok(Outcome::Cancelled(signal));
+                let status = self.stop(signal, grace_period)?;
+                return Ok(Outcome::Cancelled { signal, status });
             }
         }
     }
@@ -65,7 +70,7 @@ impl ProcessGroup {
         let outcome = match self.wait_until_empty_or_cancelled(cancellation, deadline)? {
             Some(signal) => {
                 self.send(signal.number());
-                Outcome::Cancelled(signal)
+                Outcome::Cancelled { signal, status: None }
             }
             None => Outcome::Exited(status),
         };
@@ -73,19 +78,24 @@ impl ProcessGroup {
         Ok(outcome)
     }
 
-    fn stop(&mut self, signal: Signal, grace_period: Duration) -> io::Result<()> {
+    /// Forwards `signal` and returns the leader's status if the whole group then ends by itself.
+    fn stop(&mut self, signal: Signal, grace_period: Duration) -> io::Result<Option<ExitStatus>> {
         self.send(signal.number());
-        self.kill_after(Instant::now() + grace_period)
+        if self.kill_after(Instant::now() + grace_period)? {
+            return self.leader.try_wait();
+        }
+        Ok(None)
     }
 
-    /// Kills whatever is still in the group at `deadline`.
-    fn kill_after(&mut self, deadline: Instant) -> io::Result<()> {
+    /// Kills whatever is still in the group at `deadline`. Returns whether the group emptied
+    /// by itself.
+    fn kill_after(&mut self, deadline: Instant) -> io::Result<bool> {
         if self.wait_until_empty(deadline)? {
-            return Ok(());
+            return Ok(true);
         }
         self.send(libc::SIGKILL);
         if self.wait_until_empty(Instant::now() + KILL_DEADLINE)? {
-            return Ok(());
+            return Ok(false);
         }
         Err(io::Error::other(format!("process group {} survived SIGKILL", self.id)))
     }

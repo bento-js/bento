@@ -1,14 +1,21 @@
 //! The `bento` command: runs scripts and project tasks, and installs dependencies.
 
 mod arguments;
+mod diagnostic;
+mod ending;
 mod error;
+mod events;
 mod grant_flags;
 mod install;
+mod instance;
 mod launch;
 mod process_environment;
 mod run;
+mod runtime_report;
+mod script;
 mod signals;
 mod task;
+mod watch;
 
 use std::process::ExitCode;
 
@@ -26,12 +33,12 @@ fn main() -> ExitCode {
     };
     let outcome = match cli.command {
         Command::Run(arguments) => run::run(&arguments),
-        Command::Install(arguments) => install::install(&arguments),
+        Command::Install(arguments) => install::install(&arguments).map(|()| ExitCode::SUCCESS),
     };
     match outcome {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => code,
         Err(error) => {
-            eprintln!("error: {error}");
+            error.report();
             error.exit_code()
         }
     }

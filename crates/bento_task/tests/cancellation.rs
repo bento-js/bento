@@ -86,12 +86,31 @@ fn cancellation_stops_a_grandchild_listener_and_frees_its_port() {
     let result = handle.join().unwrap();
 
     assert!(
-        matches!(&result, Err(TaskError::Cancelled { task, signal: Signal::Terminate }) if task == "serve"),
+        matches!(&result, Err(TaskError::Cancelled { task, signal: Signal::Terminate, .. }) if task == "serve"),
         "{result:?}"
     );
     assert!(started.elapsed() < Duration::from_secs(5), "the group ignored the signal");
     assert!(process_is_gone(listener));
     TcpListener::bind(address).expect("the port is free again");
+}
+
+/// A server that closes itself when interrupted ends the run with its own status.
+#[test]
+fn a_command_that_handles_the_signal_reports_the_status_it_ended_with() {
+    let temp = TempProject::with_tasks(json!({
+        "graceful": "trap 'exit 0' INT; touch ready; while :; do sleep 0.05; done",
+    }));
+
+    let (cancellation, handle) =
+        start(&temp, "graceful", Duration::from_secs(5), || temp.path("ready").exists());
+    cancellation.cancel(Signal::Interrupt);
+    let result = handle.join().unwrap();
+
+    let Err(TaskError::Cancelled { signal: Signal::Interrupt, status: Some(status), .. }) = result
+    else {
+        panic!("the command's status is missing: {result:?}");
+    };
+    assert!(status.success(), "{status:?}");
 }
 
 #[test]
@@ -113,8 +132,8 @@ fn processes_that_ignore_the_signal_are_killed_after_the_grace_period() {
     let elapsed = started.elapsed();
 
     assert!(
-        matches!(result, Err(TaskError::Cancelled { signal: Signal::Interrupt, .. })),
-        "{result:?}"
+        matches!(result, Err(TaskError::Cancelled { signal: Signal::Interrupt, status: None, .. })),
+        "a killed command reported a status of its own: {result:?}"
     );
     assert!(elapsed >= grace_period, "killed before the grace period: {elapsed:?}");
     assert!(
@@ -134,7 +153,7 @@ fn cancellation_before_a_command_starts_runs_nothing() {
 
     let result = temp.runner(&[("PATH", SYSTEM_PATH)], &Grants::none()).run(&plan, &cancellation);
 
-    assert!(matches!(result, Err(TaskError::Cancelled { .. })), "{result:?}");
+    assert!(matches!(result, Err(TaskError::Cancelled { status: None, .. })), "{result:?}");
     assert!(!temp.path("built").exists());
 }
 
@@ -232,7 +251,7 @@ fn interrupting_while_leftovers_stop_forwards_the_signal_and_cancels_the_task() 
 
     assert_stopped(leftover);
     assert!(
-        matches!(&result, Err(TaskError::Cancelled { task, signal: Signal::Interrupt }) if task == "leave"),
+        matches!(&result, Err(TaskError::Cancelled { task, signal: Signal::Interrupt, status: None }) if task == "leave"),
         "{result:?}"
     );
     assert!(elapsed < Duration::from_secs(5), "the interrupt waited for the grace period");

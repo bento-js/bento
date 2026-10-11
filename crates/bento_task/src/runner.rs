@@ -44,8 +44,10 @@ pub enum TaskError {
     Process { task: String, command: String, source: io::Error },
     #[error("task `{task}` failed: `{command}` {}", describe(.status))]
     Failed { task: String, command: String, status: ExitStatus },
+    /// `status` is how the running command ended after hearing `signal`: `None` when no
+    /// command was running, or when anything in its process group had to be killed.
     #[error("task `{task}` was cancelled by {signal}")]
-    Cancelled { task: String, signal: Signal },
+    Cancelled { task: String, signal: Signal, status: Option<ExitStatus> },
 }
 
 impl TaskError {
@@ -94,7 +96,7 @@ impl TaskRunner {
     fn run_step(&self, step: &Step, cancellation: &Cancellation) -> Result<(), TaskError> {
         let task = step.task.clone();
         if let Some(signal) = cancellation.requested() {
-            return Err(TaskError::Cancelled { task, signal });
+            return Err(TaskError::Cancelled { task, signal, status: None });
         }
         let process_error = |source| TaskError::Process {
             task: step.task.clone(),
@@ -107,7 +109,9 @@ impl TaskRunner {
             Outcome::Exited(status) => {
                 Err(TaskError::Failed { task, command: step.command.clone(), status })
             }
-            Outcome::Cancelled(signal) => Err(TaskError::Cancelled { task, signal }),
+            Outcome::Cancelled { signal, status } => {
+                Err(TaskError::Cancelled { task, signal, status })
+            }
         }
     }
 
