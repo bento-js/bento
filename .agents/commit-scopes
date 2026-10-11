@@ -1,0 +1,12 @@
+# Code areas introduced by proposal.0001, in addition to the built-in record and tooling scopes.
+bench
+build
+cli
+compiler
+examples
+fixtures
+host
+policies
+runtime
+tasks
+workflows
