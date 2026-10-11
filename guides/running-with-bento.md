@@ -92,6 +92,8 @@ Loading a variable does not grant guest code access to it; `--allow-env` does. T
 
 Modules resolve the way Node resolves them for the project: `package.json` `imports` and `exports`, ESM and CommonJS packages, and pnpm's `node_modules` layout. Packages resolve from the script's project even when you run `bento` from another directory. `tsconfig.json` `paths` never change resolution. Execution never installs or downloads anything; a missing package names the import that failed and points you to `bento install`.
 
+An ESM import of a CommonJS source receives its `module.exports` value as the default export, including when that source re-exports JSON or a native addon through `require`. JSON fields and addon properties do not become inferred named exports.
+
 The script sees what a Node script would see of its launch, limited by its grants:
 
 - `process.argv.slice(2)` holds the words after the script path, unchanged, as under Node.

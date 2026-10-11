@@ -47,6 +47,33 @@ assert.deepEqual([direct, computed, defined, object, shorthand, babel, typescrip
 }
 
 #[test]
+fn proposal_0001_commonjs_json_reexports_keep_the_default_value_without_named_exports() {
+    for request in ["./data.json", "./data"] {
+        let root = tempdir().unwrap();
+        std::fs::write(
+            root.path().join("data.json"),
+            r#"{"message":"JSON","nested":{"count":42}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("value.cjs"),
+            format!("module.exports = require({request:?});"),
+        )
+        .unwrap();
+        completed(run(
+            config(root.path()),
+            "main.mjs",
+            r#"
+import assert from 'node:assert/strict';
+import value, * as namespace from './value.cjs';
+assert.deepEqual(value, { message: 'JSON', nested: { count: 42 } });
+assert.deepEqual(Object.keys(namespace).sort(), ['default', 'module.exports']);
+"#,
+        ));
+    }
+}
+
+#[test]
 fn package_type_esm_and_fully_specified_relative_imports() {
     let root = tempdir().unwrap();
     std::fs::write(
