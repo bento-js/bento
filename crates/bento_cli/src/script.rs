@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use bento_runtime::{RunOutcome, RuntimeConfig};
+use bento_runtime::{RunOutcome, RuntimeConfig, ShutdownOutcome};
 
 use crate::error::CliError;
 use crate::launch::Launch;
@@ -15,17 +15,22 @@ pub fn run(
     arguments: &[String],
 ) -> Result<ExitCode, CliError> {
     let config = RuntimeConfig {
-        project_root: launch.project.root().to_owned(),
         cwd: invocation_directory.to_owned(),
         grants: launch.grants,
         env: launch.environment.vars().clone(),
         argv: arguments.to_vec(),
+        ..RuntimeConfig::new(launch.project.root())
     };
     let runtime = bento_runtime::start(config, entry).map_err(CliError::Script)?;
     match runtime.wait() {
         RunOutcome::Completed => Ok(ExitCode::SUCCESS),
         RunOutcome::Exited(code) => Ok(exit_code(code)),
         RunOutcome::Failed(error) => Err(CliError::Script(error)),
+        RunOutcome::Shutdown(report) => match report.outcome {
+            ShutdownOutcome::Graceful { exit_code: code } => Ok(exit_code(code)),
+            ShutdownOutcome::Failed(error) => Err(CliError::Script(error)),
+            ShutdownOutcome::Interrupted | ShutdownOutcome::TimedOut => Ok(ExitCode::FAILURE),
+        },
     }
 }
 
