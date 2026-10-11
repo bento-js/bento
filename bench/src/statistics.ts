@@ -2,7 +2,6 @@ export interface Summary {
     count: number;
     min: number;
     max: number;
-    mean: number;
     median: number;
     q1: number;
     q3: number;
@@ -47,7 +46,6 @@ export function summarize(values: readonly number[]): Summary | undefined {
         count: sorted.length,
         min: sorted[0]!,
         max: sorted.at(-1)!,
-        mean: sorted.reduce((total, value) => total + value, 0) / sorted.length,
         median: percentile(sorted, 0.5),
         q1,
         q3,

@@ -9,6 +9,7 @@ import type {
 import type { RunContext, Workload } from "./workload.ts";
 
 import { resetDatabase } from "./database.ts";
+import { throwIfInterrupted } from "./interruption.ts";
 
 interface Contender {
     runtime: RuntimeName;
@@ -100,6 +101,7 @@ async function measure(
                 });
                 samples.get(runtime)!.push(row);
             } catch (error) {
+                throwIfInterrupted();
                 let message = error instanceof Error ? error.message : String(error);
                 context.log(`  failed: ${message.split("\n")[0]}`);
                 failures.get(runtime)!.push({ trial, message });

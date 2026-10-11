@@ -8,6 +8,7 @@ import { createCompatibilityGate } from "./compatibility.ts";
 import { collectEnvironment } from "./environment.ts";
 import { findOnPath } from "./executables.ts";
 import { createFixturePool } from "./fixture-pool.ts";
+import { reportRunFailure, throwIfInterrupted } from "./interruption.ts";
 import { parseOptions, USAGE } from "./options.ts";
 import { installCleanupHandlers } from "./processes.ts";
 import { timestampName, writeResults } from "./results.ts";
@@ -65,9 +66,11 @@ async function main(): Promise<void> {
     try {
         let workloads: WorkloadResult[] = [];
         for (let name of options.workloads) {
+            throwIfInterrupted();
             log(`workload ${name}`);
             workloads.push(await runWorkload(WORKLOADS[name], context));
         }
+        throwIfInterrupted();
         let run: RunRecord = {
             startedAt: started.toISOString(),
             options: { ...options, executables: executablesOf(availability, options.runtimes) },
@@ -107,8 +110,5 @@ function executablesOf(
 }
 
 if (import.meta.main) {
-    main().catch((error: unknown) => {
-        console.error(error instanceof Error ? error.message : error);
-        process.exitCode = 1;
-    });
+    main().catch(reportRunFailure);
 }

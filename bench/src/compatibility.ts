@@ -9,6 +9,8 @@ import {
     withServer,
 } from "./app-server.ts";
 import { resetDatabase } from "./database.ts";
+import { throwIfInterrupted } from "./interruption.ts";
+import { LaunchError } from "./processes.ts";
 import { SEED_ENTRIES } from "./seed-entries.ts";
 
 export type Compatibility =
@@ -42,7 +44,8 @@ export async function checkCompatibility(request: CompatibilityRequest): Promise
             };
         });
     } catch (error) {
-        if (!(error instanceof ServerStartupError)) throw error;
+        throwIfInterrupted();
+        if (!(error instanceof ServerStartupError || error instanceof LaunchError)) throw error;
         return { compatible: false, check: "startup", failures: [error.message], evidence: [] };
     } finally {
         await resetDatabase(request.fixture.directory);

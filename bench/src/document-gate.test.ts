@@ -150,6 +150,30 @@ describe("asset discovery", () => {
         );
     });
 
+    test("includes import-map scope targets, which the page loads but no tag names", () => {
+        let development = assetUrlsOf(readSample("development-document"));
+
+        expect(development).toContain(
+            "/assets/npm/.pnpm/es-module-lexer%402.3.2/node_modules/es-module-lexer/dist/lexer.js",
+        );
+        expect(development).toHaveLength(56);
+    });
+
+    test("a scope target is an asset even when no other markup mentions it", () => {
+        let page = [
+            '<script type="importmap">',
+            JSON.stringify({
+                imports: { "#app/a.ts": "/assets/a.ts" },
+                scopes: {
+                    "/assets/npm/": { lexer: "/assets/npm/lexer.js", "#app/a.ts": "/assets/a.ts" },
+                },
+            }),
+            "</script>",
+        ].join("");
+
+        expect(assetUrlsOf(page)).toEqual(["/assets/a.ts", "/assets/npm/lexer.js"]);
+    });
+
     test("an empty page has no assets", () => {
         expect(assetUrlsOf("")).toEqual([]);
         expect(entryScriptUrl("")).toBeUndefined();

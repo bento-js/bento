@@ -106,6 +106,38 @@ describe("summary.md", () => {
         expect(summary).toContain("GET http://127.0.0.1:17701/ → 200, 0 bytes, text/html");
     });
 
+    test("response evidence includes a redirect's Location and omits it otherwise", () => {
+        let withoutRedirect = render([coldLaunch()]);
+        let workload = coldLaunch();
+        workload.series = [
+            {
+                runtime: "bun",
+                variant: "production",
+                outcome: {
+                    status: "incompatible",
+                    check: "valid-submission",
+                    failures: ["Location should be /"],
+                    evidence: [
+                        {
+                            method: "POST",
+                            url: "http://127.0.0.1:17701/",
+                            status: 303,
+                            contentType: null,
+                            location: "/elsewhere",
+                            bodyBytes: 0,
+                            bodyExcerpt: "",
+                        },
+                    ],
+                },
+            },
+        ];
+
+        expect(withoutRedirect).not.toContain("Location");
+        expect(render([workload])).toContain(
+            "POST http://127.0.0.1:17701/ → 303, 0 bytes, no content type, Location: /elsewhere",
+        );
+    });
+
     test("an unavailable runtime is named with the reason", () => {
         expect(render([coldLaunch()])).toContain("**bento** unavailable: BENTO_BIN is not set");
     });
