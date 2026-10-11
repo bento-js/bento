@@ -1,1 +1,0 @@
-import{t as e}from"./framework.C3CkJNtr.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.Dqpn0ZQL.js`),[])};export{t as default};
