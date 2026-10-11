@@ -1,0 +1,1 @@
+import{t as e}from"./framework.ogKpVNID.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.DUFqkml8.js`),[])};export{t as default};
