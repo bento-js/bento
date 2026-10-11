@@ -1,0 +1,1 @@
+import{t as e}from"./framework.DwhuN-9m.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.DVBOw_uG.js`),[])};export{t as default};
