@@ -12,54 +12,126 @@ use deno_runtime::WorkerExecutionMode;
 use deno_runtime::WorkerLogLevel;
 use deno_runtime::deno_fs::RealFs;
 use deno_runtime::deno_os::{ExitCode, WatcherExitHandle, WatcherExited};
-use deno_runtime::deno_web::BlobStore;
 use deno_tls::{RootCertStoreProvider, rustls::RootCertStore};
 use sys_traits::impls::RealSys;
+use tokio::sync::mpsc;
 
+use crate::host::HostModules;
+use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
 use crate::node::NodeServices;
 use crate::ops::{InstanceEnvironment, bento_instance};
+use crate::workers::WorkerFactory;
 use crate::{RunOutcome, RuntimeConfig, RuntimeError};
 
-pub(crate) async fn run(config: RuntimeConfig, entry: PathBuf) -> RunOutcome {
-    let mut worker = match create_worker(config, &entry) {
+pub(crate) async fn run(
+    config: RuntimeConfig,
+    entry: PathBuf,
+    modules: HostModules,
+    control: Arc<Control>,
+    mut commands: mpsc::UnboundedReceiver<Command>,
+) -> RunOutcome {
+    let mut worker = match create_worker(config, &entry, modules, control.clone()) {
         Ok(worker) => worker,
         Err(error) => {
-            return RunOutcome::Failed(RuntimeError::startup(format!(
+            let outcome = RunOutcome::Failed(RuntimeError::startup(format!(
                 "{}: {error:#}",
                 entry.display()
             )));
+            control.complete(&outcome);
+            return outcome;
         }
     };
-    let execution = execute(&mut worker).await;
+    let execution = execute(&mut worker, &mut commands, &control).await;
+    let outcome = execution_outcome(&mut worker, execution, &entry);
+    close_resources(&mut worker);
+    drop(worker);
+    control.close_workers();
+    match control.complete(&outcome) {
+        Some(report) if !matches!(report.outcome, crate::ShutdownOutcome::Failed(_)) => {
+            RunOutcome::Shutdown(report)
+        }
+        _ => outcome,
+    }
+}
+
+async fn execute(
+    worker: &mut LibMainWorker,
+    commands: &mut mpsc::UnboundedReceiver<Command>,
+    control: &Control,
+) -> Result<i32, CoreError> {
+    let execution = async {
+        worker.execute_load_phase().await?;
+        worker.run_event_loop_to_completion().await
+    };
+    tokio::pin!(execution);
+    loop {
+        tokio::select! {
+            result = &mut execution => return result,
+            command = commands.recv() => {
+                if !matches!(command, Some(Command::Shutdown)) || !control.deliver(Signal::Terminate.name()) {
+                    return Ok(0);
+                }
+            }
+        }
+    }
+}
+
+fn execution_outcome(
+    worker: &mut LibMainWorker,
+    execution: Result<i32, CoreError>,
+    entry: &Path,
+) -> RunOutcome {
     let state = worker.js_runtime().op_state();
-    let state = state.borrow();
-    if state.has::<WatcherExited>() {
-        return RunOutcome::Exited(state.borrow::<ExitCode>().get());
+    if state.borrow().has::<WatcherExited>() {
+        return RunOutcome::Exited(state.borrow().borrow::<ExitCode>().get());
     }
     match execution {
         Ok(0) => RunOutcome::Completed,
         Ok(code) => RunOutcome::Exited(code),
-        Err(error) => RunOutcome::Failed(RuntimeError::guest(error, &entry)),
+        Err(error) => RunOutcome::Failed(RuntimeError::guest(error, entry)),
     }
 }
 
-async fn execute(worker: &mut LibMainWorker) -> Result<i32, CoreError> {
-    worker.execute_load_phase().await?;
-    worker.run_event_loop_to_completion().await
+fn close_resources(worker: &mut LibMainWorker) {
+    let state = worker.js_runtime().op_state();
+    let resources = {
+        let mut state = state.borrow_mut();
+        let ids: Vec<_> = state.resource_table.names().map(|(id, _)| id).collect();
+        ids.into_iter().filter_map(|id| state.resource_table.take_any(id).ok()).collect::<Vec<_>>()
+    };
+    for resource in resources {
+        resource.close();
+    }
 }
 
-fn create_worker(mut config: RuntimeConfig, entry: &Path) -> anyhow::Result<LibMainWorker> {
+fn create_worker(
+    mut config: RuntimeConfig,
+    entry: &Path,
+    modules: HostModules,
+    control: Arc<Control>,
+) -> anyhow::Result<LibMainWorker> {
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
     let node = NodeServices::new(&config.project_root, permissions.clone());
     let environment = InstanceEnvironment {
-        values: std::mem::take(&mut config.env),
+        values: Arc::new(parking_lot::Mutex::new(std::mem::take(&mut config.env))),
         allowed: std::mem::take(&mut config.grants.env),
         cwd: config.cwd.clone(),
     };
-    let loader = LoaderFactory { node: node.clone(), cwd: config.cwd.clone() };
+    let loader = LoaderFactory {
+        node: node.clone(),
+        cwd: config.cwd.clone(),
+        modules: modules.clone(),
+        control: control.clone(),
+    };
+    let worker_factory = Arc::new(WorkerFactory::new(
+        loader.clone(),
+        environment.clone(),
+        config.argv.clone(),
+        Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
+    ));
     let factory = LibMainWorkerFactory::new(
-        Arc::new(BlobStore::default()),
+        worker_factory.blobs.clone(),
         None,
         None,
         Arc::new(FeatureChecker::default()),
@@ -70,11 +142,11 @@ fn create_worker(mut config: RuntimeConfig, entry: &Path) -> anyhow::Result<LibM
         node.resolver,
         create_npm_process_state_provider(&node.npm),
         node.packages,
-        Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
+        worker_factory.certificates.clone(),
         StorageKeyResolver::empty(),
         RealSys,
         options(config),
-        Default::default(),
+        worker_factory.roots.clone(),
         None,
     );
     let main = ModuleSpecifier::from_file_path(entry)
@@ -85,11 +157,18 @@ fn create_worker(mut config: RuntimeConfig, entry: &Path) -> anyhow::Result<LibM
         vec![ModuleSpecifier::parse("bento:compat")?, ModuleSpecifier::parse("bento:subprocess")?],
         Vec::new(),
         permissions,
-        vec![bento_instance::init(environment)],
+        vec![bento_instance::init(environment, modules, control.clone())],
         Default::default(),
         None,
     )?;
+    // Install after the factory's lazy extension initialization, which resets its private callback.
+    let initialize =
+        deno_runtime::ops::worker_host::deno_worker_host::init(worker_factory.callback(), None)
+            .op_state_fn
+            .ok_or_else(|| anyhow::anyhow!("worker host callback initializer unavailable"))?;
+    initialize(&mut worker.js_runtime().op_state().borrow_mut());
     let handle = worker.js_runtime().v8_isolate().thread_safe_handle();
+    control.install_isolate(handle.clone());
     worker.js_runtime().op_state().borrow_mut().put(WatcherExitHandle(handle));
     Ok(worker)
 }

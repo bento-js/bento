@@ -13,7 +13,7 @@ pub enum ErrorKind {
     Uncaught,
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error("{message}")]
 pub struct RuntimeError {
     pub kind: ErrorKind,
@@ -27,6 +27,7 @@ pub enum RunOutcome {
     Completed,
     Exited(i32),
     Failed(RuntimeError),
+    Shutdown(crate::ShutdownReport),
 }
 
 impl RuntimeError {

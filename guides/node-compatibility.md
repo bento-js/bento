@@ -42,8 +42,12 @@ An authorized addon executes native code inside the Rust host process. It is not
 
 ## Observable failures
 
-Runtime outcomes distinguish completed execution, guest exits, and failures. Errors identify startup or syntax failures, module resolution failures, transformation failures, permission violations, and uncaught exceptions or unhandled rejections. Diagnostics include the entry or failing source location instead of presenting a failed launch as successful execution.
+Runtime outcomes distinguish completed execution, guest exits, failures, and host-requested shutdown. Errors identify startup or syntax failures, module resolution failures, transformation failures, permission violations, and uncaught exceptions or unhandled rejections. Diagnostics include the entry or failing source location instead of presenting a failed launch as successful execution. Guest `process.exit` disposes only the runtime, including inside HTTP handlers; it never exits the Rust embedding process.
 
 Subprocess entrypoints such as `spawn` and `execSync` throw `NotCapable` before execution. This explicit denial preserves permission diagnostics rather than wrapping a denied command as a generic unsuccessful child exit. The native subprocess operations also remain ungranted, including access through lower-level compatibility APIs.
 
 Each instance owns its permissions, environment, and execution thread. Concurrent instances do not inherit each other's grants. The Rust host drives execution directly; no Node, Bun, Deno, or pnpm process executes the application.
+
+Signals are virtual inside embedded instances: registering a guest `process.on("SIGTERM")`, `process.on("SIGINT")`, or other supported signal listener never installs an OS signal handler. The embedding host explicitly delivers interrupt or termination through `RuntimeHandle`; the CLI owns process-global OS signal forwarding. Shutdown waits for cooperative guest cleanup up to a five-second default deadline, then interrupts JavaScript and disposes the instance. A deadline interruption is never reported as graceful. Listeners and active connections are released before completed shutdown returns.
+
+See [Embedding Bento](embedding-bento.md) for Rust configuration, asynchronous private host modules, instance isolation, execution outcomes, and shutdown control. Authorized native addons and arbitrary blocking native code are outside the JavaScript containment and interruption guarantees.

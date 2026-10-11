@@ -17,6 +17,8 @@ pub fn config(root: &Path) -> RuntimeConfig {
         },
         env: BTreeMap::new(),
         argv: Vec::new(),
+        host_modules: Vec::new(),
+        shutdown_deadline: std::time::Duration::from_secs(5),
     }
 }
 
