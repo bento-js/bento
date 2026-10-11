@@ -5,7 +5,7 @@ use std::process::Command;
 
 use serde_json::{Value, json};
 
-use support::{TempProject, stderr};
+use support::{SYSTEM_PATH, TempProject, stderr};
 
 /// A pnpm project whose development dependencies are local directories, so pnpm installs
 /// them without registry access.
@@ -80,5 +80,29 @@ fn install_requires_pnpm_as_the_declared_package_manager() {
 
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("devEngines.packageManager"), "{}", stderr(&output));
+    assert!(!temp.exists("node_modules"));
+}
+
+/// The review's reproduction: the shell that starts `bento install` resolves `PATH=./tools`
+/// against its own working directory, so Bento must find the same pnpm there, and then run
+/// it in the project root.
+#[test]
+fn install_finds_pnpm_on_a_relative_path_entry_from_the_current_directory() {
+    let temp = pnpm_project(json!({ "local-tool": "file:./local-tool" }));
+    let record = temp.path("pnpm-invocation");
+    temp.write_executable(
+        "app/tools/pnpm",
+        &format!("#!/bin/sh\nprintf '%s %s\\n' \"$(/bin/pwd)\" \"$*\" > '{}'\n", record.display()),
+    );
+    let mut command = temp.bento(&["install"]);
+    command.current_dir(temp.path("app")).env("PATH", format!("./tools:{SYSTEM_PATH}"));
+
+    let output = command.output().unwrap();
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        fs::read_to_string(record).unwrap(),
+        format!("{} install --production=false\n", temp.root().display())
+    );
     assert!(!temp.exists("node_modules"));
 }

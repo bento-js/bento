@@ -1,10 +1,12 @@
 //! Dependency installation through the project's declared pnpm toolchain.
 //!
 //! Bento does not resolve or write lockfiles itself: it checks that the project declares
-//! pnpm and runs the `pnpm` found on `PATH` in the project root, so pnpm's own tool-manager
-//! lock selects the pinned version and `pnpm-workspace.yaml` policy applies unchanged.
+//! pnpm and runs the `pnpm` the invoking shell would find on `PATH`, in the project root, so
+//! pnpm's own tool-manager lock selects the pinned version and `pnpm-workspace.yaml` policy
+//! applies unchanged.
 
 use std::collections::BTreeMap;
+use std::env;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::ExitStatusExt;
@@ -53,16 +55,20 @@ impl InstallError {
 /// Installs `dependencies` and `devDependencies` with pnpm from the project root.
 ///
 /// `environment` is the complete environment pnpm runs with, including the `PATH`
-/// searched for it. Bento adds `--production=false` so an inherited
-/// `NODE_ENV=production` cannot drop development dependencies, and nothing that
-/// approves dependency build scripts.
+/// searched for it. That search resolves relative and empty `PATH` entries against
+/// `invocation_directory`, the absolute directory Bento was started in, as the shell that
+/// started it would; pnpm itself still runs in the project root. Bento adds
+/// `--production=false` so an inherited `NODE_ENV=production` cannot drop development
+/// dependencies, and nothing that approves dependency build scripts.
 pub fn install(
     project: &Project,
     lockfile: Lockfile,
     environment: &BTreeMap<String, String>,
+    invocation_directory: &Path,
 ) -> Result<(), InstallError> {
     require_pnpm_declaration(project)?;
-    let pnpm = find_executable(PNPM, environment.get("PATH")).ok_or(InstallError::MissingPnpm)?;
+    let pnpm = find_executable(PNPM, environment.get("PATH"), invocation_directory)
+        .ok_or(InstallError::MissingPnpm)?;
     let mut command = Command::new(pnpm);
     command
         .arg("install")
@@ -88,13 +94,16 @@ fn require_pnpm_declaration(project: &Project) -> Result<(), InstallError> {
     })
 }
 
-/// The first executable named `program` in the absolute entries of `search_path`.
-fn find_executable(program: &str, search_path: Option<&String>) -> Option<PathBuf> {
-    search_path?
-        .split(':')
-        .map(Path::new)
-        .filter(|directory| directory.is_absolute())
-        .map(|directory| directory.join(program))
+/// The first executable named `program` on `search_path`, as a shell finds it: an absolute
+/// entry stands alone, a relative entry is resolved against `working_directory`, and an
+/// empty entry (a leading, trailing, or doubled colon) is `working_directory` itself.
+fn find_executable(
+    program: &str,
+    search_path: Option<&String>,
+    working_directory: &Path,
+) -> Option<PathBuf> {
+    env::split_paths(search_path?)
+        .map(|entry| working_directory.join(entry).join(program))
         .find(|candidate| is_executable(candidate))
 }
 

@@ -20,7 +20,7 @@ Installing is a separate step from running. `bento run` never installs packages,
     "devEngines": { "packageManager": { "name": "pnpm", "version": "12" } }
     ```
 
-2. Make sure `pnpm` is on your `PATH`. Bento runs the `pnpm` it finds there, and pnpm switches to the version the project pins, which may need registry access the first time.
+2. Make sure `pnpm` is on your `PATH`. Bento looks it up the way your shell does: a relative entry such as `./tools` is taken from the directory you run `bento install` in, and an empty entry means that directory itself. Bento runs the `pnpm` it finds there, and pnpm switches to the version the project pins, which may need registry access the first time.
 3. Run `bento install` anywhere inside the project. Bento finds the nearest `package.json`, runs `pnpm install` in that directory, shows pnpm's output, and exits with pnpm's exit status when the installation fails.
 4. Use `bento install --frozen-lockfile` to reproduce exactly the locked dependency graph. If `package.json` and `pnpm-lock.yaml` disagree, the installation fails and `pnpm-lock.yaml` is left byte-for-byte unchanged.
 
