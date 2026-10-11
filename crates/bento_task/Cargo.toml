@@ -1,0 +1,17 @@
+[package]
+name = "bento_task"
+description = "Top-level package.json task planning and trusted command execution"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+bento_host.workspace = true
+bento_workspace.workspace = true
+libc = "0.2"
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true

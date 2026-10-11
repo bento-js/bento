@@ -1,0 +1,120 @@
+---
+id: guide.tasks-and-environment
+title: Tasks and Environment
+describes: [proposal.0001]
+---
+
+# Tasks and Environment
+
+## What it does
+
+`bento run <name>` runs a task declared in the top-level `tasks` field of your project's `package.json`, after the tasks it depends on. Before Bento starts a task or a script, it loads the project's `.env` files into that launch's environment. Both features read the files your project already has; nothing needs converting to a Bento-specific format.
+
+For a task, Bento finds the project by looking for the nearest `package.json` in the current directory or one of its parents. For a script, it starts from the script's own directory instead. The directory holding that `package.json` is the project root: tasks run there, and `.env` files and `node_modules/.bin` are read from there. If no `package.json` is found, Bento reports an error.
+
+`bento run <target>` treats the target as a file when it contains a path separator (`./server.ts`, `scripts/seed.ts`) or when it has a file extension and that file exists (`server.ts`). Otherwise an exact task name wins over a file of the same name. A target that is neither a task nor a file is an error; Bento never runs it as a shell command.
+
+## How to use it
+
+### Declare tasks
+
+| Shape | Example | Meaning |
+| --- | --- | --- |
+| A string | `"lint": "oxlint --fix"` | One command. |
+| An array of strings | `"check": ["oxfmt --check", "oxlint", "tsc"]` | Commands that run one after another. The first failure stops the rest. |
+| An object | `"dev": { "dependsOn": ["db:migrate"], "command": "bento run --watch server.ts" }` | `dependsOn` lists tasks to run first; `command` is one command string. Either may be left out, but not both. |
+
+An object with only `dependsOn` groups other tasks: it succeeds when they all succeed.
+
+Bento checks the whole selected graph before it runs anything: the shape of every task in it, every dependency name, and cycles. It rejects empty commands, empty arrays, an object with neither a `command` nor a dependency, a `command` that is not a string, a `dependsOn` that is not a list of task names, and object fields other than `command` and `dependsOn`. Errors name the task, the missing dependency, or the cycle (`a → b → a`). Tasks outside the selected graph are not checked.
+
+`scripts` are not tasks. Bento never converts them and never runs npm-style `pre` and `post` hooks, so a `predev` script does not run before the `dev` task.
+
+### Run them in order
+
+Dependencies run depth-first in the order they are declared, then the task's own command or commands. A task reached through several dependencies runs once per invocation. Tasks never run in parallel.
+
+If a command fails, nothing after it runs: not the rest of its array, not the tasks that depend on it, and not any later task. Bento reports the task, the command, and the exit code or the signal that ended it.
+
+### Pass arguments
+
+Arguments after `--` are appended to the selected task's own command, shell-quoted, so spaces, quotes, `$`, and `;` arrive exactly as you typed them. Dependencies never receive them. A task with only `dependsOn` has no command to receive them, and a task with an array of commands would leave the target ambiguous, so both reject arguments.
+
+### What a command runs with
+
+Each command runs with `/bin/sh -c` in the project root, so inline assignments such as `NODE_ENV=test remix test`, quoting, and operators like `&&`, `||`, `;`, and `|` behave as they do in your shell. `PATH` starts with `<root>/node_modules/.bin`, then the directory of the running `bento` executable, then the inherited `PATH`, so installed package tools are found by name. Ahead of all of these, Bento adds a private directory holding only a link to itself, so `bento` in a command always means the running `bento`, even when the project installs a `bento` of its own in `node_modules/.bin`. The command receives the launch environment described below, and its stdout and stderr pass straight through.
+
+Running a task is a trusted operation on your behalf. Its commands, and the executables they start, run with your user's full authority; Bento's grants do not sandbox them. Package tools such as `oxfmt`, `tsc`, or `remix db migrate` may run under Node.
+
+### Cancel and clean up
+
+Each command runs in its own process group. When Bento receives an interrupt (Ctrl-C) or a termination signal, it forwards that signal to the whole group, including servers started by nested commands. Processes that are still running after a 10-second grace period are killed.
+
+A command finishes when its shell exits. If the shell leaves processes running in the background, as `server &` does, Bento sends them a termination signal, kills any that remain after the same grace period, and then reports the shell's exit status. If Bento is interrupted or terminated while it waits for them, it forwards that signal to them as well and reports the task as cancelled instead; whatever remains is still killed when the original grace period ends. Either way, Bento starts the next command, or returns, only after every process in the group has exited, so no orphaned server keeps holding its port.
+
+### Nest `bento` commands
+
+A task command that runs `bento` again receives two variables from the launch that started the task:
+
+- `BENTO_GRANT_CEILING` carries that launch's grants. The nested launch inherits them for any kind of grant it does not mention, and may narrow them; asking for a wider grant fails before any guest code runs.
+- `BENTO_ENV_FILE_KEYS` records which variables Bento loaded from `.env` files, with a fingerprint of each loaded value. The nested launch treats those variables as file values it may load again for its own mode, rather than as values you exported. A variable the task command assigns itself is left out, so it stays explicit even when it repeats the value from `.env`: `DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. A variable whose value no longer matches its fingerprint is explicit too.
+
+These variables describe the trusted host's policy; they are not authority that guest code can claim.
+
+### Write `.env` files
+
+- Write one `NAME=value` per line. Blank lines and lines starting with `#` are ignored, and `export NAME=value` is accepted.
+- Unquoted values are trimmed, and a `#` starts a comment. Quote any value that contains `#`.
+- `'single'` and `` `backtick` `` quotes keep everything inside them literally.
+- `"double"` quotes understand `\n`, `\r`, `\t`, `\"`, and `\\`. Any other backslash stays as written.
+- A quoted value may span several lines.
+- Nothing is expanded or executed: `$HOME`, `${HOME}`, `$(command)`, and backticks stay literal text.
+- A malformed line stops the launch with the file and line number. The value on that line is never printed.
+
+### Mode and precedence
+
+Bento picks the mode once per launch:
+
+1. the `NODE_ENV` you set in the environment Bento started with;
+2. otherwise the `NODE_ENV` in `.env`;
+3. otherwise the launch default: `development` for `bento run --watch`, and no mode for anything else.
+
+Then it builds the environment from these layers, each overriding the ones above it:
+
+| Layer | Source                                                                         |
+| ----- | ------------------------------------------------------------------------------ |
+| 1     | `.env`                                                                         |
+| 2     | `.env.<mode>`, only when there is a mode                                       |
+| 3     | `.env.local`                                                                   |
+| 4     | Variables you set in the environment, and inline assignments in a task command |
+
+Missing files are skipped. A `NODE_ENV` set inside `.env.<mode>` or `.env.local` changes that variable but not which files load.
+
+The effective `NODE_ENV` is part of the launch environment. A watch launch gets `NODE_ENV=development` even when the project has no `.env` files at all. The default never replaces a value that you or a file set.
+
+Loading `.env` files never changes the environment of the process that started Bento or of a Rust host embedding it. A loaded value is not automatically visible to guest code either: a guest sees only the variables its grants allow. Task commands receive the whole prepared environment.
+
+Bento reads `.env` files when a command starts. To pick up a change, restart the command; watch mode does not reload them.
+
+## Worked example
+
+The guest book declares `"dev": { "dependsOn": ["db:migrate"], "command": "bento run --watch server.ts" }` and `"check:fix": { "dependsOn": ["fmt", "lint", "typecheck"] }`, and its `scripts` also contain a `predev`.
+
+`bento run check:fix` runs `oxfmt`, then `oxlint --fix`, then `tsc`, and stops at the first failure.
+
+Suppose the project has `.env` containing `DATABASE_URL=base` and `.env.development` containing `DATABASE_URL=dev`, and nothing is exported:
+
+1. `bento run dev` is not a watch launch and `.env` has no `NODE_ENV`, so it has no mode. Its environment has `DATABASE_URL=base` and no `NODE_ENV`. The `predev` script does not run.
+2. `db:migrate` runs `remix db migrate` once, with `DATABASE_URL=base`.
+3. The `dev` command `bento run --watch server.ts` inherits `DATABASE_URL=base`, and `BENTO_ENV_FILE_KEYS` marks that value as loaded from a file. As a watch launch, it selects the `development` mode, loads `.env` and then `.env.development`, and starts the server with `DATABASE_URL=dev` and `NODE_ENV=development`.
+
+Running `DATABASE_URL=mine bento run dev` instead keeps `DATABASE_URL=mine` at both levels, because a value you set always beats the files.
+
+`bento run test -- --reporter "dot matrix"` runs `NODE_ENV=test remix test --reporter 'dot matrix'`, while `bento run check:fix -- --verbose` fails because `check:fix` has no command of its own.
+
+## Limits and edge cases
+
+- There is no parallel task scheduling, task caching, or hot reloading of `.env` files.
+- Bento recognizes a task command's own assignments from its text: `NAME=value` before a command, and the `NAME=value` arguments of `export`, `readonly`, and `env`. A script the command runs that sets a variable to exactly the value loaded from a file cannot be told apart from the forwarded value, so a nested launch may still replace it with its mode file's value. Assign it in the task command instead.
+- A mode is used as part of a file name, so a `NODE_ENV` containing `/` is rejected. An empty `NODE_ENV` that you set means no mode, and Bento leaves it empty.
+- When a signal does not stop a process, the 10-second grace period ends with a kill, which skips any further cleanup inside that process.
