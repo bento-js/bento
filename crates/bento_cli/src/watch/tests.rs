@@ -178,7 +178,7 @@ fn a_loaded_module_outside_the_project_is_watched_once_it_is_reported() {
     let dependency = workspace.write("shared/node_modules/dependency/index.js", "export {};\n");
     let (mut watcher, changes) = workspace.watch();
 
-    watcher.watch_modules([shared.clone(), dependency.clone()]).unwrap();
+    assert!(watcher.watch_modules([shared.clone(), dependency.clone()]).is_empty());
     fs::write(&unloaded, "export const edited = true;\n").unwrap();
     fs::write(&dependency, "export const edited = true;\n").unwrap();
     assert_quiet(&changes);
@@ -193,10 +193,27 @@ fn a_loaded_module_in_an_excluded_project_directory_is_watched() {
     let entry = workspace.write("app/dist/server.js", "console.log('built');\n");
     let (mut watcher, changes) = workspace.watch();
 
-    watcher.watch_modules([entry.clone()]).unwrap();
+    assert!(watcher.watch_modules([entry.clone()]).is_empty());
     fs::write(&entry, "console.log('rebuilt');\n").unwrap();
 
     assert_eq!(next_change(&changes), vec![entry]);
+}
+
+#[test]
+fn a_module_that_cannot_be_watched_is_reported_once_and_watched_once_it_can_be() {
+    let workspace = Workspace::new();
+    let module = workspace.path("later/module.mjs");
+    let (mut watcher, changes) = workspace.watch();
+
+    assert_eq!(watcher.watch_modules([module.clone()]).len(), 1);
+    assert!(watcher.watch_modules([module.clone()]).is_empty());
+    workspace.write("later/module.mjs", "export {};\n");
+    assert!(watcher.watch_modules([module.clone()]).is_empty());
+    thread::sleep(SETTLE);
+    while changes.try_recv().is_ok() {}
+
+    fs::write(&module, "export const edited = true;\n").unwrap();
+    assert_eq!(next_change(&changes), vec![module]);
 }
 
 /// `app/tsconfig.json` extends a file outside the project, which extends another, and a file

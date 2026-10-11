@@ -3,6 +3,7 @@ use std::env;
 use crate::error::CliError;
 use crate::launch::Launch;
 use crate::signals;
+use bento_runtime::Signal;
 use bento_task::{Cancellation, Plan, TaskRunner};
 
 /// The arguments for task `name` among the words after it on the command line: those after
@@ -26,7 +27,16 @@ pub fn run(launch: &Launch, name: &str, arguments: &[String]) -> Result<(), CliE
     let runner =
         TaskRunner::new(&launch.project, &launch.environment, &launch.grants, &executable)?;
     let cancellation = Cancellation::new();
-    signals::cancel_on_signal(&cancellation).map_err(CliError::Signals)?;
+    let cancel = cancellation.clone();
+    signals::listen(move |signal| cancel.cancel(task_signal(signal))).map_err(CliError::Signals)?;
     runner.run(&plan, &cancellation)?;
     Ok(())
+}
+
+/// Cancelling a task stops its command's whole process group with the signal `bento` received.
+fn task_signal(signal: Signal) -> bento_task::Signal {
+    match signal {
+        Signal::Interrupt => bento_task::Signal::Interrupt,
+        Signal::Terminate => bento_task::Signal::Terminate,
+    }
 }

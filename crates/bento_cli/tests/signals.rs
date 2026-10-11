@@ -3,14 +3,14 @@ mod support;
 use std::env;
 use std::fs;
 use std::io;
-use std::net::{SocketAddr, TcpListener};
-use std::process::{self, Child, ExitStatus, Stdio};
+use std::process::{self, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
 
 use support::TempProject;
+use support::running::{free_port, loopback, port_is_taken, wait_for_exit, wait_until};
 
 /// `serve.sh` stands in for a server script: it starts a listener as its own child, so the
 /// listener is a grandchild of the task command.
@@ -18,36 +18,6 @@ const SERVE_SCRIPT: &str = r#"#!/bin/sh
 echo $$ > server.pid
 sh -c 'echo $$ > listener.pid; exec nc -l 127.0.0.1 "$1"' listener "$PORT"
 "#;
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
-}
-
-fn port_is_taken(address: SocketAddr) -> bool {
-    matches!(TcpListener::bind(address), Err(error) if error.kind() == io::ErrorKind::AddrInUse)
-}
-
-fn wait_until(deadline: Duration, mut condition: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !condition() {
-        assert!(start.elapsed() < deadline, "condition not reached within {deadline:?}");
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
-    let start = Instant::now();
-    loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            return status;
-        }
-        if start.elapsed() > deadline {
-            child.kill().unwrap();
-            panic!("bento did not exit within {deadline:?} of the signal");
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-}
 
 fn process_is_gone(pid: i32) -> bool {
     // SAFETY: signal 0 only checks whether the process exists.
@@ -73,7 +43,7 @@ fn read_pid(temp: &TempProject, file: &str) -> i32 {
 /// bento exited after checking that nothing from the task is left running.
 fn signal_serving_task(task: &str, signal: libc::c_int) -> ExitStatus {
     let port = free_port();
-    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    let address = loopback(port);
     let temp =
         TempProject::with_tasks(json!({ "serve": "sh ./serve.sh", "dev": "bento run serve" }));
     temp.write_executable("serve.sh", SERVE_SCRIPT);

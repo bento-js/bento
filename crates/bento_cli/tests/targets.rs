@@ -75,19 +75,6 @@ fn a_script_runs_in_bento_without_trying_another_runtime() {
 }
 
 #[test]
-fn watching_a_script_reports_that_restarting_is_unavailable_without_running_it() {
-    let (temp, search_path) = script_project();
-
-    let output =
-        temp.bento(&["run", "--watch", "server.mjs"]).env("PATH", &search_path).output().unwrap();
-
-    assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).contains("cannot watch `server.mjs`"), "{}", stderr(&output));
-    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
-    assert!(!temp.exists("ran.log"));
-}
-
-#[test]
 fn script_grants_are_validated_before_the_script_runs() {
     let (temp, _) = script_project();
     let ceiling = Grants::none().to_ceiling_value();

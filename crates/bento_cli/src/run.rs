@@ -6,6 +6,7 @@ use crate::error::CliError;
 use crate::launch::Launch;
 use crate::script;
 use crate::task;
+use crate::watch;
 use bento_workspace::{LaunchKind, Selection, Target, select_target};
 
 /// `bento run`: selects the target, prepares its launch, and runs it.
@@ -30,10 +31,12 @@ pub fn run(arguments: &RunArguments) -> Result<ExitCode, CliError> {
         Target::Script(entry) => {
             let kind = if arguments.watch { LaunchKind::Watch } else { LaunchKind::Run };
             let launch = Launch::prepare(project, &arguments.grants, &invocation_directory, kind)?;
+            let script_arguments = arguments.arguments();
             if arguments.watch {
-                return Err(CliError::WatchUnavailable(arguments.target().to_owned()));
+                watch::run(launch, &entry, &invocation_directory, script_arguments)
+            } else {
+                script::run(launch, &entry, &invocation_directory, script_arguments)
             }
-            script::run(launch, &entry, &invocation_directory, arguments.arguments())
         }
     }
 }

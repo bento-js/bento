@@ -92,11 +92,27 @@ Packages with Node-API native addons, such as the compilers `remix/assets` uses,
 
 Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. The error's message and source location follow, and `bento` exits with status 1.
 
+### Read error reports
+
+When an error points at a place in a file Bento can read, Bento shows that place: the file with its line and column, the source lines around it, and a marker under the position saying what is wrong there. A `package.json` that is not valid JSON, for example, is reported like this:
+
+```text
+Error: /Users/you/guest-book/package.json is not valid JSON
+   ╭─[ /Users/you/guest-book/package.json:4:3 ]
+   │
+ 4 │   "tasks": {}
+   │   ┬
+   │   ╰── expected `,` or `}`
+───╯
+```
+
+An error without such a place, or one whose file cannot be read, is a single line that starts with `error:`. Bento colors its reports only when standard error is a terminal, so redirected output and logs stay plain text.
+
+Environment files are never shown, because their values are often secrets. An error in `.env` names the file and the line, as in `.env:2: quoted value is never closed`, and nothing of its contents.
+
 ### Watch for changes
 
-> This section describes behavior that the next stage of the Bento CLI completes. Until then, `bento run --watch <script-path>` exits with status 1 and a message that starts `cannot watch`, without running the script.
-
-`bento run --watch server.ts` runs the script and restarts it completely when its source changes; it does not replace modules in place. Bento watches the project directory, so browser modules compiled by `remix/assets` count even though the server never imports them. It also watches every module the script loads from outside the project, including ones loaded after startup, and the configuration that changes how modules resolve and transform: `package.json`, `tsconfig.json`, and every file `tsconfig.json` extends, even from another directory or a package. Edits, replaced files, deletions, and a newly created file that fixes a missing import all trigger a restart.
+`bento run --watch server.ts` runs the script and restarts it completely when its source changes; it does not replace modules in place. Bento watches the project directory, so browser modules compiled by `remix/assets` count even though the server never imports them. It also watches every module the script loads from outside the project, including ones first loaded after startup, such as by a dynamic `import()` while serving a request; Bento starts watching those within a fraction of a second of their loading. When it cannot watch one yet, for example because its directory has been moved away, it prints a warning once and keeps trying while the script runs. It watches the configuration that changes how modules resolve and transform, too: `package.json`, `tsconfig.json`, and every file `tsconfig.json` extends, even from another directory or a package. Bento reads `tsconfig.json` again on each change, so a file that an edit makes it extend is watched from the restart that edit causes. Edits, replaced files, deletions, and a newly created file that fixes a missing import all trigger a restart.
 
 Inside the project, Bento ignores what running or building the application writes, so requests that write to them do not cause restarts:
 
@@ -107,9 +123,11 @@ Inside the project, Bento ignores what running or building the application write
 
 A module the script actually loads from one of those places, such as an entrypoint in `dist`, is still watched. Modules loaded from a `node_modules` directory are not.
 
-Edits within about a tenth of a second of each other cause one restart. The new instance starts only after the old one has shut down and released its port. When loading fails, Bento reports the error and keeps watching, so fixing the file recovers; it never keeps serving the old code as though the reload had worked.
+Edits within about a tenth of a second of each other cause one restart. Bento says on standard error which file changed each time it restarts. The new instance starts only after the old one has shut down, as it would for a termination signal, and released its port. When loading fails, Bento reports the error, says it is waiting for changes, and keeps watching, so fixing the file or creating the missing one recovers; it never keeps serving the old code as though the reload had worked. A script that ends by itself, by finishing its work or calling `process.exit`, does not end the watch either: Bento reports how it ended and runs it again after the next change.
 
-Watching does not reload `.env` files and does not rerun the tasks that started it. When the guest book's `dev` task starts `bento run --watch server.ts`, migrations run once, before the watcher starts. Stopping the command stops both the application and the watching.
+Watching does not reload `.env` files and does not rerun the tasks that started it. When the guest book's `dev` task starts `bento run --watch server.ts`, migrations run once, before the watcher starts. `--watch` selects the `development` mode for the environment files and `NODE_ENV` unless your environment or `.env` sets `NODE_ENV`.
+
+Stopping the command stops both the application and the watching. Ctrl-C or a termination signal stops the running script as [Stop a run](#stop-a-run) describes, and then `bento` exits instead of waiting for changes. When no script is running, because loading failed or the script ended by itself, `bento` exits at once with `130` or `143`. A nested `bento run --watch` that a task started stops the same way when you stop the outer `bento`.
 
 `--watch` applies to scripts only. `bento run --watch <task-name>` is an error; declare a task whose command runs `bento run --watch <script>`, as the guest book's `dev` task does.
 
@@ -121,20 +139,25 @@ Watching does not reload `.env` files and does not rerun the tasks that started 
 
 When you press Ctrl-C or send `bento` a termination signal while a task runs, Bento forwards the signal to the task command's whole process group, including servers started by nested `bento` commands. Processes still running after a 10-second grace period are killed. `bento` exits once nothing from the task is left running, so its port is free again. The same holds while Bento is stopping processes a finished command left running in the background: the signal reaches them too, and `bento` exits with `130` or `143` rather than the command's own status.
 
-> Signal handling for scripts is completed in the next stage of the Bento CLI. Until then, Bento does not deliver signals to a script itself.
+When `bento` runs a script, the first Ctrl-C or termination signal goes to the script, which then has five seconds to end:
 
-When `bento` runs a script, the signal reaches the script's `process.on("SIGINT")` and `process.on("SIGTERM")` listeners. Without a listener, Bento shuts the script down.
+- If the script listens for that signal with `process.on("SIGINT")` or `process.on("SIGTERM")`, its listeners run and decide what happens, as under Node. When the script then ends, by closing its servers and calling `process.exit(code)` or by running out of work, `bento` exits with the script's code.
+- Without a listener, Bento shuts the script down: it closes the script's servers and their connections and cancels its pending work. A `process.on("SIGTERM")` listener is told first, so a script that listens only for termination still cleans up after Ctrl-C. `bento` exits with `130` for an interrupt or `143` for a termination signal, unless the script calls `process.exit` with a nonzero code while it shuts down; `bento` then exits with that code.
+
+A script still running five seconds after the signal is stopped then, whether its listeners have not finished or its JavaScript never yields, as in an endless loop. `bento` exits with `130` or `143`, and the script's port is freed with it. A listener that throws is reported like any uncaught exception, and `bento` exits with `1`.
+
+A second Ctrl-C or termination signal does not wait: `bento` exits immediately with `130` or `143`, and its port is freed with it.
 
 ### Exit codes
 
 | Code | When |
 | --- | --- |
 | `0` | The script or task finished successfully. |
-| The script's code | The script called `process.exit(code)`. |
+| The script's code | The script called `process.exit(code)`, including from a signal listener before the deadline. While Bento shuts a script down, a code of `0` gives `130` or `143` instead. |
 | The command's code | A task command failed; a command killed by signal `N` gives `128 + N`, as shells report it. |
 | pnpm's code | `pnpm install` failed. |
-| `130` | An interrupt (SIGINT, Ctrl-C) stopped the run. |
-| `143` | A termination signal (SIGTERM) stopped the run. |
+| `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
+| `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
 | `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, or threw an uncaught exception. |
 
 ## Worked example
@@ -147,7 +170,7 @@ bento install --frozen-lockfile
 bento run --allow-read=. --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
 ```
 
-`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Ctrl-C stops the watcher, the server, and its listener, and `bento` exits with `130`. Until the next stage of the CLI completes `--watch`, the nested launch stops after checking its grants and environment with `cannot watch`, and the `dev` task fails with status 1.
+`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Editing a file under `app/` restarts the server without rerunning the migrations. Ctrl-C stops the watcher, the server, and its listener, and `bento` exits with `130`.
 
 If a task in the same project ran `bento run --allow-read=/ server.ts` under those grants, the nested launch would stop before running anything with an error like:
 

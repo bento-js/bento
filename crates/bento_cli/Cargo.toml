@@ -13,6 +13,7 @@ name = "bento"
 path = "src/main.rs"
 
 [dependencies]
+ariadne = "0.6.0"
 bento_host.workspace = true
 bento_package.workspace = true
 bento_runtime.workspace = true
