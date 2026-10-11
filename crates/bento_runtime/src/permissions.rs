@@ -29,7 +29,9 @@ pub(crate) fn container(grants: &Grants, cwd: PathBuf) -> anyhow::Result<Permiss
 fn strings<T: Ord>(scope: &Scope<T>, stringify: impl Fn(&T) -> String) -> Option<Vec<String>> {
     match scope {
         Scope::None => None,
+        // Upstream interprets Some([]) as unrestricted authority, not an empty allow-list.
         Scope::All => Some(Vec::new()),
+        Scope::Only(items) if items.is_empty() => None,
         Scope::Only(items) => Some(items.iter().map(stringify).collect()),
     }
 }
@@ -128,5 +130,24 @@ impl PermissionDescriptorParser for PathParser {
         requested: &'a str,
     ) -> Result<RunQueryDescriptor<'a>, RunDescriptorParseError> {
         self.inner.parse_run_query(requested)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::strings;
+    use bento_host::Scope;
+
+    #[test]
+    fn raw_empty_scopes_convert_like_no_authority_not_all_authority() {
+        let empty = Scope::<String>::Only(BTreeSet::new());
+        assert_eq!(strings(&empty, Clone::clone), strings(&Scope::None, Clone::clone));
+        assert_eq!(strings(&Scope::<String>::All, Clone::clone), Some(Vec::new()));
+        assert_eq!(
+            strings(&Scope::only(["allowed".to_owned()]), Clone::clone),
+            Some(vec!["allowed".to_owned()])
+        );
     }
 }

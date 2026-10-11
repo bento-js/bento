@@ -151,6 +151,7 @@ fn is_all<T: Ord>(requested: &Option<Scope<T>>) -> bool {
 fn describe<T: Ord + Covers>(scope: &Scope<T>) -> String {
     match scope {
         Scope::None => "none".to_owned(),
+        Scope::Only(items) if items.is_empty() => "none".to_owned(),
         Scope::All => "all".to_owned(),
         Scope::Only(items) => items.iter().map(Covers::describe).collect::<Vec<_>>().join(", "),
     }

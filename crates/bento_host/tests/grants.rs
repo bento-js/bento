@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use bento_host::{GrantKind, GrantRequest, Grants, NetTarget, Scope, canonical_path};
@@ -216,6 +217,49 @@ fn ceiling_round_trips_through_its_serialized_form() {
     let encoded = ceiling.to_ceiling_value();
     assert_eq!(Grants::from_ceiling_value(&encoded).unwrap(), ceiling);
     assert!(Grants::from_ceiling_value("not json").is_err());
+}
+
+#[test]
+fn raw_empty_scopes_remain_empty_through_ceiling_inheritance_and_host_checks() {
+    let empty = Grants {
+        read: Scope::Only(BTreeSet::new()),
+        write: Scope::Only(BTreeSet::new()),
+        net: Scope::Only(BTreeSet::new()),
+        env: Scope::Only(BTreeSet::new()),
+        addons: Scope::Only(BTreeSet::new()),
+    };
+    let decoded = Grants::from_ceiling_value(&empty.to_ceiling_value()).unwrap();
+    assert_eq!(decoded, empty);
+    let inherited = GrantRequest::default().resolve(Some(&decoded)).unwrap();
+    assert!(!inherited.read.allows(Path::new("/project/entry.mjs")));
+    assert!(!inherited.write.allows(Path::new("/project/written")));
+    assert!(!inherited.net.allows(&"localhost:3000".parse().unwrap()));
+    assert!(!inherited.env.allows("PORT"));
+    assert!(!inherited.addons.allows(Path::new("/project/addon.node")));
+    let requests = [
+        (GrantKind::Read, GrantRequest { read: Some(Scope::All), ..Default::default() }),
+        (GrantKind::Write, GrantRequest { write: Some(Scope::All), ..Default::default() }),
+        (GrantKind::Net, GrantRequest { net: Some(Scope::All), ..Default::default() }),
+        (GrantKind::Env, GrantRequest { env: Some(Scope::All), ..Default::default() }),
+        (GrantKind::Addons, GrantRequest { addons: Some(Scope::All), ..Default::default() }),
+        (GrantKind::Read, GrantRequest { read: Some(paths(&["/project"])), ..Default::default() }),
+        (
+            GrantKind::Write,
+            GrantRequest { write: Some(paths(&["/project"])), ..Default::default() },
+        ),
+        (GrantKind::Net, GrantRequest { net: Some(nets(&["localhost"])), ..Default::default() }),
+        (
+            GrantKind::Env,
+            GrantRequest { env: Some(Scope::only(["PORT".into()])), ..Default::default() },
+        ),
+        (
+            GrantKind::Addons,
+            GrantRequest { addons: Some(paths(&["/project"])), ..Default::default() },
+        ),
+    ];
+    for (kind, request) in requests {
+        assert_eq!(request.resolve(Some(&inherited)).unwrap_err().kind, kind);
+    }
 }
 
 #[test]

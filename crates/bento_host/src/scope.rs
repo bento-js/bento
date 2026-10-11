@@ -12,6 +12,7 @@ pub enum Scope<T: Ord> {
     #[default]
     None,
     All,
+    /// Only these items are authorized; an empty set grants nothing, like [`Scope::None`].
     Only(BTreeSet<T>),
 }
 

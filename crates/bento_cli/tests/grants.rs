@@ -1,5 +1,6 @@
 mod support;
 
+use std::collections::BTreeSet;
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
@@ -177,6 +178,23 @@ fn a_whole_kind_beyond_the_inherited_grant_names_the_bare_flag() {
     assert_eq!(output.status.code(), Some(1));
     let message = stderr(&output);
     assert!(message.contains("--allow-write") && message.contains("none"), "{message}");
+    assert!(!temp.exists("ceiling.json"));
+}
+
+#[test]
+fn an_inherited_empty_allow_list_is_reported_as_no_grant() {
+    let temp = project();
+    let ceiling = Grants { write: Scope::Only(BTreeSet::new()), ..Grants::none() };
+
+    let output = temp
+        .bento(&["run", "--allow-write=.", "ceiling"])
+        .env("BENTO_GRANT_CEILING", ceiling.to_ceiling_value())
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    assert!(message.trim_end().ends_with("inherited write grant: none"), "{message}");
     assert!(!temp.exists("ceiling.json"));
 }
 
