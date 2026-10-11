@@ -100,6 +100,11 @@ fn wait_for_page(runtime: &RunningRuntime, port: u16) -> http::Response {
             return page;
         }
         assert!(
+            !runtime.is_finished(),
+            "fixture ended before listening: {:?}",
+            runtime.handle().shutdown()
+        );
+        assert!(
             Instant::now() < deadline,
             "fixture did not listen: {:?}",
             runtime.handle().shutdown()
@@ -163,4 +168,26 @@ fn check_forms(port: u16, development: bool) {
             .unwrap();
     assert_eq!(too_long.status, 400);
     assert!(too_long.body.contains("Keep your message to 280 characters or fewer."));
+}
+
+#[test]
+fn fixture_wait_reports_an_ended_instances_error_without_the_listen_timeout() {
+    let root = support::project();
+    let entry = root.path().join("failed.mjs");
+    std::fs::write(&entry, "throw new Error('fixture startup failed');").unwrap();
+    let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    let runtime = start(config(root.path()), &entry).unwrap();
+    let started = Instant::now();
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = wait_for_page(&runtime, port);
+    }))
+    .expect_err("ended fixture unexpectedly served a page");
+    let message = failure
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| failure.downcast_ref::<&str>().copied())
+        .expect("fixture failure message");
+    assert!(message.contains("fixture startup failed"), "{message}");
+    assert!(started.elapsed() < Duration::from_secs(2), "{message}");
+    assert!(matches!(runtime.wait(), RunOutcome::Failed(_)));
 }

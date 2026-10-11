@@ -176,9 +176,7 @@ impl Control {
     }
 
     pub fn record_module(&self, path: &Path) {
-        if !path.components().any(|component| component.as_os_str() == "node_modules") {
-            self.state.lock().modules.insert(path.to_owned());
-        }
+        self.state.lock().modules.insert(path.to_owned());
     }
 
     pub fn default_shutdown(&self) {

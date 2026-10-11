@@ -14,7 +14,14 @@ pub(crate) struct Sources {
     settings: CompilerSettings,
     maps: Mutex<BTreeMap<String, Vec<u8>>>,
     // JavaScript rethrows module-load failures without preserving their Rust error type.
-    errors: Mutex<VecDeque<(String, SourceLocation)>>,
+    errors: Mutex<VecDeque<(String, RecordedFailure)>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct RecordedFailure {
+    class: &'static str,
+    pub kind: ErrorKind,
+    pub location: Option<SourceLocation>,
 }
 
 impl Sources {
@@ -41,15 +48,11 @@ impl Sources {
             return Ok(text);
         }
         let defaults = CompilerSettings::default();
-        let settings = if path.starts_with(&self.root) && !in_node_modules(path) {
-            &self.settings
-        } else {
-            &defaults
-        };
+        let settings = if self.is_project_source(path) { &self.settings } else { &defaults };
         let transformed = transform(path, &text, settings).map_err(|error| {
             let location =
                 SourceLocation { path: error.path.clone(), line: error.line, column: error.column };
-            self.failure(ErrorKind::Transform, format!("BENTO_TRANSFORM {error}"), Some(location))
+            self.failure(ErrorKind::Transform, error.to_string(), Some(location))
         })?;
         let name =
             ModuleSpecifier::from_file_path(path).expect("module paths are absolute").to_string();
@@ -73,47 +76,62 @@ impl Sources {
                 let (line, column) = position.unwrap_or((1, 1));
                 SourceLocation { path, line, column }
             });
-        self.failure(ErrorKind::Resolution, format!("BENTO_RESOLUTION Cannot resolve {specifier:?} from {referrer}: {detail}. For missing installed packages, run bento install."), location)
+        let mut message = format!("Cannot resolve {specifier:?} from {referrer}: {detail}.");
+        if !specifier.starts_with("host:")
+            && !specifier.starts_with('.')
+            && !Path::new(specifier).is_absolute()
+            && ModuleSpecifier::parse(specifier).is_err()
+        {
+            message.push_str(" For missing installed packages, run bento install.");
+        }
+        self.failure(ErrorKind::Resolution, message, location)
     }
 
-    fn failure(
+    pub(crate) fn failure(
         &self,
         kind: ErrorKind,
         message: String,
         location: Option<SourceLocation>,
     ) -> JsErrorBox {
-        if let Some(location) = location {
-            let mut errors = self.errors.lock();
-            if errors.len() == 256 {
-                errors.pop_front();
-            }
-            errors.push_back((message.clone(), location));
+        let mut errors = self.errors.lock();
+        if errors.len() == 256 {
+            errors.pop_front();
         }
-        JsErrorBox::new(
-            if kind == ErrorKind::Transform { "SyntaxError" } else { "TypeError" },
-            message,
-        )
+        let class = match kind {
+            ErrorKind::Startup | ErrorKind::Transform => "SyntaxError",
+            _ => "TypeError",
+        };
+        errors.push_back((message.clone(), RecordedFailure { class, kind, location }));
+        JsErrorBox::new(class, message)
     }
 
-    pub fn error_location(&self, message: &str) -> Option<SourceLocation> {
+    pub fn error_failure(&self, class: &str, message: &str) -> Option<RecordedFailure> {
         self.errors
             .lock()
             .iter()
             .rev()
-            .find(|(error, _)| message == error)
-            .map(|(_, location)| location.clone())
+            .find(|(error, failure)| message == error && class == failure.class)
+            .map(|(_, failure)| failure.clone())
     }
 
     pub fn is_project_source(&self, path: &Path) -> bool {
-        self.is_local_source(path) && !in_node_modules(path)
+        self.is_local_source(path)
+            && path.strip_prefix(&self.root).is_ok_and(|relative| !in_node_modules(relative))
+    }
+
+    pub fn is_watch_source(&self, path: &Path) -> bool {
+        !is_environment_file(path)
+            && !in_node_modules(path.strip_prefix(&self.root).unwrap_or(path))
     }
 
     pub fn is_local_source(&self, path: &Path) -> bool {
-        path.starts_with(&self.root)
-            && !path
-                .file_name()
-                .is_some_and(|name| name == ".env" || name.to_string_lossy().starts_with(".env."))
+        path.starts_with(&self.root) && !is_environment_file(path)
     }
+}
+
+fn is_environment_file(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name == ".env" || name.to_string_lossy().starts_with(".env."))
 }
 
 fn in_node_modules(path: &Path) -> bool {
@@ -136,6 +154,8 @@ mod tests {
             );
         }
         assert!(sources.errors.lock().len() <= 256);
-        assert!(sources.error_location("missing module 511").is_some());
+        assert!(
+            sources.error_failure("TypeError", "missing module 511").unwrap().location.is_some()
+        );
     }
 }
