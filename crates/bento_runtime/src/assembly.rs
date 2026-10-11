@@ -7,7 +7,6 @@ use deno_lib::npm::create_npm_process_state_provider;
 use deno_lib::worker::{
     LibMainWorker, LibMainWorkerFactory, LibMainWorkerOptions, StorageKeyResolver,
 };
-use deno_runtime::FeatureChecker;
 use deno_runtime::WorkerExecutionMode;
 use deno_runtime::WorkerLogLevel;
 use deno_runtime::deno_fs::RealFs;
@@ -46,7 +45,10 @@ pub(crate) async fn run(
         }
     };
     let execution = execute(&mut worker, &mut commands, &control).await;
-    let outcome = execution_outcome(&mut worker, execution, &entry, &sources);
+    let outcome = match control.feature_failure() {
+        Some(error) => RunOutcome::Failed(error),
+        None => execution_outcome(&mut worker, execution, &entry, &sources),
+    };
     close_resources(&mut worker);
     drop(worker);
     control.close_workers();
@@ -141,7 +143,7 @@ fn create_worker(
         worker_factory.blobs.clone(),
         None,
         None,
-        Arc::new(FeatureChecker::default()),
+        crate::features::checker(control.clone()),
         Arc::new(RealFs),
         None,
         None,
@@ -164,7 +166,10 @@ fn create_worker(
         vec![ModuleSpecifier::parse("bento:compat")?, ModuleSpecifier::parse("bento:subprocess")?],
         Vec::new(),
         permissions,
-        vec![bento_instance::init(environment, modules, control.clone())],
+        vec![
+            bento_instance::init(environment, modules, control.clone()),
+            crate::feature_ops::extension(worker_factory.callback()),
+        ],
         Default::default(),
         None,
     )?;

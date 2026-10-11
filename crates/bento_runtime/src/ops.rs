@@ -92,6 +92,19 @@ fn bento_exit(state: &mut OpState) {
     }
 }
 
+#[op2(fast)]
+fn bento_deny_host_termination() -> Result<(), JsErrorBox> {
+    Err(JsErrorBox::new(
+        "NotSupported",
+        "Host process termination and signals are controlled by the host",
+    ))
+}
+
+#[op2(fast)]
+fn bento_fixed_permissions() -> Result<(), JsErrorBox> {
+    Err(JsErrorBox::new("NotSupported", "Permission grants are fixed by the host"))
+}
+
 fn middleware(original: OpDecl) -> OpDecl {
     let mut replacement = match original.name {
         "op_get_env" | "op_get_env_no_permission_check" => bento_get_env(),
@@ -101,10 +114,17 @@ fn middleware(original: OpDecl) -> OpDecl {
         "op_fs_cwd" => bento_cwd(),
         "op_fs_chdir" | "op_node_load_env_file" => bento_deny_process_mutation(),
         "op_exit" => bento_exit(),
+        "op_process_abort" | "op_node_process_kill" | "op_kill" => bento_deny_host_termination(),
+        "op_request_permission" | "op_revoke_permission" => bento_fixed_permissions(),
         "op_signal_bind" => bento_signal_bind(),
         "op_signal_poll" => bento_signal_poll(),
         "op_signal_unbind" => bento_signal_unbind(),
-        _ => return original,
+        _ => match crate::feature_ops::replacement(original.name)
+            .or_else(|| crate::fs_ops::replacement(original.name))
+        {
+            Some(replacement) => replacement,
+            None => return original,
+        },
     };
     replacement.name = original.name;
     replacement.name_fast = original.name_fast;

@@ -200,20 +200,29 @@ fn a_loaded_module_in_an_excluded_project_directory_is_watched() {
 }
 
 #[test]
-fn a_module_that_cannot_be_watched_is_reported_once_and_watched_once_it_can_be() {
+fn a_missing_module_directory_is_watched_through_its_existing_ancestor() {
     let workspace = Workspace::new();
     let module = workspace.path("later/module.mjs");
     let (mut watcher, changes) = workspace.watch();
 
-    assert_eq!(watcher.watch_modules([module.clone()]).len(), 1);
+    assert!(watcher.watch_modules([module.clone()]).is_empty());
     assert!(watcher.watch_modules([module.clone()]).is_empty());
     workspace.write("later/module.mjs", "export {};\n");
-    assert!(watcher.watch_modules([module.clone()]).is_empty());
-    thread::sleep(SETTLE);
-    while changes.try_recv().is_ok() {}
+    assert_eq!(next_change(&changes), vec![module.clone()]);
 
     fs::write(&module, "export const edited = true;\n").unwrap();
     assert_eq!(next_change(&changes), vec![module]);
+}
+
+#[test]
+fn an_unwatchable_module_failure_is_reported_only_once() {
+    let workspace = Workspace::new();
+    let (mut watcher, _changes) = workspace.watch();
+    let module = PathBuf::from("unwatchable-relative-module.mjs");
+    let failures = watcher.watch_modules([module.clone()]);
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].0, module);
+    assert!(watcher.watch_modules([module]).is_empty());
 }
 
 /// `app/tsconfig.json` extends a file outside the project, which extends another, and a file

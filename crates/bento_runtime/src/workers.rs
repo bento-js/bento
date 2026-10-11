@@ -15,7 +15,7 @@ use deno_runtime::ops::worker_host::{CreateWebWorkerArgs, CreateWebWorkerCb, Res
 use deno_runtime::web_worker::{
     SendableWebWorkerHandle, WebWorker, WebWorkerOptions, WebWorkerServiceOptions,
 };
-use deno_runtime::{BootstrapOptions, FeatureChecker, WorkerExecutionMode};
+use deno_runtime::{BootstrapOptions, WorkerExecutionMode};
 use deno_tls::RootCertStoreProvider;
 use sys_traits::impls::RealSys;
 
@@ -76,11 +76,14 @@ impl WorkerFactory {
                 close_on_idle: args.close_on_idle,
                 ..Default::default()
             },
-            extensions: vec![bento_instance::init(
-                self.environment.clone(),
-                self.loader.modules.clone(),
-                self.loader.control.clone(),
-            )],
+            extensions: vec![
+                bento_instance::init(
+                    self.environment.clone(),
+                    self.loader.modules.clone(),
+                    self.loader.control.clone(),
+                ),
+                crate::feature_ops::extension(self.callback()),
+            ],
             startup_snapshot: deno_snapshots::CLI_SNAPSHOT,
             residual_lazy_js_sources: deno_snapshots::RESIDUAL_LAZY_JS,
             residual_lazy_esm_sources: deno_snapshots::RESIDUAL_LAZY_ESM,
@@ -119,7 +122,7 @@ impl WorkerFactory {
             broadcast_channel: Default::default(),
             deno_rt_native_addon_loader: None,
             compiled_wasm_module_store: Some(self.roots.compiled_wasm_module_store.clone()),
-            feature_checker: Arc::new(FeatureChecker::default()),
+            feature_checker: crate::features::checker(self.loader.control.clone()),
             fs: Arc::new(RealFs),
             main_inspector_session_tx: Default::default(),
             module_loader: loaders.module_loader,
