@@ -44,6 +44,16 @@ fn type_syntax_is_removed_and_runtime_constructs_remain() {
     assert!(output.contains("area(origin, label)"), "{output}");
 }
 
+#[test]
+fn a_type_error_is_not_checked_and_its_annotation_is_removed() {
+    let source = "const n: number = \"x\";\nexport const ok: boolean = n.length > 0;\n";
+    let output = code("/project/mistyped.ts", source, &CompilerSettings::default());
+
+    assert!(output.contains(r#"const n = "x";"#), "{output}");
+    assert!(output.contains("export const ok = n.length > 0;"), "{output}");
+    assert!(!output.contains("number"), "{output}");
+}
+
 const IMPORT_SOURCE: &str = r#"
 import type { Shape } from "./shape";
 import { Big } from "./big";

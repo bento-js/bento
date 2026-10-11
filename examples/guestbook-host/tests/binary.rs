@@ -1,12 +1,13 @@
-//! `bento-guestbook-host serve` as a process: it serves the real guest book, `SIGTERM` ends it
-//! gracefully with the port free at once, a second run serves the same entries, `entries` prints
-//! them, and `--read-only` refuses a signature without changing the store.
+//! `bento-guestbook-host serve` as a process: it serves the real guest book without another
+//! JavaScript runtime on `PATH`, `SIGTERM` ends it gracefully with the port free at once, a second
+//! run serves the same entries, `entries` prints them, `--read-only` refuses a signature without
+//! changing the store, and a shutdown the guest fails is reported as an error.
 
 mod support;
 
 use std::fs;
 use std::path::Path;
-use std::process::{Child, Output, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::DateTime;
@@ -16,23 +17,31 @@ use bento_guestbook_host::launch::Mode;
 use bento_guestbook_host::store::{Access, GuestBookStore, NewEntry};
 use support::{
     assert_port_free, document, fixture, free_port, guest_project, guests, host_command, http,
-    scratch_dir, stderr, stdout, stored_rows, wait_for_host,
+    path_without_other_runtimes, scratch_dir, stderr, stdout, stored_rows, wait_for_host,
 };
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
-/// Spawns `serve` on the fixture copy with piped output and waits until it listens.
-fn spawn_serve(database: &str, port: u16, extra: &[&str]) -> Child {
+/// `serve` on the fixture copy over `database` at `port`, with `extra` arguments.
+fn serve_command(database: &str, port: u16, extra: &[&str]) -> Command {
     let project = fixture().to_str().unwrap();
     let port_argument = port.to_string();
     let mut arguments =
         vec!["serve", "--project", project, "--database", database, "--port", &port_argument];
     arguments.extend_from_slice(extra);
-    spawn_host(fixture(), &arguments, port)
+    host_command(fixture(), &arguments)
+}
+
+/// Spawns `serve` on the fixture copy with piped output and waits until it listens.
+fn spawn_serve(database: &str, port: u16, extra: &[&str]) -> Child {
+    spawn_listening(serve_command(database, port, extra), port)
 }
 
 fn spawn_host(directory: &Path, arguments: &[&str], port: u16) -> Child {
-    let mut command = host_command(directory, arguments);
+    spawn_listening(host_command(directory, arguments), port)
+}
+
+fn spawn_listening(mut command: Command, port: u16) -> Child {
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn().unwrap();
     wait_for_host(&mut child, port);
@@ -144,4 +153,41 @@ fn a_guest_without_a_signal_handler_is_closed_by_the_host_and_reported_by_signal
     assert_eq!(output.status.code(), Some(143), "{}", stderr(&output));
     let printed = stdout(&output);
     assert!(printed.contains("shutdown: graceful (closed by the host on SIGTERM)"), "{printed}");
+}
+
+#[test]
+fn serve_renders_the_guest_book_with_no_node_bun_deno_or_pnpm_on_path() {
+    let scratch = scratch_dir();
+    let database = scratch.path().join("book.db");
+    let port = free_port();
+    let mut command = serve_command(database.to_str().unwrap(), port, &[]);
+    command.env("PATH", path_without_other_runtimes());
+
+    let serving = spawn_listening(command, port);
+    let page = http::get(port, "/");
+    document::assert_page(&page, &[]);
+    document::assert_assets_served(port, &page.body, Mode::Production);
+    terminate(serving);
+}
+
+/// The runtime returns a failed shutdown from `wait` as the guest's failure, so the host reports
+/// it as an error rather than as a shutdown outcome.
+#[test]
+fn a_shutdown_the_guest_fails_is_reported_as_an_error_with_status_1() {
+    let scratch = scratch_dir();
+    guest_project(scratch.path(), "server.embedded.ts", guests::FAILING_SHUTDOWN);
+    let port = free_port();
+    let port_argument = port.to_string();
+    let arguments =
+        ["serve", "--project", "project", "--database", "book.db", "--port", &port_argument];
+    let child = spawn_host(scratch.path(), &arguments, port);
+
+    send_sigterm(&child);
+    let output = child.wait_with_output().unwrap();
+    let (printed, reported) = (stdout(&output), stderr(&output));
+    assert_eq!(output.status.code(), Some(1), "{printed}\n{reported}");
+    assert!(!printed.contains("shutdown:"), "{printed}");
+    assert!(reported.starts_with("error: "), "{reported}");
+    assert!(reported.contains("Error: the guest could not close"), "{reported}");
+    assert_port_free(port);
 }

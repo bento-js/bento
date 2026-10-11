@@ -4,6 +4,7 @@ pub mod document;
 pub mod guests;
 pub mod http;
 
+use std::env;
 use std::fs;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
@@ -65,6 +66,23 @@ pub fn stdout(output: &Output) -> String {
 
 pub fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+const OTHER_RUNTIMES: [&str; 4] = ["node", "bun", "deno", "pnpm"];
+
+/// The test's own `PATH` without every directory that holds `node`, `bun`, `deno`, or `pnpm`,
+/// so a host that serves under it cannot be relying on one of them.
+pub fn path_without_other_runtimes() -> String {
+    let inherited = env::var_os("PATH").unwrap_or_default();
+    let kept: Vec<PathBuf> = env::split_paths(&inherited)
+        .filter(|directory| !OTHER_RUNTIMES.iter().any(|name| directory.join(name).exists()))
+        .collect();
+    let stripped = env::join_paths(kept).unwrap().into_string().unwrap();
+    for runtime in OTHER_RUNTIMES {
+        let found = Command::new("/usr/bin/which").arg(runtime).env("PATH", &stripped).output();
+        assert!(!found.unwrap().status.success(), "`{runtime}` is still on {stripped}");
+    }
+    stripped
 }
 
 /// A port that is free on every local address, so a server binding `::` or `0.0.0.0` can take it.

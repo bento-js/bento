@@ -52,7 +52,9 @@ fn the_guest_book_serves_signs_validates_and_persists_across_disposal_in_both_mo
         let signed = http::post_form(port, "/", &[("name", visitor.0), ("message", visitor.1)]);
         assert_eq!(signed.status, 303, "{}", signed.body);
         assert_eq!(signed.header("location"), Some("/"));
-        document::assert_page(&http::get(port, "/"), &[visitor]);
+        let signed_page = http::get(port, "/");
+        document::assert_page(&signed_page, &[visitor]);
+        document::assert_form_cleared(&signed_page);
         let rows = stored_rows(&database);
         assert_eq!(rows.len(), 1, "{rows:?}");
         assert_eq!((rows[0].0.as_str(), rows[0].1.as_str()), visitor);

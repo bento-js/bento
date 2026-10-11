@@ -31,6 +31,21 @@ assert.equal(require('./legacy.cts').answer, 42);
 }
 
 #[test]
+fn a_script_with_a_type_error_runs_to_completion() {
+    let root = support::project();
+    fs::write(root.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
+    completed(run(
+        config(root.path()),
+        "mistyped.ts",
+        r#"
+import assert from 'node:assert/strict';
+const count: number = "three";
+assert.equal(count, "three");
+"#,
+    ));
+}
+
+#[test]
 fn project_settings_apply_to_tsx_and_jsx_but_not_node_modules() {
     let root = support::project();
     fs::write(root.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
