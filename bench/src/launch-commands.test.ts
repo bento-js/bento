@@ -26,7 +26,7 @@ describe("launch paths the proposal fixes", () => {
 
     test("Bento runs the source with exactly the fixture's grants", () => {
         let grants = [
-            "--allow-read=.",
+            "--allow-read",
             "--allow-write=./db",
             "--allow-net",
             "--allow-env=PORT,DATABASE_URL,NODE_ENV",
@@ -49,7 +49,7 @@ describe("launch paths the proposal fixes", () => {
     test("a standalone script gets only the authority it needs under Bento", () => {
         expect(scriptCommand("bento", "/bin/bento", ".bench/probe.ts", ["5"]).args).toEqual([
             "run",
-            "--allow-read=.",
+            "--allow-read",
             "--allow-addons=./node_modules",
             ".bench/probe.ts",
             "5",

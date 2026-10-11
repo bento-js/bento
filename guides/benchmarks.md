@@ -65,7 +65,7 @@ The launch paths are the ones the proposal fixes:
 | --- | --- |
 | Node | `node --import remix/node-tsx server.ts` (adds `--watch` for watch reload) |
 | Bun | `bun server.ts` (`bun --watch server.ts`) |
-| Bento | `$BENTO_BIN run --allow-read=. --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts` (`--watch` after `run`) |
+| Bento | `$BENTO_BIN run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts` (adds `--watch` before `server.ts`) |
 
 `NODE_ENV` is pinned per workload to `development` or `production`.
 
