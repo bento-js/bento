@@ -1,0 +1,217 @@
+{
+  "startedAt": "2026-10-12T00:04:54.601Z",
+  "options": {
+    "help": false,
+    "runtimes": [
+      "node",
+      "bun",
+      "bento"
+    ],
+    "workloads": [
+      "cold-launch",
+      "assets",
+      "asset-operations",
+      "steady-state",
+      "watch-reload",
+      "memory"
+    ],
+    "trials": {
+      "cold-launch": 15,
+      "assets": 10,
+      "asset-operations": 10,
+      "steady-state": 5,
+      "watch-reload": 10,
+      "memory": 10
+    },
+    "steadyState": {
+      "durationSeconds": 10,
+      "warmupSeconds": 3,
+      "concurrency": 16
+    },
+    "iterations": 10,
+    "keepFixtures": false,
+    "executables": {
+      "node": "/Users/orion/.local/share/mise/installs/node/26.11.1/bin/node",
+      "bun": "/Users/orion/.local/share/mise/installs/bun/latest/bin/bun",
+      "bento": "/Users/orion/Developer/Projects/.worktrees/bento-preview/bin/bento"
+    }
+  },
+  "environment": {
+    "hardware": "Mac16,1, Apple M4, 10 cores, 32 GiB",
+    "os": "macOS 27.0.1 (arm64)",
+    "runtimes": {
+      "node": "v26.11.1",
+      "bun": "1.4.3",
+      "bento": "sha256:e7f8bbad3bda"
+    },
+    "tools": {
+      "pnpm": "12.11.2",
+      "oha": "1.16.0"
+    },
+    "revisions": {
+      "bento": "ac1679b-dirty",
+      "fixture": "b3c5986"
+    },
+    "remixVersion": "3.0.0"
+  },
+  "workload": "watch-reload",
+  "title": "Watch reload",
+  "question": "With the runtime's watch mode running, how long from editing a file until the first response that shows the change? The transitive edit changes a visible string in a module the entry imports; the entry edit adds a response header in server.ts. The database contents and the listener must survive each reload.",
+  "metrics": [
+    {
+      "key": "transitiveReloadMs",
+      "label": "Edit of an imported module to changed response",
+      "unit": "ms"
+    },
+    {
+      "key": "entryReloadMs",
+      "label": "Edit of the entry to changed response",
+      "unit": "ms"
+    }
+  ],
+  "series": [
+    {
+      "runtime": "bun",
+      "variant": "development",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17703/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "transitiveReloadMs": 466.08112499996787,
+            "entryReloadMs": 451.50424999999814
+          },
+          {
+            "trial": 1,
+            "transitiveReloadMs": 433.68545799999265,
+            "entryReloadMs": 454.71066699997755
+          },
+          {
+            "trial": 2,
+            "transitiveReloadMs": 434.6974999999511,
+            "entryReloadMs": 451.40124999999534
+          },
+          {
+            "trial": 3,
+            "transitiveReloadMs": 438.7938749999739,
+            "entryReloadMs": 468.7056669999729
+          },
+          {
+            "trial": 4,
+            "transitiveReloadMs": 440.90566699998453,
+            "entryReloadMs": 436.59995900001377
+          },
+          {
+            "trial": 5,
+            "transitiveReloadMs": 431.5755840000347,
+            "entryReloadMs": 451.67762499995297
+          },
+          {
+            "trial": 6,
+            "transitiveReloadMs": 439.49762499995995,
+            "entryReloadMs": 440.961707999988
+          },
+          {
+            "trial": 7,
+            "transitiveReloadMs": 451.5889169999864,
+            "entryReloadMs": 454.43920799996704
+          },
+          {
+            "trial": 8,
+            "transitiveReloadMs": 437.195875000034,
+            "entryReloadMs": 445.3535840000259
+          },
+          {
+            "trial": 9,
+            "transitiveReloadMs": 433.6452500000014,
+            "entryReloadMs": 442.2872920000227
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "transitiveReloadMs": 443.977583000029,
+            "entryReloadMs": 438.9070000000065
+          },
+          {
+            "trial": 1,
+            "transitiveReloadMs": 535.9469589999644,
+            "entryReloadMs": 446.3682090000366
+          },
+          {
+            "trial": 2,
+            "transitiveReloadMs": 430.9751249999972,
+            "entryReloadMs": 440.45516700000735
+          },
+          {
+            "trial": 3,
+            "transitiveReloadMs": 429.32795899995835,
+            "entryReloadMs": 436.7242500000284
+          },
+          {
+            "trial": 4,
+            "transitiveReloadMs": 531.5383750000037,
+            "entryReloadMs": 463.28249999997206
+          },
+          {
+            "trial": 5,
+            "transitiveReloadMs": 430.2515410000342,
+            "entryReloadMs": 457.1747500000056
+          },
+          {
+            "trial": 6,
+            "transitiveReloadMs": 428.37824999995064,
+            "entryReloadMs": 434.922332999995
+          },
+          {
+            "trial": 7,
+            "transitiveReloadMs": 431.8853329999838,
+            "entryReloadMs": 440.4329579999903
+          },
+          {
+            "trial": 8,
+            "transitiveReloadMs": 424.4645840000012,
+            "entryReloadMs": 438.711707999988
+          },
+          {
+            "trial": 9,
+            "transitiveReloadMs": 436.9982500000042,
+            "entryReloadMs": 436.54483299999265
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "notes": []
+}

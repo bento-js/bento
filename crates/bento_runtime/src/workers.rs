@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use deno_core::v8;
+use deno_core::{error::CoreError, v8};
 use deno_lib::npm::create_npm_process_state_provider;
 use deno_lib::worker::{LibWorkerFactoryRoots, ModuleLoaderFactory};
 use deno_node::{NodeExtInitServices, ops::worker_threads::ResolvedResourceLimits};
@@ -15,7 +15,7 @@ use deno_runtime::ops::worker_host::{CreateWebWorkerArgs, CreateWebWorkerCb, Res
 use deno_runtime::web_worker::{
     SendableWebWorkerHandle, WebWorker, WebWorkerOptions, WebWorkerServiceOptions,
 };
-use deno_runtime::{BootstrapOptions, FeatureChecker, WorkerExecutionMode};
+use deno_runtime::{BootstrapOptions, WorkerExecutionMode};
 use deno_tls::RootCertStoreProvider;
 use sys_traits::impls::RealSys;
 
@@ -76,11 +76,15 @@ impl WorkerFactory {
                 close_on_idle: args.close_on_idle,
                 ..Default::default()
             },
-            extensions: vec![bento_instance::init(
-                self.environment.clone(),
-                self.loader.modules.clone(),
-                self.loader.control.clone(),
-            )],
+            extensions: vec![
+                bento_instance::init(
+                    self.environment.clone(),
+                    self.loader.modules.clone(),
+                    self.loader.control.clone(),
+                    self.loader.node.inputs.clone(),
+                ),
+                crate::feature_ops::extension(self.callback()),
+            ],
             startup_snapshot: deno_snapshots::CLI_SNAPSHOT,
             residual_lazy_js_sources: deno_snapshots::RESIDUAL_LAZY_JS,
             residual_lazy_esm_sources: deno_snapshots::RESIDUAL_LAZY_ESM,
@@ -104,7 +108,11 @@ impl WorkerFactory {
             wait_for_page_wait_for_debugger: args.wait_for_page_wait_for_debugger,
         };
         let (mut worker, handle, bootstrap) = WebWorker::from_options(services, options);
-        self.bootstrap(&mut worker, &bootstrap, resolved_limits);
+        if let Err(error) = self.bootstrap(&mut worker, &bootstrap, resolved_limits) {
+            self.loader.control.fail_feature(crate::RuntimeError::startup(format!(
+                "worker require-watch initialization: {error}"
+            )));
+        }
         (worker, handle)
     }
 
@@ -119,7 +127,7 @@ impl WorkerFactory {
             broadcast_channel: Default::default(),
             deno_rt_native_addon_loader: None,
             compiled_wasm_module_store: Some(self.roots.compiled_wasm_module_store.clone()),
-            feature_checker: Arc::new(FeatureChecker::default()),
+            feature_checker: crate::features::checker(self.loader.control.clone()),
             fs: Arc::new(RealFs),
             main_inspector_session_tx: Default::default(),
             module_loader: loaders.module_loader,
@@ -142,7 +150,7 @@ impl WorkerFactory {
         worker: &mut WebWorker,
         bootstrap: &BootstrapOptions,
         resolved_limits: Option<ResolvedResourceLimits>,
-    ) {
+    ) -> Result<(), CoreError> {
         let isolate = worker.js_runtime.v8_isolate().thread_safe_handle();
         let control = self.loader.control.clone();
         let lifetime = WorkerLifetime { id: control.register_worker(isolate.clone()), control };
@@ -166,6 +174,11 @@ impl WorkerFactory {
             });
         }
         worker.bootstrap(bootstrap);
+        worker.js_runtime.lazy_load_es_module_with_code(
+            "ext:bento_instance/initialize_require_watch.mjs",
+            "import { install } from 'ext:bento_instance/require_watch.mjs'; install();",
+        )?;
+        Ok(())
     }
 }
 

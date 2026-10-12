@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -28,9 +29,50 @@ pub(crate) fn container(grants: &Grants, cwd: PathBuf) -> anyhow::Result<Permiss
 fn strings<T: Ord>(scope: &Scope<T>, stringify: impl Fn(&T) -> String) -> Option<Vec<String>> {
     match scope {
         Scope::None => None,
+        // Upstream interprets Some([]) as unrestricted authority, not an empty allow-list.
         Scope::All => Some(Vec::new()),
+        Scope::Only(items) if items.is_empty() => None,
         Scope::Only(items) => Some(items.iter().map(stringify).collect()),
     }
+}
+
+// The upstream parser has no access-kind argument; set this only during a no-follow check.
+thread_local! {
+    static NO_FOLLOW: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn check_no_follow<'a>(
+    permissions: &PermissionsContainer,
+    path: Cow<'a, Path>,
+    kind: OpenAccessKind,
+    api: &str,
+) -> Result<CheckedPath<'a>, PermissionCheckError> {
+    with_no_follow(|| permissions.check_open(path, kind, Some(api)))
+}
+
+pub(crate) fn check_remove_no_follow<'a>(
+    permissions: &PermissionsContainer,
+    path: Cow<'a, Path>,
+    recursive: bool,
+) -> Result<CheckedPath<'a>, PermissionCheckError> {
+    with_no_follow(|| {
+        if recursive {
+            permissions.check_write(path, "node:fs")
+        } else {
+            permissions.check_write_partial(path, "node:fs")
+        }
+    })
+}
+
+fn with_no_follow<T>(check: impl FnOnce() -> T) -> T {
+    struct Reset(bool);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            NO_FOLLOW.set(self.0);
+        }
+    }
+    let _reset = Reset(NO_FOLLOW.replace(true));
+    check()
 }
 
 #[derive(Debug)]
@@ -64,7 +106,15 @@ impl PermissionDescriptorParser for PathParser {
         path: Cow<'a, Path>,
     ) -> Result<PathQueryDescriptor<'a>, PathResolveError> {
         let absolute = if path.is_absolute() { path.into_owned() } else { self.cwd.join(path) };
-        let canonical = canonical_path(&absolute).map_err(PathResolveError::CwdResolve)?;
+        let bytes = absolute.as_os_str().as_encoded_bytes();
+        let directory_suffix = bytes.ends_with(b"/") || bytes.ends_with(b"/.");
+        let canonical = if NO_FOLLOW.get() && !directory_suffix && absolute.file_name().is_some() {
+            let parent = canonical_path(absolute.parent().expect("absolute file has a parent"))
+                .map_err(PathResolveError::CwdResolve)?;
+            parent.join(absolute.file_name().expect("file name exists"))
+        } else {
+            canonical_path(&absolute).map_err(PathResolveError::CwdResolve)?
+        };
         self.inner.parse_path_query(Cow::Owned(canonical))
     }
 
@@ -80,5 +130,24 @@ impl PermissionDescriptorParser for PathParser {
         requested: &'a str,
     ) -> Result<RunQueryDescriptor<'a>, RunDescriptorParseError> {
         self.inner.parse_run_query(requested)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::strings;
+    use bento_host::Scope;
+
+    #[test]
+    fn raw_empty_scopes_convert_like_no_authority_not_all_authority() {
+        let empty = Scope::<String>::Only(BTreeSet::new());
+        assert_eq!(strings(&empty, Clone::clone), strings(&Scope::None, Clone::clone));
+        assert_eq!(strings(&Scope::<String>::All, Clone::clone), Some(Vec::new()));
+        assert_eq!(
+            strings(&Scope::only(["allowed".to_owned()]), Clone::clone),
+            Some(vec!["allowed".to_owned()])
+        );
     }
 }

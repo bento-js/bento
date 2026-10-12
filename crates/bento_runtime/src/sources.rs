@@ -48,7 +48,7 @@ impl Sources {
             return Ok(text);
         }
         let defaults = CompilerSettings::default();
-        let settings = if self.is_project_source(path) { &self.settings } else { &defaults };
+        let settings = if is_dependency(&self.root, path) { &defaults } else { &self.settings };
         let transformed = transform(path, &text, settings).map_err(|error| {
             let location =
                 SourceLocation { path: error.path.clone(), line: error.line, column: error.column };
@@ -115,18 +115,20 @@ impl Sources {
     }
 
     pub fn is_project_source(&self, path: &Path) -> bool {
-        self.is_local_source(path)
-            && path.strip_prefix(&self.root).is_ok_and(|relative| !in_node_modules(relative))
-    }
-
-    pub fn is_watch_source(&self, path: &Path) -> bool {
-        !is_environment_file(path)
-            && !in_node_modules(path.strip_prefix(&self.root).unwrap_or(path))
+        is_watch_source(&self.root, path)
     }
 
     pub fn is_local_source(&self, path: &Path) -> bool {
-        path.starts_with(&self.root) && !is_environment_file(path)
+        !is_environment_file(path)
     }
+}
+
+pub(crate) fn is_watch_source(root: &Path, path: &Path) -> bool {
+    !is_environment_file(path) && !is_dependency(root, path)
+}
+
+fn is_dependency(root: &Path, path: &Path) -> bool {
+    in_node_modules(path.strip_prefix(root).unwrap_or(path))
 }
 
 fn is_environment_file(path: &Path) -> bool {
@@ -141,6 +143,74 @@ fn in_node_modules(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiler_settings_follow_dependency_classification_for_generated_paths() {
+        let workspace = tempfile::tempdir().unwrap();
+        let source_paths = generated_tsx_paths();
+        for project_directory in ["app", "node_modules/app"] {
+            let root = workspace.path().join(project_directory);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join("tsconfig.json"),
+                r#"{"compilerOptions":{"jsx":"react","jsxFactory":"h"}}"#,
+            )
+            .unwrap();
+            let sources = Sources::load(&root).unwrap();
+            for (base, ancestor_dependency) in [
+                (root.join("src"), false),
+                (workspace.path().join("shared"), false),
+                (workspace.path().join("node_modules/shared"), true),
+            ] {
+                for (relative, nested_dependency) in &source_paths {
+                    let path = base.join(relative);
+                    let transformed =
+                        sources.transform(&path, "export const view = <section />;".into());
+                    let dependency = ancestor_dependency || *nested_dependency;
+                    assert_eq!(transformed.is_ok(), !dependency, "{path:?}: {transformed:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn diagnostic_sources_follow_dependency_classification_for_generated_paths() {
+        let workspace = tempfile::tempdir().unwrap();
+        let source_paths = generated_tsx_paths();
+        for project_directory in ["app", "node_modules/app"] {
+            let root = workspace.path().join(project_directory);
+            std::fs::create_dir_all(&root).unwrap();
+            let sources = Sources::load(&root).unwrap();
+            for (base, ancestor_dependency) in [
+                (root.join("src"), false),
+                (workspace.path().join("shared"), false),
+                (workspace.path().join("node_modules/shared"), true),
+            ] {
+                for (relative, nested_dependency) in &source_paths {
+                    let path = base.join(relative);
+                    let dependency = ancestor_dependency || *nested_dependency;
+                    assert_eq!(sources.is_project_source(&path), !dependency, "{path:?}");
+                }
+            }
+        }
+    }
+
+    fn generated_tsx_paths() -> Vec<(PathBuf, bool)> {
+        let mut paths = Vec::new();
+        for depth in 0..4 {
+            for dependency_position in 0..=depth {
+                let mut path: PathBuf =
+                    (0..depth)
+                        .map(|position| {
+                            if position == dependency_position { "node_modules" } else { "source" }
+                        })
+                        .collect();
+                path.push("view.tsx");
+                paths.push((path, dependency_position < depth));
+            }
+        }
+        paths
+    }
 
     #[test]
     fn caught_module_failures_keep_a_bounded_location_history() {

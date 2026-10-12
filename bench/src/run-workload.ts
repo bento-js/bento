@@ -112,10 +112,12 @@ async function measure(
     return contenders.map(({ runtime }) => {
         let measured = samples.get(runtime)!;
         let trialFailures = failures.get(runtime)!;
-        let outcome: Series["outcome"] =
-            measured.length > 0
-                ? { status: "measured", samples: measured, failures: trialFailures }
-                : { status: "failed", failures: trialFailures };
+        let disqualified =
+            measured.length === 0 ||
+            (workload.everyTrialMustSucceed === true && trialFailures.length > 0);
+        let outcome: Series["outcome"] = disqualified
+            ? { status: "failed", failures: trialFailures }
+            : { status: "measured", samples: measured, failures: trialFailures };
         return { runtime, variant, outcome };
     });
 }

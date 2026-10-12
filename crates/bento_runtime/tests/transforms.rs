@@ -118,7 +118,7 @@ fn a_project_beneath_node_modules_keeps_its_settings_locations_and_watch_sources
     let location = error.location().expect("project source location");
     assert_eq!(location.path, entry.canonicalize().unwrap(), "{error:?}");
     assert_eq!((location.line, location.column), (2, 7));
-    assert!(handle.loaded_modules().contains(&location.path));
+    assert!(handle.watch_inputs().contains(&location.path));
 }
 
 #[test]
@@ -159,7 +159,7 @@ assert.equal(require('../sibling/legacy.cjs'), answer);
     let runtime = bento_runtime::start(launch, &entry).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());
-    let loaded = handle.loaded_modules();
+    let loaded = handle.watch_inputs();
     for path in [entry, sibling.join("entry.mjs"), sibling.join("legacy.cjs")] {
         assert!(loaded.contains(&path.canonicalize().unwrap()), "{path:?} missing: {loaded:?}");
     }

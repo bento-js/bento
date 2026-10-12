@@ -12,6 +12,7 @@ pub enum Scope<T: Ord> {
     #[default]
     None,
     All,
+    /// Only these items are authorized; an empty set grants nothing, like [`Scope::None`].
     Only(BTreeSet<T>),
 }
 
@@ -62,9 +63,10 @@ impl Covers for String {
 impl Covers for NetTarget {
     type Target = NetTarget;
 
-    /// A host without a port covers every port of that host.
+    /// A host without a port covers every port of that host. Hosts are compared in their
+    /// canonical spelling.
     fn covers(&self, requested: &NetTarget) -> bool {
-        self.host().eq_ignore_ascii_case(requested.host())
+        self.host() == requested.host()
             && (self.port().is_none() || self.port() == requested.port())
     }
 

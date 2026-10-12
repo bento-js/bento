@@ -46,6 +46,7 @@ pub fn run(
         watcher,
         state: State::Waiting,
     };
+    restarts.watch_configuration();
     restarts.start();
     restarts.supervise(&received)
 }
@@ -119,11 +120,11 @@ impl Restarts {
         match mem::replace(&mut self.state, State::Waiting) {
             State::Stopping(stop) => return Some(stop.exit_code(outcome)),
             State::Running(instance) => {
-                self.watch_loaded_modules(&instance);
+                self.watch_instance_inputs(&instance);
                 self.report_end(outcome);
             }
             State::Restarting(instance) => {
-                self.watch_loaded_modules(&instance);
+                self.watch_instance_inputs(&instance);
                 report_failure(outcome);
                 self.start();
             }
@@ -144,39 +145,31 @@ impl Restarts {
         None
     }
 
-    /// Watches modules the running script has loaded since the last check, and ends `bento`
+    /// Watches new source and resolution inputs, and ends `bento`
     /// once a stopping instance reaches its deadline.
     fn check(&mut self) {
-        let modules = match &self.state {
-            State::Running(instance) => instance.handle().loaded_modules(),
+        let inputs = match &self.state {
+            State::Running(instance) => instance.handle().watch_inputs(),
             State::Stopping(stop) => {
                 stop.enforce_deadline();
                 return;
             }
             State::Waiting | State::Restarting(_) => return,
         };
-        self.watch_new_modules(modules);
+        self.watch_new_inputs(inputs);
     }
 
-    fn watch_loaded_modules(&mut self, instance: &Instance) {
-        self.watch_new_modules(instance.handle().loaded_modules());
+    fn watch_instance_inputs(&mut self, instance: &Instance) {
+        self.watch_new_inputs(instance.handle().watch_inputs());
     }
 
-    fn watch_new_modules(&mut self, modules: Vec<PathBuf>) {
-        for (module, error) in self.watcher.watch_modules(modules) {
-            eprintln!(
-                "warning: watch: cannot watch {} for changes yet, so Bento will keep trying: \
-                 {error}",
-                module.display()
-            );
-        }
+    fn watch_new_inputs(&mut self, inputs: Vec<PathBuf>) {
+        report_unwatched_files(self.watcher.watch_inputs(inputs));
     }
 
     /// Watches the files `tsconfig.json` extends now, since the change may have been to it.
     fn watch_configuration(&mut self) {
-        if let Err(error) = self.watcher.watch_configuration() {
-            eprintln!("warning: watch: cannot watch the files tsconfig.json extends: {error}");
-        }
+        report_unwatched_files(self.watcher.watch_configuration());
     }
 
     fn announce_restart(&self, paths: &[PathBuf]) {
@@ -207,5 +200,14 @@ fn report_failure(outcome: RunOutcome) {
             CliError::Script(error).report();
         }
         _ => {}
+    }
+}
+
+fn report_unwatched_files(files: Vec<super::UnwatchedFile>) {
+    for (file, error) in files {
+        eprintln!(
+            "warning: watch: cannot watch {} for changes yet, so Bento will keep trying: {error}",
+            file.display()
+        );
     }
 }

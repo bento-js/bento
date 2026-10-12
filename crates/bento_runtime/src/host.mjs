@@ -1,4 +1,5 @@
 import { core } from "ext:core/mod.js";
+import "ext:bento_instance/require_watch.mjs";
 
 let invokeHost = core.ops.op_bento_host_call;
 

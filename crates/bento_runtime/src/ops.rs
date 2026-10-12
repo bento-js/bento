@@ -11,6 +11,7 @@ use crate::host::HostModules;
 use crate::host_ops::op_bento_host_call;
 use crate::lifecycle::Control;
 use crate::signals::{bento_signal_bind, bento_signal_poll, bento_signal_unbind};
+use crate::watch_inputs::{WatchInputs, op_bento_failed_require, op_bento_missing_require_target};
 use bento_host::Scope;
 
 #[derive(Clone)]
@@ -92,6 +93,19 @@ fn bento_exit(state: &mut OpState) {
     }
 }
 
+#[op2(fast)]
+fn bento_deny_host_termination() -> Result<(), JsErrorBox> {
+    Err(JsErrorBox::new(
+        "NotSupported",
+        "Host process termination and signals are controlled by the host",
+    ))
+}
+
+#[op2(fast)]
+fn bento_fixed_permissions() -> Result<(), JsErrorBox> {
+    Err(JsErrorBox::new("NotSupported", "Permission grants are fixed by the host"))
+}
+
 fn middleware(original: OpDecl) -> OpDecl {
     let mut replacement = match original.name {
         "op_get_env" | "op_get_env_no_permission_check" => bento_get_env(),
@@ -101,10 +115,17 @@ fn middleware(original: OpDecl) -> OpDecl {
         "op_fs_cwd" => bento_cwd(),
         "op_fs_chdir" | "op_node_load_env_file" => bento_deny_process_mutation(),
         "op_exit" => bento_exit(),
+        "op_process_abort" | "op_node_process_kill" | "op_kill" => bento_deny_host_termination(),
+        "op_request_permission" | "op_revoke_permission" => bento_fixed_permissions(),
         "op_signal_bind" => bento_signal_bind(),
         "op_signal_poll" => bento_signal_poll(),
         "op_signal_unbind" => bento_signal_unbind(),
-        _ => return original,
+        _ => match crate::feature_ops::replacement(original.name)
+            .or_else(|| crate::fs_ops::replacement(original.name))
+        {
+            Some(replacement) => replacement,
+            None => return original,
+        },
     };
     replacement.name = original.name;
     replacement.name_fast = original.name_fast;
@@ -112,19 +133,23 @@ fn middleware(original: OpDecl) -> OpDecl {
 }
 
 deno_core::extension!(bento_instance,
-    ops = [op_bento_host_call],
+    ops = [op_bento_host_call, op_bento_failed_require, op_bento_missing_require_target],
     esm_entry_point = "ext:bento_instance/host.mjs",
-    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control> },
+    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control>, watch_inputs: WatchInputs },
     middleware = middleware,
     state = |state, options| {
         state.put(options.environment);
         state.put(options.modules);
         state.put(options.control);
+        state.put(options.watch_inputs);
     },
     customizer = |extension: &mut deno_core::Extension| {
         const HOST_SOURCE: &[deno_core::ExtensionFileSource] = &[deno_core::ExtensionFileSource::new(
             "ext:bento_instance/host.mjs",
             deno_core::ascii_str_include!("host.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/require_watch.mjs",
+            deno_core::ascii_str_include!("require_watch.mjs"),
         )];
         extension.esm_files = Cow::Borrowed(HOST_SOURCE);
     },

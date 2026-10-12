@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -14,7 +16,7 @@ use deno_node::NodeRequireLoader;
 use deno_runtime::deno_permissions::{OpenAccessKind, PermissionsContainer};
 use deno_runtime::deno_web::Blob;
 use node_resolver::errors::PackageJsonLoadError;
-use oxc_resolver::{ResolveOptions, Resolver};
+use oxc_resolver::{ResolveContext, ResolveOptions, Resolver};
 
 use crate::host::HostModules;
 use crate::lifecycle::Control;
@@ -37,8 +39,8 @@ impl LoaderFactory {
             permissions,
             cwd: self.cwd.clone(),
             modules: self.modules.clone(),
-            control: self.control.clone(),
             sources: self.sources.clone(),
+            application_resolutions: RefCell::default(),
             resolver: Resolver::new(ResolveOptions {
                 condition_names: vec!["node".into(), "import".into(), "default".into()],
                 fully_specified: true,
@@ -75,8 +77,8 @@ struct Loader {
     resolver: Resolver,
     cwd: PathBuf,
     modules: HostModules,
-    control: Arc<Control>,
     sources: Arc<Sources>,
+    application_resolutions: RefCell<HashSet<ModuleSpecifier>>,
 }
 
 impl ModuleLoader for Loader {
@@ -84,7 +86,7 @@ impl ModuleLoader for Loader {
         &self,
         specifier: &str,
         referrer: &str,
-        _kind: ResolutionKind,
+        kind: ResolutionKind,
     ) -> Result<ModuleSpecifier, JsErrorBox> {
         if matches!(specifier, "bento:compat" | "bento:subprocess") {
             return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
@@ -107,6 +109,10 @@ impl ModuleLoader for Loader {
             return ModuleSpecifier::parse(&format!("node:{builtin}"))
                 .map_err(JsErrorBox::from_err);
         }
+        let importer =
+            ModuleSpecifier::parse(referrer).ok().and_then(|url| url.to_file_path().ok());
+        let watch_failure =
+            importer.as_deref().is_some_and(|path| self.node.inputs.is_source(path));
         if let Ok(url) = ModuleSpecifier::parse(specifier) {
             if url.scheme() != "file" {
                 return Err(self.sources.resolution_error(
@@ -115,29 +121,54 @@ impl ModuleLoader for Loader {
                     "remote and unregistered module schemes are unavailable",
                 ));
             }
+            if watch_failure
+                || kind == ResolutionKind::MainModule
+                    && url.to_file_path().is_ok_and(|path| self.node.inputs.is_source(&path))
+            {
+                self.application_resolutions.borrow_mut().insert(url.clone());
+            }
             return Ok(url);
         }
-        let base = ModuleSpecifier::parse(referrer)
-            .ok()
-            .and_then(|url| url.to_file_path().ok())
-            .and_then(|path| path.parent().map(Path::to_owned))
-            .unwrap_or_else(|| self.cwd.clone());
-        let resolved = self.resolver.resolve(&base, specifier).map_err(|error| {
+        let base = importer.as_deref().and_then(Path::parent).unwrap_or(&self.cwd);
+        let mut context = ResolveContext::default();
+        let resolved = if watch_failure {
+            self.resolver.resolve_with_context(base, specifier, None, &mut context)
+        } else {
+            self.resolver.resolve(base, specifier)
+        }
+        .map_err(|error| {
+            if watch_failure {
+                for path in context.missing_dependencies {
+                    if path.file_name().is_none_or(|name| name != "package.json") {
+                        self.node.inputs.record_failed_target(&path);
+                    }
+                }
+                if specifier.starts_with("./")
+                    || specifier.starts_with("../")
+                    || Path::new(specifier).is_absolute()
+                {
+                    self.node.inputs.record_failed_target(&base.join(specifier));
+                }
+            }
             self.sources.resolution_error(specifier, referrer, &error.to_string())
         })?;
-        ModuleSpecifier::from_file_path(resolved.path()).map_err(|_| {
+        let url = ModuleSpecifier::from_file_path(resolved.path()).map_err(|_| {
             self.sources.resolution_error(
                 specifier,
                 referrer,
                 "resolved path is not an absolute file",
             )
-        })
+        })?;
+        if watch_failure {
+            self.application_resolutions.borrow_mut().insert(url.clone());
+        }
+        Ok(url)
     }
 
     fn load(
         &self,
         specifier: &ModuleSpecifier,
-        _referrer: Option<&ModuleLoadReferrer>,
+        referrer: Option<&ModuleLoadReferrer>,
         _options: ModuleLoadOptions,
     ) -> ModuleLoadResponse {
         if specifier.as_str() == "bento:compat" {
@@ -160,8 +191,11 @@ impl ModuleLoader for Loader {
         let specifier = specifier.clone();
         let node = self.node.clone();
         let permissions = self.permissions.clone();
-        let control = self.control.clone();
         let sources = self.sources.clone();
+        let watch_failure = self.application_resolutions.borrow().contains(&specifier)
+            || referrer
+                .and_then(|referrer| referrer.specifier.to_file_path().ok())
+                .is_some_and(|path| self.node.inputs.is_source(&path));
         ModuleLoadResponse::Async(Box::pin(async move {
             let path = specifier.to_file_path().map_err(|_| {
                 sources.resolution_error(
@@ -173,10 +207,18 @@ impl ModuleLoader for Loader {
             let checked = permissions
                 .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
                 .map_err(JsErrorBox::from_err)?;
-            if sources.is_watch_source(&path) {
-                control.record_module(&path);
-            }
-            let text = std::fs::read_to_string(checked).map_err(JsErrorBox::from_err)?;
+            let text = match std::fs::read_to_string(checked) {
+                Ok(text) => {
+                    node.inputs.record(&path);
+                    text
+                }
+                Err(error) => {
+                    if watch_failure {
+                        node.inputs.record_failed_target(&path);
+                    }
+                    return Err(JsErrorBox::from_err(error));
+                }
+            };
             if path.extension().is_some_and(|extension| extension == "json") {
                 return Ok(source(&specifier, text, ModuleType::Json));
             }
@@ -185,7 +227,14 @@ impl ModuleLoader for Loader {
                 .translator
                 .translate_cjs_to_esm(&specifier, Some(Cow::Owned(text)))
                 .await
-                .map_err(JsErrorBox::from_err)?;
+                .map_err(|error| {
+                    if let node_resolver::analyze::TranslateCjsToEsmError::ExportAnalysis(failure) =
+                        &error
+                    {
+                        node.inputs.record_cjs_resolution_failure(failure);
+                    }
+                    JsErrorBox::from_err(error)
+                })?;
             Ok(source(&specifier, translated.into_owned(), ModuleType::JavaScript))
         }))
     }
@@ -221,9 +270,7 @@ impl NodeRequireLoader for Loader {
     }
 
     fn load_text_file_lossy(&self, path: &Path) -> Result<FastString, JsErrorBox> {
-        if self.sources.is_watch_source(path) {
-            self.control.record_module(path);
-        }
+        self.node.inputs.record(path);
         let text = std::fs::read_to_string(path).map_err(JsErrorBox::from_err)?;
         Ok(self.sources.transform(path, text)?.into())
     }

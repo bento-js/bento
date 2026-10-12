@@ -31,6 +31,13 @@ impl node_resolver::analyze::CjsCodeAnalyzer for Analyzer {
         source: Option<Cow<'a, str>>,
         _mode: EsmAnalysisMode,
     ) -> Result<CjsAnalysis<'a>, JsErrorBox> {
+        if is_json_or_addon(specifier) {
+            return Ok(CjsAnalysis::Cjs(CjsAnalysisExports {
+                exports: Vec::new(),
+                reexports: Vec::new(),
+                member_reexports: Vec::new(),
+            }));
+        }
         let source =
             source.map(Ok).unwrap_or_else(|| read(specifier, &self.permissions).map(Cow::Owned))?;
         let allocator = Allocator::default();
@@ -74,6 +81,9 @@ impl node_resolver::analyze::CjsCodeAnalyzer for Analyzer {
         source: Option<Cow<'a, str>>,
         member: &str,
     ) -> Result<Option<Vec<String>>, JsErrorBox> {
+        if is_json_or_addon(specifier) {
+            return Ok(None);
+        }
         let source =
             source.map(Ok).unwrap_or_else(|| read(specifier, &self.permissions).map(Cow::Owned))?;
         let allocator = Allocator::default();
@@ -85,6 +95,10 @@ impl node_resolver::analyze::CjsCodeAnalyzer for Analyzer {
         });
         Ok(names.map(|names| names.iter().cloned().collect()))
     }
+}
+
+fn is_json_or_addon(specifier: &Url) -> bool {
+    specifier.path().ends_with(".json") || specifier.path().ends_with(".node")
 }
 
 fn read(specifier: &Url, permissions: &PermissionsContainer) -> Result<String, JsErrorBox> {
