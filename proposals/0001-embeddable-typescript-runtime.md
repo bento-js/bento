@@ -2,7 +2,7 @@
 id: proposal.0001
 title: An Embeddable TypeScript Runtime
 authors: [Mark]
-status: active-review
+status: accepted
 pull-request: https://github.com/bento-js/bento/pull/3
 issues: [https://github.com/bento-js/bento/issues/2]
 supersedes: []
@@ -19,6 +19,19 @@ Add a Rust library and CLI that run an existing Remix 3 application directly fro
 On 2026-10-10, Mark selected `~/Developer/Playgrounds/remix-guest-book-bento`, specified the developer-workflow features below, and authorized this revision with: “Update the proposal with anything that needs updating based on that info and then the proposal is approved.” He also authorized all subscription-covered Claude Max and ChatGPT Pro usage and up to two Codex limit resets when needed. This revision records that approval; no further per-feature approval is required for its stated outcomes.
 
 Approval and activation are separate. The autonomous build's 48-hour clock has not started. Only Mark can activate it through the requested `/goal` or an equivalent explicit instruction to begin the autonomous build. The coordinator then records the approved source revision, activation time, and expiry in the PR and Beads. An agent instruction cannot activate the mandate, and this proposal revision does not itself launch implementation.
+
+Mark activated the mandate on 2026-10-10T22:46:01Z; it expires 48 hours later. During the build he also authorized two things. First, moving the patched `deno_core` to a public fork at `bento-js/deno_core`. Second, merging a one-line record-only PR into `main` after this one, to set `implemented`.
+
+On 2026-10-12 the strategist accepted the implementation under the mandate's delegated acceptance authority, on this evidence:
+
+- The readiness report on PR #3.
+- `vp run rust` (494 tests) and `vp run check` (372 tests and the docs build) passing on integration head `84da54f`.
+- The cross-artifact review.
+- Eleven fresh-context adversarial rounds, the last converging on `166fb1f`.
+- The exercised local preview at `166fb1f`: 23 smoke commands, and Chromium checks on both hosts.
+- The benchmark run in `bench/results/2026-10-12T00-04-54Z/`.
+
+Declined findings and documented limits are recorded in that report. Deferred defects are issues #2, #14, #18, #242, #243, and #244.
 
 ## Motivation
 
