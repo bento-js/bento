@@ -2,7 +2,7 @@
 id: proposal.0001
 title: An Embeddable TypeScript Runtime
 authors: [Mark]
-status: accepted
+status: implemented
 pull-request: https://github.com/bento-js/bento/pull/3
 issues: [https://github.com/bento-js/bento/issues/2]
 supersedes: []
