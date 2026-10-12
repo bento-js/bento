@@ -1,0 +1,399 @@
+{
+  "startedAt": "2026-10-12T00:04:54.601Z",
+  "options": {
+    "help": false,
+    "runtimes": [
+      "node",
+      "bun",
+      "bento"
+    ],
+    "workloads": [
+      "cold-launch",
+      "assets",
+      "asset-operations",
+      "steady-state",
+      "watch-reload",
+      "memory"
+    ],
+    "trials": {
+      "cold-launch": 15,
+      "assets": 10,
+      "asset-operations": 10,
+      "steady-state": 5,
+      "watch-reload": 10,
+      "memory": 10
+    },
+    "steadyState": {
+      "durationSeconds": 10,
+      "warmupSeconds": 3,
+      "concurrency": 16
+    },
+    "iterations": 10,
+    "keepFixtures": false,
+    "executables": {
+      "node": "/Users/orion/.local/share/mise/installs/node/26.11.1/bin/node",
+      "bun": "/Users/orion/.local/share/mise/installs/bun/latest/bin/bun",
+      "bento": "/Users/orion/Developer/Projects/.worktrees/bento-preview/bin/bento"
+    }
+  },
+  "environment": {
+    "hardware": "Mac16,1, Apple M4, 10 cores, 32 GiB",
+    "os": "macOS 27.0.1 (arm64)",
+    "runtimes": {
+      "node": "v26.11.1",
+      "bun": "1.4.3",
+      "bento": "sha256:e7f8bbad3bda"
+    },
+    "tools": {
+      "pnpm": "12.11.2",
+      "oha": "1.16.0"
+    },
+    "revisions": {
+      "bento": "ac1679b-dirty",
+      "fixture": "b3c5986"
+    },
+    "remixVersion": "3.0.0"
+  },
+  "workload": "memory",
+  "title": "Memory",
+  "question": "How much resident memory does the whole process tree hold? Peak is the largest sample from spawn through startup and the first request for every asset; idle is the median of samples taken after the server has been quiet for a moment. Sampling is about every 20 ms, so the peak is a lower bound.",
+  "metrics": [
+    {
+      "key": "peakRssMb",
+      "label": "Peak RSS, startup through first asset compilation",
+      "unit": "MB"
+    },
+    {
+      "key": "idleRssMb",
+      "label": "Idle RSS after startup",
+      "unit": "MB"
+    }
+  ],
+  "series": [
+    {
+      "runtime": "bun",
+      "variant": "development",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17703/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "peakRssMb": 221.203125,
+            "idleRssMb": 221.578125,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 1,
+            "peakRssMb": 223.203125,
+            "idleRssMb": 223.28125,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 2,
+            "peakRssMb": 222.09375,
+            "idleRssMb": 222.515625,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 3,
+            "peakRssMb": 221.734375,
+            "idleRssMb": 222.109375,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 4,
+            "peakRssMb": 221.734375,
+            "idleRssMb": 222.03125,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 5,
+            "peakRssMb": 223.21875,
+            "idleRssMb": 223.515625,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 6,
+            "peakRssMb": 221.59375,
+            "idleRssMb": 221.84375,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 7,
+            "peakRssMb": 222.046875,
+            "idleRssMb": 222.140625,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 8,
+            "peakRssMb": 221.203125,
+            "idleRssMb": 221.484375,
+            "startupSampleCount": 11
+          },
+          {
+            "trial": 9,
+            "peakRssMb": 223.796875,
+            "idleRssMb": 223.84375,
+            "startupSampleCount": 11
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "peakRssMb": 208.40625,
+            "idleRssMb": 208.53125,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 1,
+            "peakRssMb": 206.046875,
+            "idleRssMb": 206.234375,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 2,
+            "peakRssMb": 205.890625,
+            "idleRssMb": 206.21875,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 3,
+            "peakRssMb": 208.078125,
+            "idleRssMb": 208.734375,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 4,
+            "peakRssMb": 207.53125,
+            "idleRssMb": 207.546875,
+            "startupSampleCount": 16
+          },
+          {
+            "trial": 5,
+            "peakRssMb": 210.171875,
+            "idleRssMb": 210.1875,
+            "startupSampleCount": 16
+          },
+          {
+            "trial": 6,
+            "peakRssMb": 209.28125,
+            "idleRssMb": 209.5,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 7,
+            "peakRssMb": 206.1875,
+            "idleRssMb": 206.1875,
+            "startupSampleCount": 16
+          },
+          {
+            "trial": 8,
+            "peakRssMb": 207.890625,
+            "idleRssMb": 208.125,
+            "startupSampleCount": 15
+          },
+          {
+            "trial": 9,
+            "peakRssMb": 208.875,
+            "idleRssMb": 207.59375,
+            "startupSampleCount": 15
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bun",
+      "variant": "production",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17737/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "peakRssMb": 180.875,
+            "idleRssMb": 180.875,
+            "startupSampleCount": 9
+          },
+          {
+            "trial": 1,
+            "peakRssMb": 177.609375,
+            "idleRssMb": 180,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 2,
+            "peakRssMb": 177.703125,
+            "idleRssMb": 180.15625,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 3,
+            "peakRssMb": 175.953125,
+            "idleRssMb": 179.046875,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 4,
+            "peakRssMb": 176.9375,
+            "idleRssMb": 179.375,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 5,
+            "peakRssMb": 178.34375,
+            "idleRssMb": 180.9375,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 6,
+            "peakRssMb": 178.328125,
+            "idleRssMb": 180.765625,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 7,
+            "peakRssMb": 177.09375,
+            "idleRssMb": 179.46875,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 8,
+            "peakRssMb": 176.390625,
+            "idleRssMb": 179.03125,
+            "startupSampleCount": 8
+          },
+          {
+            "trial": 9,
+            "peakRssMb": 177.921875,
+            "idleRssMb": 180.234375,
+            "startupSampleCount": 8
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "peakRssMb": 158.4375,
+            "idleRssMb": 163.71875,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 1,
+            "peakRssMb": 158.4375,
+            "idleRssMb": 162.9375,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 2,
+            "peakRssMb": 155.921875,
+            "idleRssMb": 158.21875,
+            "startupSampleCount": 13
+          },
+          {
+            "trial": 3,
+            "peakRssMb": 152.265625,
+            "idleRssMb": 158.203125,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 4,
+            "peakRssMb": 158.5625,
+            "idleRssMb": 163.375,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 5,
+            "peakRssMb": 161.65625,
+            "idleRssMb": 165.15625,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 6,
+            "peakRssMb": 156.28125,
+            "idleRssMb": 159.6875,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 7,
+            "peakRssMb": 156.640625,
+            "idleRssMb": 160.5,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 8,
+            "peakRssMb": 158.34375,
+            "idleRssMb": 158.578125,
+            "startupSampleCount": 12
+          },
+          {
+            "trial": 9,
+            "peakRssMb": 157.296875,
+            "idleRssMb": 158.84375,
+            "startupSampleCount": 12
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "notes": []
+}
