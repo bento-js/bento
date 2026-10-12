@@ -659,3 +659,89 @@ return parallel([() => agent("one"), () => agent("two")])
         expect(progressEvents).toEqual([]);
     }, 2000);
 });
+
+describe("runWorkflow agent id reservation", () => {
+    it("reserves every queued agent's id before any of them starts", async () => {
+        let events: string[] = [];
+        let reserved: Array<(id: string) => void> = [];
+        let runner: WorkflowAgentRunner = {
+            reserve(request) {
+                events.push(`reserve:${request.label}:${request.index}`);
+                return new Promise<string>(resolve => reserved.push(resolve));
+            },
+            async run(request) {
+                events.push(`run:${request.label}:${request.agentId}`);
+                return { value: request.prompt, tokens: 1 };
+            },
+        };
+        let program = parseWorkflowScript(`${header}
+const values = await parallel([
+  () => agent("a", { label: "first" }),
+  () => agent("b", { label: "second" }),
+])
+return values`);
+
+        let workflow = runWorkflow(program, { cwd: "/tmp/workflow", runner });
+        // Both reservations are requested while the agents are still queued.
+        expect(events).toEqual(["reserve:first:1", "reserve:second:2"]);
+        reserved[0]("First");
+        reserved[1]("Second");
+        let result = await workflow;
+
+        expect(result.result).toEqual(["a", "b"]);
+        expect(events.slice(2)).toEqual(["run:first:First", "run:second:Second"]);
+    });
+
+    it("reports each reserved id to the consumer", async () => {
+        let reservations: Array<{ id: number; agentId: string }> = [];
+        let runner: WorkflowAgentRunner = {
+            async reserve(request) {
+                return `Agent${request.index}`;
+            },
+            async run(request) {
+                return { value: request.agentId, tokens: 1 };
+            },
+        };
+        let program = parseWorkflowScript(`${header}\nreturn agent("x", { label: "solo" })`);
+
+        let result = await runWorkflow(program, {
+            cwd: "/tmp/workflow",
+            runner,
+            onAgentReserved: event => reservations.push(event),
+        });
+
+        expect(reservations).toEqual([{ id: 1, agentId: "Agent1" }]);
+        expect(result.result).toBe("Agent1");
+    });
+
+    it("fails only the agent whose reservation rejects", async () => {
+        let runner: WorkflowAgentRunner = {
+            async reserve(request) {
+                if (request.label === "broken") throw new Error("no id available");
+                return "Fine";
+            },
+            async run(request) {
+                return { value: request.prompt, tokens: 1 };
+            },
+        };
+        let program = parseWorkflowScript(`${header}
+return await parallel([
+  () => agent("a", { label: "broken" }),
+  () => agent("b", { label: "fine" }),
+])`);
+
+        let result = await runWorkflow(program, { cwd: "/tmp/workflow", runner });
+
+        expect(result.result).toEqual([null, "b"]);
+        expect(result.logs).toContain("agent broken failed: no id available");
+    });
+
+    it("leaves agentId undefined for a runner that does not reserve", async () => {
+        let runner = new FakeRunner({ x: { value: "ok", tokens: 1 } });
+        let program = parseWorkflowScript(`${header}\nreturn agent("x", { label: "solo" })`);
+
+        await runWorkflow(program, { cwd: "/tmp/workflow", runner });
+
+        expect(runner.calls[0].agentId).toBeUndefined();
+    });
+});

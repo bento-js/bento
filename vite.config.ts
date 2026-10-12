@@ -2,9 +2,12 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
     test: {
-        include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts"],
+        include: ["tools/**/*.test.ts", ".omp/tools/**/*.test.ts", "bench/**/*.test.ts"],
     },
     fmt: {
+        // The fixture is an independent project with its own toolchain and lockfile,
+        // and bench/results holds recorded benchmark output kept exactly as the harness wrote it.
+        ignorePatterns: ["bench/results/**", "fixtures/**", "target/**"],
         printWidth: 100,
         tabWidth: 4,
         arrowParens: "avoid",
@@ -33,6 +36,8 @@ export default defineConfig({
         ],
     },
     lint: {
+        // The direct-source example is an independent project whose types come from its own install.
+        ignorePatterns: ["examples/direct-source/**", "fixtures/**", "target/**"],
         options: {
             typeAware: true,
             typeCheck: true,
@@ -68,14 +73,25 @@ export default defineConfig({
             "prefer-let/prefer-let": [2, { forceUpperCaseConst: true }],
         },
     },
-    // Bento's own test and build tasks join `check` as its code lands.
+    // Bento's Rust gate is its own task rather than part of `check`: Bento supports only
+    // macOS on Apple silicon for now while CI runs on Linux, and the full suite takes minutes.
     run: {
         tasks: {
+            rust: {
+                command:
+                    "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+                cache: false,
+            },
             check: {
                 command: "vp check",
-                dependsOn: ["validate", "test", "docs:build"],
+                dependsOn: ["validate", "deps:policy", "test", "docs:build"],
             },
             validate: "node tools/validate.ts",
+            // policy.0001: Bento crates must not depend on the SWC stack.
+            "deps:policy": {
+                command: "node tools/crate-dependencies.ts",
+                cache: false,
+            },
             test: "vp test run",
             // Reads live git and GitHub state, so a replayed result would be stale.
             status: {

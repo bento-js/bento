@@ -1,0 +1,459 @@
+{
+  "startedAt": "2026-10-12T00:04:54.601Z",
+  "options": {
+    "help": false,
+    "runtimes": [
+      "node",
+      "bun",
+      "bento"
+    ],
+    "workloads": [
+      "cold-launch",
+      "assets",
+      "asset-operations",
+      "steady-state",
+      "watch-reload",
+      "memory"
+    ],
+    "trials": {
+      "cold-launch": 15,
+      "assets": 10,
+      "asset-operations": 10,
+      "steady-state": 5,
+      "watch-reload": 10,
+      "memory": 10
+    },
+    "steadyState": {
+      "durationSeconds": 10,
+      "warmupSeconds": 3,
+      "concurrency": 16
+    },
+    "iterations": 10,
+    "keepFixtures": false,
+    "executables": {
+      "node": "/Users/orion/.local/share/mise/installs/node/26.11.1/bin/node",
+      "bun": "/Users/orion/.local/share/mise/installs/bun/latest/bin/bun",
+      "bento": "/Users/orion/Developer/Projects/.worktrees/bento-preview/bin/bento"
+    }
+  },
+  "environment": {
+    "hardware": "Mac16,1, Apple M4, 10 cores, 32 GiB",
+    "os": "macOS 27.0.1 (arm64)",
+    "runtimes": {
+      "node": "v26.11.1",
+      "bun": "1.4.3",
+      "bento": "sha256:e7f8bbad3bda"
+    },
+    "tools": {
+      "pnpm": "12.11.2",
+      "oha": "1.16.0"
+    },
+    "revisions": {
+      "bento": "ac1679b-dirty",
+      "fixture": "b3c5986"
+    },
+    "remixVersion": "3.0.0"
+  },
+  "workload": "cold-launch",
+  "title": "Cold launch",
+  "question": "How long from spawning the process until the port accepts connections, and until the first response that passes the document gate? The second milestone includes application initialization.",
+  "metrics": [
+    {
+      "key": "listeningMs",
+      "label": "Spawn to listening",
+      "unit": "ms"
+    },
+    {
+      "key": "firstPageMs",
+      "label": "Spawn to first correct page",
+      "unit": "ms"
+    }
+  ],
+  "series": [
+    {
+      "runtime": "bun",
+      "variant": "development",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17703/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "listeningMs": 189.68724999999995,
+            "firstPageMs": 213.7599170000003
+          },
+          {
+            "trial": 1,
+            "listeningMs": 189.21454100000028,
+            "firstPageMs": 212.34720800000014
+          },
+          {
+            "trial": 2,
+            "listeningMs": 190.63408400000026,
+            "firstPageMs": 216.03570899999977
+          },
+          {
+            "trial": 3,
+            "listeningMs": 190.4868750000005,
+            "firstPageMs": 214.43162499999926
+          },
+          {
+            "trial": 4,
+            "listeningMs": 190.14808400000038,
+            "firstPageMs": 213.84350000000086
+          },
+          {
+            "trial": 5,
+            "listeningMs": 191.48158400000102,
+            "firstPageMs": 215.8647090000013
+          },
+          {
+            "trial": 6,
+            "listeningMs": 187.16366700000071,
+            "firstPageMs": 210.7833750000009
+          },
+          {
+            "trial": 7,
+            "listeningMs": 187.87874999999985,
+            "firstPageMs": 212.92525000000023
+          },
+          {
+            "trial": 8,
+            "listeningMs": 189.44487499999923,
+            "firstPageMs": 214.76679200000035
+          },
+          {
+            "trial": 9,
+            "listeningMs": 209.13975000000028,
+            "firstPageMs": 233.50504200000069
+          },
+          {
+            "trial": 10,
+            "listeningMs": 189.40729199999987,
+            "firstPageMs": 213.69279200000165
+          },
+          {
+            "trial": 11,
+            "listeningMs": 187.44945899999948,
+            "firstPageMs": 212.2306669999998
+          },
+          {
+            "trial": 12,
+            "listeningMs": 189.3314999999984,
+            "firstPageMs": 213.54862499999945
+          },
+          {
+            "trial": 13,
+            "listeningMs": 186.9573330000003,
+            "firstPageMs": 211.30025000000023
+          },
+          {
+            "trial": 14,
+            "listeningMs": 188.6749579999996,
+            "firstPageMs": 212.7124160000003
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "development",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "listeningMs": 299.4840829999994,
+            "firstPageMs": 330.0046249999996
+          },
+          {
+            "trial": 1,
+            "listeningMs": 299.9556670000002,
+            "firstPageMs": 330.4590420000004
+          },
+          {
+            "trial": 2,
+            "listeningMs": 318.3478750000004,
+            "firstPageMs": 348.332625
+          },
+          {
+            "trial": 3,
+            "listeningMs": 301.1123329999991,
+            "firstPageMs": 332.065290999999
+          },
+          {
+            "trial": 4,
+            "listeningMs": 303.89829199999986,
+            "firstPageMs": 333.4851669999989
+          },
+          {
+            "trial": 5,
+            "listeningMs": 303.4356250000001,
+            "firstPageMs": 334.0300420000003
+          },
+          {
+            "trial": 6,
+            "listeningMs": 303.1553329999988,
+            "firstPageMs": 333.37624999999935
+          },
+          {
+            "trial": 7,
+            "listeningMs": 308.8299169999991,
+            "firstPageMs": 341.95879199999945
+          },
+          {
+            "trial": 8,
+            "listeningMs": 301.36625000000095,
+            "firstPageMs": 331.88616700000057
+          },
+          {
+            "trial": 9,
+            "listeningMs": 305.26174999999967,
+            "firstPageMs": 337.47775
+          },
+          {
+            "trial": 10,
+            "listeningMs": 300.88058400000045,
+            "firstPageMs": 330.6072920000006
+          },
+          {
+            "trial": 11,
+            "listeningMs": 299.63558399999965,
+            "firstPageMs": 329.2458749999987
+          },
+          {
+            "trial": 12,
+            "listeningMs": 299.3084579999995,
+            "firstPageMs": 331.22849999999926
+          },
+          {
+            "trial": 13,
+            "listeningMs": 305.7819579999996,
+            "firstPageMs": 335.6793749999997
+          },
+          {
+            "trial": 14,
+            "listeningMs": 301.68808400000125,
+            "firstPageMs": 332.6933339999996
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bun",
+      "variant": "production",
+      "outcome": {
+        "status": "incompatible",
+        "check": "document",
+        "failures": [
+          "response body is empty"
+        ],
+        "evidence": [
+          {
+            "method": "GET",
+            "url": "http://127.0.0.1:17737/",
+            "status": 200,
+            "contentType": null,
+            "location": null,
+            "bodyBytes": 0,
+            "bodyExcerpt": ""
+          }
+        ]
+      }
+    },
+    {
+      "runtime": "node",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "listeningMs": 192.01699999999983,
+            "firstPageMs": 219.7517919999991
+          },
+          {
+            "trial": 1,
+            "listeningMs": 194.28675000000294,
+            "firstPageMs": 221.8125
+          },
+          {
+            "trial": 2,
+            "listeningMs": 191.09454099999857,
+            "firstPageMs": 218.29662499999904
+          },
+          {
+            "trial": 3,
+            "listeningMs": 192.11941599999773,
+            "firstPageMs": 219.48145799999838
+          },
+          {
+            "trial": 4,
+            "listeningMs": 191.57312500000262,
+            "firstPageMs": 219.4108750000014
+          },
+          {
+            "trial": 5,
+            "listeningMs": 192.2714580000029,
+            "firstPageMs": 219.79820800000016
+          },
+          {
+            "trial": 6,
+            "listeningMs": 194.41783399999986,
+            "firstPageMs": 221.70529200000237
+          },
+          {
+            "trial": 7,
+            "listeningMs": 193.20829199999935,
+            "firstPageMs": 221.49674999999843
+          },
+          {
+            "trial": 8,
+            "listeningMs": 194.13112499999988,
+            "firstPageMs": 222.98354199999812
+          },
+          {
+            "trial": 9,
+            "listeningMs": 195.66662499999802,
+            "firstPageMs": 223.3678749999999
+          },
+          {
+            "trial": 10,
+            "listeningMs": 193.48987500000294,
+            "firstPageMs": 220.22516600000017
+          },
+          {
+            "trial": 11,
+            "listeningMs": 191.2953750000015,
+            "firstPageMs": 218.21775000000343
+          },
+          {
+            "trial": 12,
+            "listeningMs": 194.7516250000008,
+            "firstPageMs": 222.71983300000284
+          },
+          {
+            "trial": 13,
+            "listeningMs": 193.6004589999975,
+            "firstPageMs": 221.52408399999695
+          },
+          {
+            "trial": 14,
+            "listeningMs": 191.44070799999827,
+            "firstPageMs": 218.82083299999795
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "production",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "listeningMs": 306.7582089999996,
+            "firstPageMs": 342.0699590000004
+          },
+          {
+            "trial": 1,
+            "listeningMs": 303.3572920000006,
+            "firstPageMs": 338.11345900000015
+          },
+          {
+            "trial": 2,
+            "listeningMs": 305.0845410000002,
+            "firstPageMs": 340.0511250000018
+          },
+          {
+            "trial": 3,
+            "listeningMs": 306.1498339999998,
+            "firstPageMs": 339.9664589999993
+          },
+          {
+            "trial": 4,
+            "listeningMs": 311.7092499999999,
+            "firstPageMs": 345.8062090000021
+          },
+          {
+            "trial": 5,
+            "listeningMs": 337.0085829999989,
+            "firstPageMs": 372.0039169999982
+          },
+          {
+            "trial": 6,
+            "listeningMs": 325.5411669999994,
+            "firstPageMs": 359.4975000000013
+          },
+          {
+            "trial": 7,
+            "listeningMs": 307.1538330000003,
+            "firstPageMs": 340.9944579999974
+          },
+          {
+            "trial": 8,
+            "listeningMs": 305.3257909999993,
+            "firstPageMs": 339.6655830000018
+          },
+          {
+            "trial": 9,
+            "listeningMs": 304.41108299999905,
+            "firstPageMs": 340.97112500000003
+          },
+          {
+            "trial": 10,
+            "listeningMs": 306.018541999998,
+            "firstPageMs": 339.74912499999846
+          },
+          {
+            "trial": 11,
+            "listeningMs": 305.44804099999965,
+            "firstPageMs": 339.85770799999955
+          },
+          {
+            "trial": 12,
+            "listeningMs": 305.3387920000023,
+            "firstPageMs": 339.4629590000004
+          },
+          {
+            "trial": 13,
+            "listeningMs": 328.33487500000047,
+            "firstPageMs": 363.3997500000005
+          },
+          {
+            "trial": 14,
+            "listeningMs": 303.64466600000014,
+            "firstPageMs": 343.2860409999994
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "notes": []
+}

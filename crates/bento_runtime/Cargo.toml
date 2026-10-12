@@ -1,0 +1,55 @@
+[package]
+name = "bento_runtime"
+description = "Embeddable V8 runtime that executes Node-compatible TypeScript applications in-process"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The engine, Web/Node compatibility, and Node-API come from the dependency set of Deno v2.9.7's
+# standalone runtime (`cli/rt`): deno_lib's worker factory over deno_runtime. Per policy.0001,
+# parsing and ESM resolution use Oxc; node_resolver remains only where deno_node's CommonJS
+# `require` implementation and CJS-to-ESM translation are built on it.
+[dependencies]
+bento_compiler.workspace = true
+bento_host.workspace = true
+
+deno_core.workspace = true
+deno_error.workspace = true
+deno_lib.workspace = true
+deno_media_type = { workspace = true, features = ["data_url", "decoding"] }
+deno_node.workspace = true
+deno_npm.workspace = true
+deno_package_json = { workspace = true, features = ["sync"] }
+deno_path_util.workspace = true
+deno_resolver = { workspace = true, features = ["sync"] }
+deno_runtime.workspace = true
+deno_semver.workspace = true
+deno_snapshots.workspace = true
+deno_signals.workspace = true
+deno_tls.workspace = true
+node_resolver = { workspace = true, features = ["sync"] }
+sys_traits = { workspace = true, features = ["getrandom", "filetime", "libc", "real", "strip_unc"] }
+
+anyhow.workspace = true
+async-trait = "0.1"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+parking_lot = "0.12"
+libc = "0.2"
+
+oxc = { version = "=0.153.0", features = ["ast_visit"] }
+oxc_resolver = "=11.24.3"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features
+# apart from normal dependencies and nothing upstream enables deno_core's engine feature.
+# Depending on deno_core here (with default features) supplies it to that host-side build.
+[build-dependencies]
+deno_core.workspace = true

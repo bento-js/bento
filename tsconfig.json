@@ -19,6 +19,7 @@
         "docs/.vitepress/**/*.vue",
         "docs/.vitepress/**/*.tsx",
         ".omp/extensions/**/*.ts",
-        ".omp/tools/**/*.ts"
+        ".omp/tools/**/*.ts",
+        "bench/**/*.ts"
     ]
 }

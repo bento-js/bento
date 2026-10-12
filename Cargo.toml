@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/guestbook-host"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+repository = "https://github.com/markmals/bento"
+rust-version = "1.99"
+
+# Upstream runtime crates are pinned to exactly the set published with Deno v2.9.7 so
+# their internal compatibility assumptions hold. Change them together, never one at a time.
+[workspace.dependencies]
+deno_core = { version = "=0.412.0" }
+deno_error = "=0.7.1"
+deno_lib = "=0.77.0"
+deno_media_type = { version = "=0.4.0", features = ["module_specifier"] }
+deno_napi = "=0.190.0"
+deno_node = "=0.197.0"
+deno_npm = "=0.71.0"
+deno_package_json = { version = "=0.61.0", default-features = false }
+deno_path_util = "=0.6.4"
+deno_permissions = "=0.118.0"
+deno_resolver = "=0.90.0"
+deno_runtime = "=0.267.0"
+deno_semver = "=0.10.1"
+deno_snapshots = "=0.74.0"
+deno_signals = "=0.50.0"
+deno_tls = "=0.246.0"
+node_resolver = "=0.97.0"
+sys_traits = "0.1.28"
+
+bento_compiler = { path = "crates/bento_compiler" }
+bento_host = { path = "crates/bento_host" }
+bento_package = { path = "crates/bento_package" }
+bento_runtime = { path = "crates/bento_runtime" }
+bento_task = { path = "crates/bento_task" }
+bento_workspace = { path = "crates/bento_workspace" }
+
+anyhow = "1.0.57"
+serde = { version = "1.0.149", features = ["derive"] }
+serde_json = "1.0.85"
+tempfile = "3"
+thiserror = "2.0.12"
+tokio = { version = "1.47.1", features = ["full"] }
+
+# deno_core 0.412.0 with one fix: require() of an ES module rethrows the module's original
+# exception instead of a serialized copy. The fork imports the published crate unmodified and
+# carries the change as separate commits; see PATCHES.md there.
+[patch.crates-io]
+deno_core = { git = "https://github.com/bento-js/deno_core", rev = "825264984ee3945d3713fb2bc6b224b491a82478" }
+
+# rusty_v8 miscompiles below -O1.
+[profile.dev.package.v8]
+opt-level = 1
+
+# Benchmarks and previews use this profile: optimized for speed rather than Deno's size-tuned release.
+[profile.release]
+codegen-units = 16
+lto = "thin"
+opt-level = 3
+debug = "line-tables-only"

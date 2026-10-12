@@ -1,6 +1,6 @@
 ---
 title: A Vision for Bento
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # A Vision for Bento
@@ -93,3 +93,4 @@ Directions worth considering once the core is proven:
 ## Revision history
 
 - **2026-10-10** — Initial vision.
+- **2026-10-12** — [Proposal 0001](proposals/0001-embeddable-typescript-runtime.md) delivered the first runtime. One Rust library and its CLI run a real Remix 3 application from TypeScript, with its npm dependencies, native asset pipeline, and SQLite, on macOS arm64. They also install dependencies through pnpm and provide top-level tasks, environment files, watch restarts, host modules, explicit grants, and lifecycle control. Integrated type checking, formatting, linting, bundling, a test runner, and feature-selected builds remain ahead.

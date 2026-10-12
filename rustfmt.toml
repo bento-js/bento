@@ -1,0 +1,12 @@
+# Mirrors the Oxfmt settings used for TypeScript (vite.config.ts and the fixture's .oxfmtrc.jsonc).
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+newline_style = "Unix"
+# Prettier-style filling: use the full width before wrapping, like Oxfmt does.
+use_small_heuristics = "Max"
+# Oxfmt sorts imports within groups. Stable rustfmt sorts within blank-line-separated groups but
+# cannot create them (`group_imports` is nightly-only), so write std, external, then workspace
+# and crate imports as separate groups by hand.
+reorder_imports = true
+reorder_modules = true

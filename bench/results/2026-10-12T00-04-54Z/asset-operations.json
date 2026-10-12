@@ -1,0 +1,837 @@
+{
+  "startedAt": "2026-10-12T00:04:54.601Z",
+  "options": {
+    "help": false,
+    "runtimes": [
+      "node",
+      "bun",
+      "bento"
+    ],
+    "workloads": [
+      "cold-launch",
+      "assets",
+      "asset-operations",
+      "steady-state",
+      "watch-reload",
+      "memory"
+    ],
+    "trials": {
+      "cold-launch": 15,
+      "assets": 10,
+      "asset-operations": 10,
+      "steady-state": 5,
+      "watch-reload": 10,
+      "memory": 10
+    },
+    "steadyState": {
+      "durationSeconds": 10,
+      "warmupSeconds": 3,
+      "concurrency": 16
+    },
+    "iterations": 10,
+    "keepFixtures": false,
+    "executables": {
+      "node": "/Users/orion/.local/share/mise/installs/node/26.11.1/bin/node",
+      "bun": "/Users/orion/.local/share/mise/installs/bun/latest/bin/bun",
+      "bento": "/Users/orion/Developer/Projects/.worktrees/bento-preview/bin/bento"
+    }
+  },
+  "environment": {
+    "hardware": "Mac16,1, Apple M4, 10 cores, 32 GiB",
+    "os": "macOS 27.0.1 (arm64)",
+    "runtimes": {
+      "node": "v26.11.1",
+      "bun": "1.4.3",
+      "bento": "sha256:e7f8bbad3bda"
+    },
+    "tools": {
+      "pnpm": "12.11.2",
+      "oha": "1.16.0"
+    },
+    "revisions": {
+      "bento": "ac1679b-dirty",
+      "fixture": "b3c5986"
+    },
+    "remixVersion": "3.0.0"
+  },
+  "workload": "asset-operations",
+  "title": "Asset operations",
+  "question": "Where does time go inside the asset path? Each operation is timed over the fixture's own files through the locked npm packages with the options remix/assets uses. The cold pass is the first, with empty caches; warm is the median of the later passes. This workload does not render the application.",
+  "metrics": [
+    {
+      "key": "parseColdMs",
+      "label": "Parse (oxc-parser), cold pass",
+      "unit": "ms"
+    },
+    {
+      "key": "parseWarmMs",
+      "label": "Parse (oxc-parser), warm pass (median)",
+      "unit": "ms"
+    },
+    {
+      "key": "resolveColdMs",
+      "label": "Resolve (oxc-resolver), cold pass",
+      "unit": "ms"
+    },
+    {
+      "key": "resolveWarmMs",
+      "label": "Resolve (oxc-resolver), warm pass (median)",
+      "unit": "ms"
+    },
+    {
+      "key": "transformColdMs",
+      "label": "Transform (oxc-transform), cold pass",
+      "unit": "ms"
+    },
+    {
+      "key": "transformWarmMs",
+      "label": "Transform (oxc-transform), warm pass (median)",
+      "unit": "ms"
+    },
+    {
+      "key": "minifyColdMs",
+      "label": "Minify (oxc-minify), cold pass",
+      "unit": "ms"
+    },
+    {
+      "key": "minifyWarmMs",
+      "label": "Minify (oxc-minify), warm pass (median)",
+      "unit": "ms"
+    },
+    {
+      "key": "cssColdMs",
+      "label": "CSS (lightningcss), cold pass",
+      "unit": "ms"
+    },
+    {
+      "key": "cssWarmMs",
+      "label": "CSS (lightningcss), warm pass (median)",
+      "unit": "ms"
+    }
+  ],
+  "series": [
+    {
+      "runtime": "node",
+      "variant": "",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.9131659999999968,
+            "parseWarmMs": 0.5482499999999959,
+            "resolveColdMs": 1.7138750000000016,
+            "resolveWarmMs": 0.9762500000000003,
+            "transformColdMs": 1.440375000000003,
+            "transformWarmMs": 1.0285840000000022,
+            "minifyColdMs": 1.5285830000000047,
+            "minifyWarmMs": 1.136209000000001,
+            "cssColdMs": 0.49591599999999403,
+            "cssWarmMs": 0.16454099999999983
+          },
+          {
+            "trial": 1,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8697500000000034,
+            "parseWarmMs": 0.5367499999999978,
+            "resolveColdMs": 2.0127079999999964,
+            "resolveWarmMs": 0.9746250000000032,
+            "transformColdMs": 1.6511250000000004,
+            "transformWarmMs": 1.0544170000000008,
+            "minifyColdMs": 1.808208999999998,
+            "minifyWarmMs": 1.1125830000000008,
+            "cssColdMs": 0.5158750000000012,
+            "cssWarmMs": 0.14750000000000796
+          },
+          {
+            "trial": 2,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7970830000000042,
+            "parseWarmMs": 0.5678750000000008,
+            "resolveColdMs": 2.1044589999999985,
+            "resolveWarmMs": 0.9883750000000049,
+            "transformColdMs": 1.7114159999999998,
+            "transformWarmMs": 1.0509579999999943,
+            "minifyColdMs": 1.6060420000000022,
+            "minifyWarmMs": 1.1597500000000025,
+            "cssColdMs": 0.46641699999999986,
+            "cssWarmMs": 0.17012499999999875
+          },
+          {
+            "trial": 3,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8019169999999995,
+            "parseWarmMs": 0.551791999999999,
+            "resolveColdMs": 1.9565839999999994,
+            "resolveWarmMs": 0.9682080000000042,
+            "transformColdMs": 1.5604999999999976,
+            "transformWarmMs": 1.075333999999998,
+            "minifyColdMs": 1.7414170000000055,
+            "minifyWarmMs": 1.1702079999999953,
+            "cssColdMs": 0.5589169999999939,
+            "cssWarmMs": 0.17841599999999858
+          },
+          {
+            "trial": 4,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7932500000000005,
+            "parseWarmMs": 0.5569169999999986,
+            "resolveColdMs": 2.0535409999999956,
+            "resolveWarmMs": 0.9974999999999881,
+            "transformColdMs": 1.6787920000000014,
+            "transformWarmMs": 1.0701669999999979,
+            "minifyColdMs": 1.6102500000000006,
+            "minifyWarmMs": 1.1551659999999941,
+            "cssColdMs": 0.4607910000000004,
+            "cssWarmMs": 0.1802500000000009
+          },
+          {
+            "trial": 5,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8257079999999952,
+            "parseWarmMs": 0.5452920000000034,
+            "resolveColdMs": 2.1902919999999995,
+            "resolveWarmMs": 0.9612090000000109,
+            "transformColdMs": 1.7215829999999954,
+            "transformWarmMs": 1.0269589999999909,
+            "minifyColdMs": 1.6217499999999987,
+            "minifyWarmMs": 1.110208,
+            "cssColdMs": 0.48083299999999696,
+            "cssWarmMs": 0.1475420000000014
+          },
+          {
+            "trial": 6,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7767499999999998,
+            "parseWarmMs": 0.5389169999999979,
+            "resolveColdMs": 1.9739999999999966,
+            "resolveWarmMs": 1.0090829999999968,
+            "transformColdMs": 1.6024579999999986,
+            "transformWarmMs": 1.0537500000000009,
+            "minifyColdMs": 1.8079579999999993,
+            "minifyWarmMs": 1.1723749999999953,
+            "cssColdMs": 0.5228329999999985,
+            "cssWarmMs": 0.14499999999999602
+          },
+          {
+            "trial": 7,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.800459,
+            "parseWarmMs": 0.556207999999998,
+            "resolveColdMs": 2.1010419999999996,
+            "resolveWarmMs": 0.9891250000000014,
+            "transformColdMs": 2.0896669999999986,
+            "transformWarmMs": 1.0824169999999995,
+            "minifyColdMs": 1.6618749999999949,
+            "minifyWarmMs": 1.1266250000000042,
+            "cssColdMs": 0.4805410000000023,
+            "cssWarmMs": 0.18670799999999588
+          },
+          {
+            "trial": 8,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8197919999999996,
+            "parseWarmMs": 0.5508329999999972,
+            "resolveColdMs": 2.1767499999999984,
+            "resolveWarmMs": 0.9679169999999999,
+            "transformColdMs": 1.8520420000000044,
+            "transformWarmMs": 1.0760000000000005,
+            "minifyColdMs": 1.656165999999999,
+            "minifyWarmMs": 1.1569160000000096,
+            "cssColdMs": 0.4973329999999976,
+            "cssWarmMs": 0.17570899999999767
+          },
+          {
+            "trial": 9,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.774708000000004,
+            "parseWarmMs": 0.529083,
+            "resolveColdMs": 2.0495419999999953,
+            "resolveWarmMs": 0.9879590000000036,
+            "transformColdMs": 1.829583999999997,
+            "transformWarmMs": 1.0419160000000005,
+            "minifyColdMs": 1.7107079999999968,
+            "minifyWarmMs": 1.1519580000000005,
+            "cssColdMs": 0.5284169999999975,
+            "cssWarmMs": 0.15766700000000355
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bun",
+      "variant": "",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7778330000000011,
+            "parseWarmMs": 0.5095420000000033,
+            "resolveColdMs": 1.861374999999999,
+            "resolveWarmMs": 0.8553330000000017,
+            "transformColdMs": 1.4385419999999982,
+            "transformWarmMs": 0.9842499999999994,
+            "minifyColdMs": 1.444625000000002,
+            "minifyWarmMs": 1.0658750000000055,
+            "cssColdMs": 0.4620839999999973,
+            "cssWarmMs": 0.13912499999999994
+          },
+          {
+            "trial": 1,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8707080000000023,
+            "parseWarmMs": 0.4872079999999954,
+            "resolveColdMs": 1.831042,
+            "resolveWarmMs": 0.8973750000000038,
+            "transformColdMs": 1.3987920000000003,
+            "transformWarmMs": 1.0346249999999984,
+            "minifyColdMs": 1.534875000000003,
+            "minifyWarmMs": 1.1176250000000039,
+            "cssColdMs": 0.4675830000000012,
+            "cssWarmMs": 0.1424999999999983
+          },
+          {
+            "trial": 2,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7886250000000015,
+            "parseWarmMs": 0.48270800000000236,
+            "resolveColdMs": 1.8101659999999988,
+            "resolveWarmMs": 0.8634170000000019,
+            "transformColdMs": 1.5153329999999983,
+            "transformWarmMs": 1.015500000000003,
+            "minifyColdMs": 1.5502909999999979,
+            "minifyWarmMs": 1.0777910000000048,
+            "cssColdMs": 0.556084000000002,
+            "cssWarmMs": 0.13958299999999824
+          },
+          {
+            "trial": 3,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7776250000000005,
+            "parseWarmMs": 0.4916249999999991,
+            "resolveColdMs": 1.8869170000000004,
+            "resolveWarmMs": 0.8999170000000021,
+            "transformColdMs": 1.477999999999998,
+            "transformWarmMs": 1.0374169999999978,
+            "minifyColdMs": 1.5189159999999973,
+            "minifyWarmMs": 1.1616660000000039,
+            "cssColdMs": 0.4817089999999986,
+            "cssWarmMs": 0.139208
+          },
+          {
+            "trial": 4,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7977919999999994,
+            "parseWarmMs": 0.5302919999999958,
+            "resolveColdMs": 1.8692499999999974,
+            "resolveWarmMs": 0.9030419999999992,
+            "transformColdMs": 1.4014999999999986,
+            "transformWarmMs": 1.0472499999999982,
+            "minifyColdMs": 1.5546250000000015,
+            "minifyWarmMs": 1.0922920000000005,
+            "cssColdMs": 0.45979199999999665,
+            "cssWarmMs": 0.15441699999999514
+          },
+          {
+            "trial": 5,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7799170000000011,
+            "parseWarmMs": 0.4871249999999989,
+            "resolveColdMs": 1.894959,
+            "resolveWarmMs": 0.8923750000000013,
+            "transformColdMs": 1.441915999999999,
+            "transformWarmMs": 1.0182909999999978,
+            "minifyColdMs": 1.5362079999999985,
+            "minifyWarmMs": 1.0878340000000009,
+            "cssColdMs": 0.5051670000000001,
+            "cssWarmMs": 0.13670799999999872
+          },
+          {
+            "trial": 6,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.9443750000000009,
+            "parseWarmMs": 0.49475000000000335,
+            "resolveColdMs": 2.1307089999999995,
+            "resolveWarmMs": 0.861457999999999,
+            "transformColdMs": 1.4960839999999997,
+            "transformWarmMs": 1.0076660000000004,
+            "minifyColdMs": 1.5296669999999999,
+            "minifyWarmMs": 1.0997500000000002,
+            "cssColdMs": 0.4821249999999999,
+            "cssWarmMs": 0.13229100000000216
+          },
+          {
+            "trial": 7,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.886375000000001,
+            "parseWarmMs": 0.492207999999998,
+            "resolveColdMs": 1.8615840000000006,
+            "resolveWarmMs": 0.8661659999999998,
+            "transformColdMs": 1.4466670000000015,
+            "transformWarmMs": 1.0072910000000022,
+            "minifyColdMs": 1.5726250000000022,
+            "minifyWarmMs": 1.079375000000006,
+            "cssColdMs": 0.5045830000000002,
+            "cssWarmMs": 0.13487500000000097
+          },
+          {
+            "trial": 8,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8394159999999999,
+            "parseWarmMs": 0.515749999999997,
+            "resolveColdMs": 1.8217089999999985,
+            "resolveWarmMs": 0.8851660000000052,
+            "transformColdMs": 1.419875000000001,
+            "transformWarmMs": 1.0276249999999933,
+            "minifyColdMs": 1.6753750000000025,
+            "minifyWarmMs": 1.1103750000000012,
+            "cssColdMs": 0.49441699999999855,
+            "cssWarmMs": 0.14266699999999588
+          },
+          {
+            "trial": 9,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7642920000000011,
+            "parseWarmMs": 0.4895420000000037,
+            "resolveColdMs": 1.916791,
+            "resolveWarmMs": 0.8783329999999978,
+            "transformColdMs": 1.747833,
+            "transformWarmMs": 1.0474589999999964,
+            "minifyColdMs": 1.5417090000000009,
+            "minifyWarmMs": 1.0858750000000015,
+            "cssColdMs": 0.47679199999999966,
+            "cssWarmMs": 0.13608399999999676
+          }
+        ],
+        "failures": []
+      }
+    },
+    {
+      "runtime": "bento",
+      "variant": "",
+      "outcome": {
+        "status": "measured",
+        "samples": [
+          {
+            "trial": 0,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.837333000000001,
+            "parseWarmMs": 0.5525409999999908,
+            "resolveColdMs": 2.3695419999999956,
+            "resolveWarmMs": 1.7185419999999993,
+            "transformColdMs": 1.2531669999999977,
+            "transformWarmMs": 1.0548749999999956,
+            "minifyColdMs": 1.6670000000000016,
+            "minifyWarmMs": 1.1630420000000044,
+            "cssColdMs": 0.5484170000000006,
+            "cssWarmMs": 0.17575000000000784
+          },
+          {
+            "trial": 1,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8133330000000001,
+            "parseWarmMs": 0.5633330000000001,
+            "resolveColdMs": 2.6491669999999985,
+            "resolveWarmMs": 1.7845420000000018,
+            "transformColdMs": 1.5270829999999975,
+            "transformWarmMs": 1.0916249999999934,
+            "minifyColdMs": 1.8872920000000022,
+            "minifyWarmMs": 1.1432499999999948,
+            "cssColdMs": 0.5591250000000016,
+            "cssWarmMs": 0.17958300000000094
+          },
+          {
+            "trial": 2,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7809169999999952,
+            "parseWarmMs": 0.532833999999994,
+            "resolveColdMs": 2.5637919999999994,
+            "resolveWarmMs": 1.725666000000004,
+            "transformColdMs": 1.8149999999999977,
+            "transformWarmMs": 1.086749999999995,
+            "minifyColdMs": 1.622290999999997,
+            "minifyWarmMs": 1.1409170000000017,
+            "cssColdMs": 0.5799999999999983,
+            "cssWarmMs": 0.15679199999999582
+          },
+          {
+            "trial": 3,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8082919999999945,
+            "parseWarmMs": 0.5787499999999994,
+            "resolveColdMs": 2.4955420000000004,
+            "resolveWarmMs": 1.720041000000002,
+            "transformColdMs": 1.6572090000000017,
+            "transformWarmMs": 1.0741669999999885,
+            "minifyColdMs": 1.890584000000004,
+            "minifyWarmMs": 1.1677919999999986,
+            "cssColdMs": 0.5341250000000031,
+            "cssWarmMs": 0.17945899999999426
+          },
+          {
+            "trial": 4,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 1.2785420000000016,
+            "parseWarmMs": 0.5483329999999995,
+            "resolveColdMs": 2.697624999999995,
+            "resolveWarmMs": 1.716458000000003,
+            "transformColdMs": 1.5282499999999999,
+            "transformWarmMs": 1.0431659999999994,
+            "minifyColdMs": 1.7247500000000002,
+            "minifyWarmMs": 1.1664999999999992,
+            "cssColdMs": 0.5906659999999988,
+            "cssWarmMs": 0.15866599999999664
+          },
+          {
+            "trial": 5,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8139590000000041,
+            "parseWarmMs": 0.5564579999999921,
+            "resolveColdMs": 2.542625000000001,
+            "resolveWarmMs": 1.733000000000004,
+            "transformColdMs": 1.5201250000000002,
+            "transformWarmMs": 1.0650839999999988,
+            "minifyColdMs": 1.8001670000000018,
+            "minifyWarmMs": 1.1672920000000033,
+            "cssColdMs": 0.5482919999999964,
+            "cssWarmMs": 0.1875
+          },
+          {
+            "trial": 6,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8071669999999997,
+            "parseWarmMs": 0.5602080000000029,
+            "resolveColdMs": 2.595791999999996,
+            "resolveWarmMs": 1.7274579999999986,
+            "transformColdMs": 1.4657079999999993,
+            "transformWarmMs": 1.0636250000000018,
+            "minifyColdMs": 1.7390419999999978,
+            "minifyWarmMs": 1.1814170000000104,
+            "cssColdMs": 0.5706670000000003,
+            "cssWarmMs": 0.16070799999999963
+          },
+          {
+            "trial": 7,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.800457999999999,
+            "parseWarmMs": 0.5236670000000032,
+            "resolveColdMs": 2.6584999999999965,
+            "resolveWarmMs": 1.7079999999999984,
+            "transformColdMs": 1.5117499999999993,
+            "transformWarmMs": 1.0655419999999935,
+            "minifyColdMs": 1.9997079999999983,
+            "minifyWarmMs": 1.1542500000000047,
+            "cssColdMs": 0.5943329999999989,
+            "cssWarmMs": 0.1594999999999942
+          },
+          {
+            "trial": 8,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.8311250000000001,
+            "parseWarmMs": 0.5666659999999979,
+            "resolveColdMs": 2.659957999999996,
+            "resolveWarmMs": 1.7378749999999954,
+            "transformColdMs": 1.6123340000000042,
+            "transformWarmMs": 1.0342500000000001,
+            "minifyColdMs": 1.7381669999999971,
+            "minifyWarmMs": 1.1600830000000002,
+            "cssColdMs": 0.5573329999999999,
+            "cssWarmMs": 0.1651249999999962
+          },
+          {
+            "trial": 9,
+            "scripts": 28,
+            "styles": 1,
+            "bytes": 46998,
+            "digests": {
+              "parse": "badef0b21b6aea22",
+              "resolve": "4d9cf7019793702b",
+              "transform": "25e99053f5cbea3c",
+              "minify": "488947d9caa56c89",
+              "css": "607bdefafccf25dd"
+            },
+            "parseColdMs": 0.7788340000000034,
+            "parseWarmMs": 0.5636250000000018,
+            "resolveColdMs": 2.7909580000000034,
+            "resolveWarmMs": 1.7736249999999956,
+            "transformColdMs": 1.6276670000000024,
+            "transformWarmMs": 1.0806669999999983,
+            "minifyColdMs": 1.7722499999999997,
+            "minifyWarmMs": 1.1524999999999892,
+            "cssColdMs": 0.5519999999999996,
+            "cssWarmMs": 0.16004200000000424
+          }
+        ],
+        "failures": []
+      }
+    }
+  ],
+  "notes": [
+    "Every measured runtime produced identical outputs for parse, resolve, transform, minify, css (output digests match)."
+  ]
+}
