@@ -1,3 +1,5 @@
+![Bento: a bento box whose compartments hold a terminal prompt, code brackets, a globe, and a database](assets/bento-banner.png)
+
 # Bento
 
 Bento is a TypeScript runtime written in Rust. It is a library that runs JavaScript, TypeScript, JSX, and TSX applications on V8 with Node and Web APIs, plus a `bento` command built on that library. The application that embeds the runtime decides which files, network endpoints, environment variables, and native addons the code may reach; a script gets nothing it was not granted.
