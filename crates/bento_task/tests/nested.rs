@@ -161,6 +161,55 @@ fn assignment_scoped_to_another_command_leaves_the_file_value_to_the_nested_mode
 }
 
 #[test]
+fn export_run_in_the_shell_through_a_wrapper_still_wins_in_the_nested_launch() {
+    for command in [
+        format!("command export DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("command readonly DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("command -p export DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("command command export DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("builtin export DATABASE_URL=base; {NESTED_WATCH}"),
+        format!("command builtin readonly DATABASE_URL=base; {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn export_executed_as_a_program_leaves_the_file_value_to_the_nested_mode() {
+    for command in [
+        format!("env export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("/usr/bin/env export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("nohup export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("/usr/bin/nohup readonly DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("command env export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("env command export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+        format!("nohup command export DATABASE_URL=base > /dev/null 2>&1; {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command}");
+    }
+}
+
+#[test]
+fn command_described_rather_than_run_leaves_the_file_value_to_the_nested_mode() {
+    for command in [
+        format!("command -v export DATABASE_URL=base > /dev/null; {NESTED_WATCH}"),
+        format!("command -V readonly DATABASE_URL=base > /dev/null; {NESTED_WATCH}"),
+        format!("command -pv export DATABASE_URL=base > /dev/null; {NESTED_WATCH}"),
+        format!("command -p -V export DATABASE_URL=base > /dev/null; {NESTED_WATCH}"),
+        format!("command command -v export DATABASE_URL=base > /dev/null; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base command -v bento > /dev/null; {NESTED_WATCH}"),
+    ] {
+        let nested = nested_launch_started_by(&command);
+
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command}");
+    }
+}
+
+#[test]
 fn assignment_on_a_special_builtin_persists_for_the_nested_launch() {
     let nested = nested_launch_started_by(&format!("DATABASE_URL=base :; {NESTED_WATCH}"));
 
