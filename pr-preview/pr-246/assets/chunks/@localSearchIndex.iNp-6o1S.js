@@ -1,0 +1,1 @@
+import{t as e}from"./framework.DZ-FOGEJ.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.rofOr3jF.js`),[])};export{t as default};
