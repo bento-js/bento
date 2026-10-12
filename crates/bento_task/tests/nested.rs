@@ -56,6 +56,28 @@ fn nested_launch_with_project_scripts_started_by(command: &str) -> LaunchEnviron
     nested_launch_in(&temp)
 }
 
+/// Programs a project may install under the names of shell builtins.
+const LOCAL_PROGRAMS: [&str; 4] = ["builtin", "command", "test", "true"];
+
+/// A project whose `dev` task runs `command`, with a script named like each of
+/// [`LOCAL_PROGRAMS`] in `node_modules/.bin`, which a task's `PATH` searches ahead of the
+/// system's utilities. Each script appends its name to `local-programs.log`, ignores its
+/// arguments, and runs a nested watch launch.
+fn project_with_local_programs(command: &str) -> TempProject {
+    let temp = TempProject::with_tasks(json!({ "dev": command }));
+    for name in LOCAL_PROGRAMS {
+        let script = format!("#!/bin/sh\necho {name} >> local-programs.log\nexec {NESTED_WATCH}\n");
+        temp.write_executable(&format!("node_modules/.bin/{name}"), &script);
+    }
+    temp
+}
+
+/// The names of the local programs the task ran, one per line.
+fn local_programs_run(temp: &TempProject) -> String {
+    let log = "local-programs.log";
+    if temp.path(log).exists() { temp.read(log) } else { String::new() }
+}
+
 fn nested_launch_in(temp: &TempProject) -> LaunchEnvironment {
     temp.write(".env", "DATABASE_URL=base\n");
     temp.write(".env.development", "DATABASE_URL=dev\n");
@@ -150,8 +172,6 @@ fn assignment_scoped_to_another_command_leaves_the_file_value_to_the_nested_mode
         format!("DATABASE_URL=base echo > /dev/null; {NESTED_WATCH}"),
         format!("DATABASE_URL=base test -d .; {NESTED_WATCH}"),
         format!("DATABASE_URL=base command true; {NESTED_WATCH}"),
-        format!("env DATABASE_URL=base true; {NESTED_WATCH}"),
-        format!("env -S 'DATABASE_URL=base true'; {NESTED_WATCH}"),
         format!("DATABASE_URL=base >/dev/null true; {NESTED_WATCH}"),
     ] {
         let nested = nested_launch_started_by(&command);
@@ -510,8 +530,6 @@ fn wrapper_named_by_a_path_that_starts_no_launch_leaves_the_file_value_to_the_ne
     for command in [
         format!("DATABASE_URL=base /usr/bin/env > /dev/null; {NESTED_WATCH}"),
         format!("DATABASE_URL=base ./bin/env > /dev/null; {NESTED_WATCH}"),
-        format!("/usr/bin/env DATABASE_URL=base true; {NESTED_WATCH}"),
-        format!("DATABASE_URL=base /usr/bin/nohup true > /dev/null; {NESTED_WATCH}"),
     ] {
         let nested = nested_launch_with_project_scripts_started_by(&command);
 
@@ -528,5 +546,61 @@ fn program_named_by_a_path_like_a_builtin_may_still_start_the_nested_launch() {
         let nested = nested_launch_with_project_scripts_started_by(command);
 
         assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn local_program_named_like_a_builtin_receives_the_assignments_of_its_wrapper() {
+    for (command, program) in [
+        ("env DATABASE_URL=base test", "test"),
+        ("DATABASE_URL=base exec test", "test"),
+        ("exec env DATABASE_URL=base test", "test"),
+        ("nohup env DATABASE_URL=base test > /dev/null", "test"),
+        ("env DATABASE_URL=base true", "true"),
+        ("/usr/bin/env DATABASE_URL=base true", "true"),
+        ("env -S 'DATABASE_URL=base true'", "true"),
+        ("DATABASE_URL=base nohup true > /dev/null", "true"),
+        ("DATABASE_URL=base /usr/bin/nohup true > /dev/null", "true"),
+        ("env DATABASE_URL=base command true", "command"),
+        ("env DATABASE_URL=base command -v bento", "command"),
+        ("env DATABASE_URL=base builtin true", "builtin"),
+    ] {
+        let temp = project_with_local_programs(command);
+        let nested = nested_launch_in(&temp);
+
+        assert_eq!(local_programs_run(&temp), format!("{program}\n"), "{command}");
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("base"), "{command}");
+    }
+}
+
+#[test]
+fn export_after_a_local_command_program_assigns_nothing() {
+    for command in [
+        "env command export DATABASE_URL=base",
+        "nohup command export DATABASE_URL=base > /dev/null",
+        "exec command export DATABASE_URL=base",
+    ] {
+        let temp = project_with_local_programs(command);
+        let nested = nested_launch_in(&temp);
+
+        assert_eq!(local_programs_run(&temp), "command\n", "{command}");
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command}");
+    }
+}
+
+#[test]
+fn shell_builtin_runs_instead_of_a_local_program_of_the_same_name() {
+    for command in [
+        format!("DATABASE_URL=base true; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base test -d .; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base command true; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base builtin true; {NESTED_WATCH}"),
+        format!("DATABASE_URL=base command -v bento > /dev/null; {NESTED_WATCH}"),
+    ] {
+        let temp = project_with_local_programs(&command);
+        let nested = nested_launch_in(&temp);
+
+        assert_eq!(local_programs_run(&temp), "", "{command}");
+        assert_eq!(value(&nested, "DATABASE_URL"), Some("dev"), "{command}");
     }
 }

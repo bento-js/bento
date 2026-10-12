@@ -27,17 +27,13 @@ const EXPORTING_BUILTINS: [&str; 2] = ["export", "readonly"];
 /// names, such as `export`, has the effect it has as the command word.
 const SHELL_WRAPPERS: [&str; 2] = ["builtin", "command"];
 
-/// Utilities that execute their first operand as a program found on `PATH`, with the same
-/// environment. That program is never one of the shell's builtins: `nohup export` runs a
-/// program named `export`, and assigns nothing in the shell.
-const PROGRAM_WRAPPERS: [&str; 2] = ["exec", "nohup"];
-
-/// The modeled utilities that are also programs, so a path to one runs that utility:
-/// `/usr/bin/env` is `env`, and reading it as any other program would lose its operands.
-/// `builtin`, `command`, and `exec` are shell builtins, so a path named like one is some
-/// other program, as is a path named like a builtin that starts no program, such as `./test`.
-/// Either may be a project script; read as any other program, it at worst keeps a value.
-const PROGRAMS_NAMED_BY_PATH: [&str; 2] = ["env", "nohup"];
+/// The modeled utilities that are programs rather than shell builtins, so a program lookup
+/// or a path such as `/usr/bin/env` reaches them, and reading one as any other program
+/// would lose its operands. Any other word a program lookup finds or a path names is some
+/// other program, even one named like a builtin, such as `test`, `command`, or `exec`: a
+/// project script in `node_modules/.bin` may take that name and start `bento`. Read as any
+/// other program, it at worst keeps a value.
+const MODELED_PROGRAMS: [&str; 2] = ["env", "nohup"];
 
 /// Names assigned in `command`'s text that a nested `bento` launch it starts may see.
 pub(crate) fn assigned_names(command: &str) -> BTreeSet<String> {
@@ -58,7 +54,8 @@ enum Effect {
 enum Lookup {
     /// The shell finds it, so a builtin it names runs in the shell itself.
     Shell,
-    /// A program executes it from `PATH`, as `exec`, `env`, and `nohup` do.
+    /// A program executes it from `PATH`, as `exec`, `env`, and `nohup` do, so it names a
+    /// program even when a builtin has the same name.
     Program,
 }
 
@@ -87,30 +84,40 @@ fn command_effect(command: &[Cow<'_, str>], lookup: Lookup) -> Effect {
         return Effect::Assigns(Vec::new());
     };
     let name = utility_name(word);
-    if lookup == Lookup::Shell && EXPORTING_BUILTINS.contains(&name) {
+    if lookup == Lookup::Shell
+        && let Some(effect) = builtin_effect(name, arguments)
+    {
+        return effect;
+    }
+    match name {
+        "env" => env_effect(arguments),
+        "nohup" => command_effect(skip_options(arguments), Lookup::Program),
+        _ => Effect::Assigns(Vec::new()),
+    }
+}
+
+/// The effect of the builtin `name` given `arguments`, or `None` when `name` is no builtin
+/// modeled here. Only the shell runs builtins, so only a word it finds can name one.
+fn builtin_effect(name: &str, arguments: &[Cow<'_, str>]) -> Option<Effect> {
+    if EXPORTING_BUILTINS.contains(&name) {
         let operands = arguments.iter().filter(|word| !word.starts_with('-'));
-        return Effect::Assigns(assignment_names(operands.map(Cow::as_ref)).collect());
+        return Some(Effect::Assigns(assignment_names(operands.map(Cow::as_ref)).collect()));
     }
     if NON_LAUNCHING_BUILTINS.contains(&name) || (name == "command" && only_describes(arguments)) {
-        return Effect::NoProgram;
+        return Some(Effect::NoProgram);
     }
     if SHELL_WRAPPERS.contains(&name) {
-        return command_effect(skip_options(arguments), lookup);
+        return Some(command_effect(skip_options(arguments), Lookup::Shell));
     }
-    if PROGRAM_WRAPPERS.contains(&name) {
-        return command_effect(skip_options(arguments), Lookup::Program);
-    }
-    if name == "env" {
-        return env_effect(arguments);
-    }
-    Effect::Assigns(Vec::new())
+    // `exec` replaces the shell with the program its operand names, found on `PATH`.
+    (name == "exec").then(|| command_effect(skip_options(arguments), Lookup::Program))
 }
 
 /// The name of the utility the command word `word` runs: a path to one of
-/// [`PROGRAMS_NAMED_BY_PATH`] runs that utility, and any other word stands for itself.
+/// [`MODELED_PROGRAMS`] runs that utility, and any other word stands for itself.
 fn utility_name(word: &str) -> &str {
     match word.rsplit_once('/') {
-        Some((_, file_name)) if PROGRAMS_NAMED_BY_PATH.contains(&file_name) => file_name,
+        Some((_, file_name)) if MODELED_PROGRAMS.contains(&file_name) => file_name,
         _ => word,
     }
 }
