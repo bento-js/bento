@@ -5,15 +5,17 @@ import { deriveStatus, formatStatus, type Facts, type Proposal, type Step } from
 let openPullRequest = {
     number: 1,
     isDraft: true,
+    state: "OPEN" as const,
+    baseRefName: "main",
     url: "https://github.com/owner/repo/pull/1",
     title: "Feature",
-    isMerged: false,
 };
 
 function facts(overrides: Partial<Facts> = {}): Facts {
     return {
         branch: "feature",
         isDefaultBranch: false,
+        defaultBranch: "main",
         hasUpstream: true,
         unpushedCommits: 0,
         pullRequest: openPullRequest,
@@ -103,18 +105,113 @@ test("derives completion for an accepted proposal", () => {
     });
 });
 
-test("derives done for an implemented merged pull request", () => {
-    assertPhase(
+test("confirms the accepted record before readying a draft PR", () => {
+    let status = deriveStatus(facts({ proposal: proposal("accepted") }));
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/record.*confirm.*pull request.*mark.*ready/i);
+});
+
+test("inspects the merged revision before reconciling a locally accepted proposal", () => {
+    let input = facts({
+        proposal: proposal("accepted"),
+        pullRequest: { ...openPullRequest, isDraft: false, state: "MERGED" },
+    });
+    let status = deriveStatus(input);
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/confirm.*merged.*if absent.*reconcil/i);
+    expect(status.next).not.toMatch(/perform.*merge|record.*in this feature pull request/i);
+    expect(formatStatus(input, status)).toContain("PR #1 (merged)");
+});
+
+test("keeps a merged implementation in completion while required delivery remains separate", () => {
+    let input = facts({
+        proposal: proposal("implemented"),
+        pullRequest: { ...openPullRequest, isDraft: false, state: "MERGED" },
+    });
+    let status = assertPhase(input, {
+        phase: "5",
+        actor: "agent",
+        skill: ".agents/skills/completing-a-feature/",
+    });
+
+    expect(status.next).toMatch(/required release|required delivery/i);
+    expect(formatStatus(input, status)).toContain("PR #1 (merged)");
+});
+
+test("does not treat a default-branch merge as proof it was the mandated target", () => {
+    let status = deriveStatus(
         facts({
             proposal: proposal("implemented"),
-            pullRequest: { ...openPullRequest, isMerged: true },
+            pullRequest: { ...openPullRequest, isDraft: false, state: "MERGED" },
         }),
-        {
-            phase: "done",
-            actor: "you",
-            skill: null,
-        },
     );
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/confirm.*authorized.*target/i);
+    expect(status.next).not.toMatch(/^Complete the required delivery/i);
+});
+
+test("inspects an accepted record even when its PR merged into an authorized staging branch", () => {
+    let status = deriveStatus(
+        facts({
+            proposal: proposal("accepted"),
+            pullRequest: {
+                ...openPullRequest,
+                isDraft: false,
+                state: "MERGED",
+                baseRefName: "proposal/weekend-remix-guest-book",
+            },
+        }),
+    );
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/inspect|confirm.*merged.*record/i);
+    expect(status.next).toMatch(/authorized target/i);
+});
+
+test("checks an open PR's merge target before recommending integration", () => {
+    let status = deriveStatus(
+        facts({
+            proposal: proposal("implemented"),
+            pullRequest: { ...openPullRequest, isDraft: false, baseRefName: "main" },
+        }),
+    );
+
+    expect(status.next).toMatch(/confirm.*authorized.*target/i);
+});
+
+test("asks whether staging was the authorized merge target", () => {
+    let status = deriveStatus(
+        facts({
+            proposal: proposal("implemented"),
+            pullRequest: {
+                ...openPullRequest,
+                isDraft: false,
+                state: "MERGED",
+                baseRefName: "staging",
+            },
+        }),
+    );
+
+    expect(status.phase).toBe("5");
+    expect(status.actor).toBe("approval owner");
+    expect(status.next).toMatch(/staging.*authorized target/i);
+});
+
+test("does not assume a merged PR reached the authorized target when the default is unknown", () => {
+    let status = deriveStatus(
+        facts({
+            defaultBranch: null,
+            proposal: proposal("implemented"),
+            pullRequest: { ...openPullRequest, isDraft: false, state: "MERGED" },
+        }),
+    );
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/authorized target/i);
+    expect(status.title).not.toBe("Implementation merged");
 });
 
 test("derives a closed state for a rejected proposal", () => {
@@ -147,15 +244,44 @@ test("derives a closed state with its successor for a superseded proposal", () =
     expect(formatStatus(input, status)).toMatch(/proposal\.0002/);
 });
 
-test("names an implemented proposal with an unmerged pull request as inconsistent", () => {
+test("routes an implemented draft PR to completion instead of treating it as inconsistent", () => {
     let status = assertPhase(facts({ proposal: proposal("implemented") }), {
-        phase: "3 → 4",
-        actor: "you",
-        skill: null,
+        phase: "5",
+        actor: "agent",
+        skill: ".agents/skills/completing-a-feature/",
     });
 
-    expect(status.notices).toStrictEqual([{ kind: "implemented-unmerged" }]);
+    expect(status.notices).toStrictEqual([]);
+    expect(status.next).toMatch(/confirm.*implemented record.*pull request.*mark.*ready/i);
 });
+
+test("requires record verification before merging an implemented open PR", () => {
+    let status = deriveStatus(
+        facts({
+            proposal: proposal("implemented"),
+            pullRequest: { ...openPullRequest, isDraft: false },
+        }),
+    );
+
+    expect(status.phase).toBe("5");
+    expect(status.next).toMatch(/confirm.*implemented record.*pull request.*before.*merge/i);
+});
+
+test.each(["accepted", "implemented"])(
+    "stops for the approval owner's decision when a %s PR closes without merging",
+    proposalStatus => {
+        let input = facts({
+            proposal: proposal(proposalStatus),
+            pullRequest: { ...openPullRequest, isDraft: false, state: "CLOSED" },
+        });
+        let status = deriveStatus(input);
+
+        expect(status.phase).toBe("5");
+        expect(status.actor).toBe("approval owner");
+        expect(status.next).toMatch(/reopen|withdraw/);
+        expect(formatStatus(input, status)).toContain("PR #1 (closed)");
+    },
+);
 
 test("flags a draft pull request when the proposal is in active review", () => {
     let status = deriveStatus(facts({ proposal: proposal("active-review") }));

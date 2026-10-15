@@ -5,7 +5,7 @@ description: Use after a pull request has been reviewed and the change is accept
 
 # Completing a Feature
 
-**Phase 5.** Complete work in this order: **process feedback → record policies and decisions → update the vision → merge → release → dependent-repo updates → cleanup**.
+**Phase 5.** Complete work in this order: **process feedback → record policies and decisions → update the vision → record `implemented` in the feature PR → authorized merge → required delivery → dependent-repo updates → authorized cleanup**.
 
 ## 1. Process feedback
 
@@ -61,27 +61,33 @@ Reread `VISION.md`. Update it when the accepted change alters the project's capa
 
 Consult the human before a substantial rewrite. Do not turn a narrow completion change into a new vision exercise.
 
-## 4. Merge
+## 4. Record the accepted implementation
+
+After acceptance is recorded and the vision update is complete, set the proposal to `implemented` in the original feature pull request. This status records accepted implementation, not a merged pull request or completed release. Record acceptance and any outstanding required delivery in the proposal or PR; commit and push the record, then obtain fresh checks on that integration candidate. Never open a follow-up PR solely to move this status.
+
+Confirm the status record is in the pull request revision before marking a draft PR ready or merging. A local file or unpushed commit is not proof. For an already merged pull request, inspect its merged revision whether the local proposal reads `accepted` or `implemented`; neither local status proves what merged. If the record is absent, ask the approval owner how to reconcile it while keeping required delivery visible; do not amend a merged PR or open a status-only PR.
+
+## 5. Merge
 
 Merge only after acceptance is recorded, and only into the stated merge target through the pull request. Never push directly to the default branch. The human accepts the work; where a bounded build mandate explicitly delegates acceptance and merge ([`AGENTS.md`](../../../AGENTS.md#bounded-build-mandates)), the strategist may accept and merge after clean independent reviews of the latest relevant revision and fresh passing checks and smoke of the integration candidate. Fix unresolved defects and unmet outcomes within scope, then repeat verification and review. Disputed material findings and changes beyond the mandate require the human; all of these block autonomous merge while unresolved.
 
-Preserve the record of what was proposed, what was implemented, why decisions were made, what review found, and how the final state differs from earlier revisions.
+If the accepted PR remains draft, follow the Phase 5 recovery in `reviewing-an-implementation`: verify and repair its readiness report and review evidence without rolling `accepted` or `implemented` back to `active-review`. Confirm the implementation record in the PR, then mark it ready and verify the latest revision before merging. A draft PR is not permission to skip readiness or review.
 
-Choose a merge strategy that retains that context in the PR and its history. Do not squash the work into one opaque commit that discards the discussion.
+Preserve the record of what was proposed, what was implemented, why decisions were made, what review found, and how the final state differs from earlier revisions. Choose a merge strategy that retains that context in the PR and its history. Do not squash the work into one opaque commit that discards the discussion.
 
-Set `implemented` only after the merge and the delivery the proposal or mandate requires, including a release where one is required and authorized — not before, because an unshipped proposal marked implemented misrepresents the record. Never mark an unperformed required release complete; merge-only work reaches `implemented` without publishing anything.
-
-## 5. Release
+## 6. Release
 
 When release is required and authorized, use the project's existing CI/CD process. Run `vp run` with no task to find the release path. Skip publication for approved merge-only delivery.
 
 **Never publish without explicit human confirmation.** Approval to merge is not approval to release. A mandate that delegates merging delegates nothing about publication, deployment, credentials, access, or any other destructive or outward-facing act; each of those needs the human's explicit authority for that act.
 
-## 6. Update dependent repositories
+`implemented` does not complete a required release. Keep that obligation visible in the proposal or PR until the authorized release actually happens; do not call the feature delivered before then.
+
+## 7. Update dependent repositories
 
 After an authorized release, update any dependent draft PRs consuming a preview version to the production release, within the granted repository authority. Mark them ready for review when appropriate. No dependent-release update is required for merge-only delivery.
 
-## 7. Clean up
+## 8. Clean up
 
 After the required delivery, perform authorized cleanup of temporary files, preview configuration, and feature branches.
 
@@ -99,11 +105,12 @@ Cleanup runs when confidence is highest. Treat it as a separate destructive oper
 - You merged without preserving why the final state differs.
 - You released because the PR merged.
 - A dependent PR still uses a preview version after release.
-- A preview or prerelease artifact outlives its PR.
+- A preview or prerelease artifact outlives its PR without a tracked, authorized teardown plan.
 - You deleted a branch, force-pushed, or tore down a published prerelease artifact without explicit human confirmation.
 - You merged with stale or failing checks, an unresolved defect, or a disputed review finding still open.
 - You acted past a mandate's boundaries, or widened or renewed one yourself, instead of stopping and asking.
-- You marked `implemented` while a required release had not happened.
+- You waited until after merge to set `implemented` and opened a bookkeeping-only PR.
+- You treated `implemented` as proof that a required release happened.
 
 Any of these means stop and return to the relevant ordered step.
 

@@ -364,9 +364,15 @@ Because the vision is intended to describe the project as it currently exists an
 
 The agent may consult me before making substantial changes to the vision.
 
+### Implementation Record
+
+After acceptance and the vision update, set the proposal to `implemented` in the original feature pull request before merging it. This records the accepted implementation, not integration or release. Keep the approval owner's acceptance and any outstanding required delivery visible in the proposal or pull request. Verify the updated integration candidate; never open a follow-up pull request solely to change the proposal status.
+
+Confirm the status record is in the pull request revision, not only the local checkout, before marking a draft pull request ready or merging. If an earlier pull request already merged, inspect its merged revision before concluding a local `accepted` status means the record is missing. Ask the approval owner how to reconcile an absent record instead of editing a merged pull request or opening a status-only pull request.
+
 ### Merge
 
-The agent merges the pull request into the authorized target branch after direct human approval or under an active mandate's explicit merge grant. One integration owner serializes merges and verifies the latest integration candidate. Direct pushes to the default branch remain prohibited.
+The agent merges the pull request into the authorized target branch after direct human approval or under an active mandate's explicit merge grant, once the implementation record is present in the latest pull request revision and integration checks are fresh. If the accepted pull request remains draft, reconcile its readiness record, mark it ready, and verify that revision before merging. One integration owner serializes merges. Direct pushes to the default branch remain prohibited.
 
 The merge should preserve enough information for future humans or agents to recover:
 
@@ -381,7 +387,7 @@ The proposal and relevant pull request history therefore form part of the long-t
 
 ### Release
 
-When the proposal requires a release and the human has explicitly authorized that action, release through the project's CI/CD process using the required mechanism, such as a Git tag, package publication, or deployment. Merge approval alone does not authorize publication. Set `implemented` only after the merge and all required delivery are complete; a proposal whose approved delivery is merge-only needs no fabricated release.
+When the proposal requires a release and the human has explicitly authorized that action, release through the project's CI/CD process using the required mechanism, such as a Git tag, package publication, or deployment. Merge approval alone does not authorize publication. `implemented` records accepted implementation, not completed delivery: track every required release separately until it happens. A merge-only change needs no fabricated release.
 
 ### Dependent Work
 
@@ -407,7 +413,7 @@ At the project level:
 
 For each feature:
 
-**human consent or active mandate → branch → draft pull request → grounding and ontology review when needed → baseline study → approved proposal → tests → guides → code → validation → excellence pass → inline reviews → cross-artifact review → adversarial review → preview → ready pull request → acceptance review → revision or acceptance → vision update → authorized merge and delivery → dependent updates → authorized cleanup**
+**human consent or active mandate → branch → draft pull request → grounding and ontology review when needed → baseline study → approved proposal → tests → guides → code → validation → excellence pass → inline reviews → cross-artifact review → adversarial review → preview → ready pull request → acceptance review → revision or acceptance → vision update → implemented record in feature pull request → authorized merge and delivery → dependent updates → authorized cleanup**
 
 The central invariant of the process is that no single artifact defines the feature by itself.
 

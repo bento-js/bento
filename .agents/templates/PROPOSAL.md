@@ -20,13 +20,13 @@ Lifecycle:
 - `awaiting-implementation` — Phase 3 implementation may begin.
 - `active-review` — Phase 4 acceptance review; readiness is posted and the pull request is ready.
 - `returned-for-revisions` — Phase 4 review returned the work to Phase 2 or Phase 3.
-- `accepted` — Phase 5 vision update, merge, and required delivery are underway.
-- `implemented` — merged, with every delivery this proposal requires performed; done. A merge-only change needs no release; a required release that has not happened keeps the proposal in `accepted`.
+- `accepted` — Phase 5 vision update and final implementation record are underway.
+- `implemented` — the accepted implementation and final records are committed in the feature pull request before merge. Merge and any required delivery remain separate.
 - `rejected` — the approval owner declined the change; retained as a record.
 - `withdrawn` — the author pulled it; retained as a record.
 - `superseded` — a later proposal replaced it; retained as a record.
 Normal path: `draft` → `awaiting-implementation` → `active-review` → `accepted` → `implemented`.
-Who decides: the approval owner decides `awaiting-implementation`, `returned-for-revisions`, `accepted`, and `rejected` — the human, or the strategist for work an active build mandate delegates (AGENTS.md#bounded-build-mandates). At the end of Phase 3, `reviewing-an-implementation` alone moves the proposal to `active-review` while posting the readiness report and making the pull request ready. The agent moves `implemented`. Outside delegated authority, deciding is the part an agent must never do alone; under it, no agent accepts its own completion claim as the evidence. Permission to begin implementing is `awaiting-implementation`, never `accepted`.
+Who decides: the approval owner decides `awaiting-implementation`, `returned-for-revisions`, `accepted`, and `rejected` — the human, or the strategist for work an active build mandate delegates (AGENTS.md#bounded-build-mandates). At the end of Phase 3, `reviewing-an-implementation` alone moves the proposal to `active-review` while posting the readiness report and making the pull request ready. After acceptance, the agent moves `implemented` in that same pull request before merge. Outside delegated authority, deciding is the part an agent must never do alone; under it, no agent accepts its own completion claim as the evidence. Permission to begin implementing is `awaiting-implementation`, never `accepted`.
 
 -->
 

@@ -10,8 +10,8 @@ Name each file `<NNNN>-<slug>.md`, using the next four-digit number and a kebab-
 | `awaiting-implementation` | The approval owner settled the proposal. Implementation is underway or not yet started. | approval owner | 3 |
 | `active-review` | First full pass at tests, guides and code exists; report posted and pull request marked ready. | agent | 4 |
 | `returned-for-revisions` | The acceptance review asked for changes. Back to implementation, or to the proposal if the design changed. | approval owner | 4 → 3 or 2 |
-| `accepted` | The approval owner accepted the work. Vision update, merge and required delivery are underway. | approval owner | 5 |
-| `implemented` | Merged, with every delivery the proposal requires performed. | agent | done |
+| `accepted` | The approval owner accepted the work. The vision update and final implementation record are underway. | approval owner | 5 |
+| `implemented` | The accepted implementation and final records are committed in the feature pull request before merge. Merge and required delivery remain separate. | agent | 5 |
 | `rejected` | The approval owner declined the change. Kept as record. | approval owner | terminal |
 | `withdrawn` | The author pulled it. Kept as record. | either | terminal |
 | `superseded` | A later proposal replaced it. | either | terminal |
@@ -20,7 +20,7 @@ Name each file `<NNNN>-<slug>.md`, using the next four-digit number and a kebab-
 
 Every proposal records where its authority came from in `## Authorization`: the human's direct consent for this change, or the mandate proposal and approved revision it runs under, why the change fits inside it, and the approval decisions the strategist took. A proposal may also carry an optional `## Build mandate` section; once the human approves that proposal, it is what delegates a bounded set of decisions. Mandates need no separate directory, frontmatter key, or status — an ordinary proposal in this lifecycle carries them — and a mandate proposal cannot authorize itself.
 
-`implemented` means merged and delivered. A proposal moves there once the merge and every delivery it or its mandate requires are performed. A merge-only change reaches `implemented` without a release; where a release is required it needs authorization of its own, and the proposal stays `accepted` until it has actually happened.
+`implemented` records the accepted implementation in the original feature pull request after the vision update and before merge. It does not claim that the pull request merged or that required delivery happened. The pull request records integration; keep any required release visible in the proposal or pull request until separately authorized and performed. A merge-only change needs no release. For already merged pull requests, inspect the merged revision before deciding whether a local `accepted` record needs reconciliation; do not create a status-only follow-up pull request.
 
 A proposal stays `draft` for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the approval owner iterates on it there — editing directly, or asking for changes — until the design is settled. Iteration is the normal case, not a sign of a bad first draft.
 
