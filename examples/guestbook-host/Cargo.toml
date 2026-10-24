@@ -27,6 +27,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+bento_test_support.workspace = true
 chrono = "0.4.45"
 libc.workspace = true
 tempfile.workspace = true

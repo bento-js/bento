@@ -1,8 +1,8 @@
 //! Driving a `bento` that keeps running: its output as it arrives, the signals it receives,
 //! and the port it serves.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -10,6 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
+
+use bento_test_support::ports::loopback;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -25,22 +27,6 @@ pub(crate) fn free_port() -> u16 {
     let port = NEXT.fetch_add(1, Ordering::Relaxed);
     assert!(SERVER_PORTS.contains(&port), "no ports left for test servers");
     port
-}
-
-pub(crate) fn loopback(port: u16) -> SocketAddr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, port))
-}
-
-pub(crate) fn port_is_taken(address: SocketAddr) -> bool {
-    matches!(TcpListener::bind(address), Err(error) if error.kind() == io::ErrorKind::AddrInUse)
-}
-
-pub(crate) fn wait_until(deadline: Duration, mut condition: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !condition() {
-        assert!(start.elapsed() < deadline, "condition not reached within {deadline:?}");
-        thread::sleep(POLL_INTERVAL);
-    }
 }
 
 pub(crate) fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {

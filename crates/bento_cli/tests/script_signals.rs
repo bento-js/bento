@@ -4,8 +4,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use bento_test_support::ports::{loopback, port_is_taken};
 use support::TempProject;
-use support::running::{Background, loopback, port_is_taken};
+use support::running::Background;
 
 /// Listens on a port the system chooses, so that no other process can be holding it, and
 /// prints it.

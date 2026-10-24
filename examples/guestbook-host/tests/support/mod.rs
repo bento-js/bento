@@ -10,8 +10,8 @@ use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output};
-use std::sync::{LazyLock, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::sync::LazyLock;
+use std::time::Duration;
 
 use rusqlite::Connection;
 use tempfile::TempDir;
@@ -19,6 +19,7 @@ use tempfile::TempDir;
 use bento_guestbook_host::launch::{Launch, Mode};
 use bento_guestbook_host::store::{Access, GuestBookStore};
 use bento_runtime::{RunningRuntime, start};
+use bento_test_support::ports::{Addresses, wait_for};
 
 /// Everything disposable the host's tests create lives here.
 pub(crate) const SCRATCH: &str = "/tmp/bento-host";
@@ -35,29 +36,6 @@ pub(crate) fn host_command(directory: &Path, arguments: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_bento-guestbook-host"));
     command.args(arguments).current_dir(directory).env_remove("NODE_PATH");
     command
-}
-
-/// Runs the named test in a child test process without `NODE_PATH`, one child at a time, and
-/// returns `true` in the parent once the child has passed. An in-process fixture instance would
-/// otherwise inherit the harness's `NODE_PATH` through its native resolver.
-pub(crate) fn isolated_fixture_test(name: &str) -> bool {
-    static ONE_CHILD: Mutex<()> = Mutex::new(());
-    if std::env::var("BENTO_FIXTURE_TEST").as_deref() == Ok(name) {
-        assert!(std::env::var_os("NODE_PATH").is_none(), "fixture test inherited NODE_PATH");
-        return false;
-    }
-    let _one_child = ONE_CHILD.lock().unwrap_or_else(PoisonError::into_inner);
-    let child = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", name, "--nocapture"])
-        .env("BENTO_FIXTURE_TEST", name)
-        .env_remove("NODE_PATH")
-        .output()
-        .unwrap();
-    let report = stdout(&child);
-    assert!(child.status.success(), "{report}\n{}", stderr(&child));
-    assert!(report.contains("test result: ok. 1 passed"), "{name} did not run once:\n{report}");
-    eprint!("{}", stderr(&child));
-    true
 }
 
 pub(crate) fn stdout(output: &Output) -> String {
@@ -87,7 +65,7 @@ pub(crate) fn path_without_other_runtimes() -> String {
 
 /// A port that is free on every local address, so a server binding `::` or `0.0.0.0` can take it.
 pub(crate) fn free_port() -> u16 {
-    TcpListener::bind("[::]:0").unwrap().local_addr().unwrap().port()
+    bento_test_support::ports::free_port(Addresses::Every)
 }
 
 const STARTUP_ALLOWANCE: Duration = Duration::from_secs(30);
@@ -118,15 +96,8 @@ pub(crate) fn wait_for_host(child: &mut Child, port: u16) {
 
 /// Polls `port` until it accepts a connection (`true`), `ended` reports the server gone
 /// (`false`), or the allowance runs out (`false`).
-fn wait_for_listener_unless(port: u16, mut ended: impl FnMut() -> bool) -> bool {
-    let deadline = Instant::now() + STARTUP_ALLOWANCE;
-    while TcpStream::connect(("127.0.0.1", port)).is_err() {
-        if ended() || Instant::now() >= deadline {
-            return false;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    true
+fn wait_for_listener_unless(port: u16, ended: impl FnMut() -> bool) -> bool {
+    wait_for(STARTUP_ALLOWANCE, || TcpStream::connect(("127.0.0.1", port)).is_ok(), ended)
 }
 
 /// The port is free again on every local address, so a replacement server can take it.

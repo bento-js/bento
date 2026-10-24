@@ -6,8 +6,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use bento_test_support::ports::{loopback, port_is_taken, wait_until};
 use support::TempProject;
-use support::running::{Background, free_port, get, loopback, port_is_taken, wait_until};
+use support::running::{Background, free_port, get};
 
 const GRANTS: [&str; 3] = ["--allow-read=.", "--allow-net", "--allow-env=PORT"];
 const RESPONSE_DEADLINE: Duration = Duration::from_secs(15);

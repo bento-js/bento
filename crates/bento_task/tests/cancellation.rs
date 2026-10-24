@@ -12,23 +12,8 @@ use serde_json::json;
 
 use bento_host::Grants;
 use bento_task::{Cancellation, Plan, Signal, TaskError};
+use bento_test_support::ports::{Addresses, free_port, port_is_taken, wait_until};
 use support::{SYSTEM_PATH, TempProject};
-
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
-}
-
-fn wait_until(deadline: Duration, mut condition: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !condition() {
-        assert!(start.elapsed() < deadline, "condition not reached within {deadline:?}");
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
-fn port_is_taken(address: SocketAddr) -> bool {
-    matches!(TcpListener::bind(address), Err(error) if error.kind() == io::ErrorKind::AddrInUse)
-}
 
 fn process_is_gone(pid: i32) -> bool {
     // SAFETY: signal 0 only checks whether the process exists.
@@ -71,7 +56,7 @@ fn read_pid(temp: &TempProject, file: &str) -> i32 {
 
 #[test]
 fn cancellation_stops_a_grandchild_listener_and_frees_its_port() {
-    let port = free_port();
+    let port = free_port(Addresses::Loopback);
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let temp = TempProject::with_tasks(json!({
         "serve": format!("nc -l 127.0.0.1 {port} & echo $! > listener.pid; wait"),
@@ -115,7 +100,7 @@ fn a_command_that_handles_the_signal_reports_the_status_it_ended_with() {
 
 #[test]
 fn processes_that_ignore_the_signal_are_killed_after_the_grace_period() {
-    let port = free_port();
+    let port = free_port(Addresses::Loopback);
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let temp = TempProject::with_tasks(json!({
         "stubborn": format!("trap '' INT TERM; nc -l 127.0.0.1 {port} & echo $! > listener.pid; wait"),
@@ -159,7 +144,7 @@ fn cancellation_before_a_command_starts_runs_nothing() {
 
 #[test]
 fn processes_a_finished_command_left_in_the_background_are_stopped() {
-    let port = free_port();
+    let port = free_port(Addresses::Loopback);
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let temp = TempProject::with_tasks(json!({
         "serve": format!(

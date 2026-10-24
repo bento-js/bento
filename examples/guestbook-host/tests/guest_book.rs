@@ -13,9 +13,10 @@ use chrono::DateTime;
 use bento_guestbook_host::launch::{Launch, Mode};
 use bento_guestbook_host::store::{Access, GuestBookStore, NewEntry};
 use bento_runtime::{ErrorKind, RunOutcome, RunningRuntime, ShutdownOutcome, start};
+use bento_test_support::{ChildLimit, isolated_fixture_test};
 use support::{
-    assert_port_free, document, fixture, free_port, guests, http, isolated_fixture_test,
-    scratch_dir, start_fixture, stored_rows,
+    assert_port_free, document, fixture, free_port, guests, http, scratch_dir, start_fixture,
+    stored_rows,
 };
 
 const ENTRY: &str = "server.embedded.ts";
@@ -34,6 +35,7 @@ fn shutdown_gracefully(runtime: RunningRuntime, port: u16) {
 fn the_guest_book_serves_signs_validates_and_persists_across_disposal_in_both_modes() {
     if isolated_fixture_test(
         "the_guest_book_serves_signs_validates_and_persists_across_disposal_in_both_modes",
+        ChildLimit::OneAtATime,
     ) {
         return;
     }
@@ -83,6 +85,7 @@ fn the_guest_book_serves_signs_validates_and_persists_across_disposal_in_both_mo
 fn an_instance_without_the_registration_cannot_import_host_guestbook_while_another_serves() {
     if isolated_fixture_test(
         "an_instance_without_the_registration_cannot_import_host_guestbook_while_another_serves",
+        ChildLimit::OneAtATime,
     ) {
         return;
     }
@@ -118,6 +121,7 @@ fn an_instance_without_the_registration_cannot_import_host_guestbook_while_anoth
 fn the_guest_cannot_read_the_store_file_with_the_grants_that_serve_the_guest_book() {
     if isolated_fixture_test(
         "the_guest_cannot_read_the_store_file_with_the_grants_that_serve_the_guest_book",
+        ChildLimit::OneAtATime,
     ) {
         return;
     }

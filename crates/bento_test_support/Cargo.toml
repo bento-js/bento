@@ -1,0 +1,12 @@
+[package]
+name = "bento_test_support"
+description = "Shared integration-test infrastructure for the Bento workspace"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true

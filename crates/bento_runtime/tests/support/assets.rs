@@ -54,7 +54,7 @@ pub(crate) fn check(
         "{urls:?}"
     );
     for url in urls {
-        let response = http::request(port, "GET", &url, "").unwrap();
+        let response = http::get(port, &url).unwrap();
         assert_eq!(response.status, 200, "{url}: {}", response.body);
         let content_type = &response.headers["content-type"];
         let script = content_type.contains("javascript");
@@ -86,12 +86,12 @@ pub(crate) fn check_rules(port: u16, development: bool) {
         ("/assets/app/actions/guest-book/controller.test.ts", "guest-book.test"),
         ("/assets/app/router.ts", "createRouter"),
     ] {
-        let response = http::request(port, "GET", url, "").unwrap();
+        let response = http::get(port, url).unwrap();
         assert_ne!(response.status, 200, "{url} was served: {}", response.body);
         assert!(!response.body.contains(source), "{url} leaked its source: {}", response.body);
     }
     if development {
-        let routes = http::request(port, "GET", "/assets/app/routes.ts", "").unwrap();
+        let routes = http::get(port, "/assets/app/routes.ts").unwrap();
         assert_eq!(routes.status, 200, "{}", routes.body);
         assert!(routes.body.contains("guestBook"), "{}", routes.body);
     }
@@ -110,7 +110,7 @@ fn check_source_map(port: u16, url: &str, source: &str) {
     } else {
         format!("{}/{}", url.rsplit_once('/').unwrap().0, map)
     };
-    let response = http::request(port, "GET", &map_url, "").unwrap();
+    let response = http::get(port, &map_url).unwrap();
     assert_eq!(response.status, 200, "{map_url}");
     assert!(response.headers["content-type"].contains("json"), "{map_url}");
     let map: serde_json::Value = serde_json::from_str(&response.body).unwrap();
@@ -124,7 +124,7 @@ pub(crate) fn compare_minified_with_development(
 ) {
     assert!(!minified_scripts.is_empty(), "no production JavaScript assets");
     for (url, minified) in minified_scripts {
-        let response = http::request(port, "GET", url, "").unwrap();
+        let response = http::get(port, url).unwrap();
         assert_eq!(response.status, 200, "{url}: {}", response.body);
         assert!(response.headers["content-type"].contains("javascript"), "{url}");
         assert!(

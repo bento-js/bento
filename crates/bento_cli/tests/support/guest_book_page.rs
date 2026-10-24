@@ -57,21 +57,25 @@ pub(crate) fn assert_guest_book_page(page: &Response, entries: &[&str]) {
 /// saved, redirects home, and leaves a blank form; blank fields and a 281-character message are
 /// refused.
 pub(crate) fn assert_signing(port: u16) {
-    let valid =
-        http::post_form(port, "name=Bento+visitor&message=Signed+through+bento+run").unwrap();
+    let valid = http::post_form(
+        port,
+        &[("name", "Bento visitor"), ("message", "Signed through bento run")],
+    )
+    .unwrap();
     assert_eq!(valid.status, 303, "{}", valid.body);
-    assert_eq!(valid.header("location"), "/");
+    assert_eq!(valid.header("location"), Some("/"));
     let page = http::get(port, "/").unwrap();
     assert_guest_book_page(&page, &["Bento visitor", "Signed through bento run"]);
     assert_form_cleared(&page.body);
 
-    let blank = http::post_form(port, "name=+++&message=++").unwrap();
+    let blank = http::post_form(port, &[("name", "   "), ("message", "  ")]).unwrap();
     assert_eq!(blank.status, 400, "{}", blank.body);
     for error in ["Enter your name.", "Write a message to sign the guest book.", "value=\"   \""] {
         assert!(blank.body.contains(error), "missing {error}: {}", blank.body);
     }
 
-    let long = http::post_form(port, &format!("name=Long&message={}", "x".repeat(281))).unwrap();
+    let long_message = "x".repeat(281);
+    let long = http::post_form(port, &[("name", "Long"), ("message", &long_message)]).unwrap();
     assert_eq!(long.status, 400, "{}", long.body);
     assert!(long.body.contains("Keep your message to 280 characters or fewer."), "{}", long.body);
 }
@@ -103,7 +107,7 @@ pub(crate) fn assert_production_assets(port: u16, document: &str) {
     for url in asset_urls(document) {
         let asset = served_asset(port, &url);
         assert!(has_fingerprint(&url), "{url} has no fingerprint");
-        assert_eq!(asset.header("cache-control"), IMMUTABLE, "{url}");
+        assert_eq!(asset.header("cache-control"), Some(IMMUTABLE), "{url}");
     }
 }
 
@@ -113,7 +117,7 @@ pub(crate) fn assert_development_assets(port: u16, document: &str) {
     for url in asset_urls(document) {
         let asset = served_asset(port, &url);
         assert!(!url.contains(".@"), "{url} has a fingerprint in development");
-        if asset.header("content-type").contains("javascript") {
+        if asset.header("content-type").is_some_and(|kind| kind.contains("javascript")) {
             assert_source_map(port, &url, &asset.body);
         }
     }

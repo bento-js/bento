@@ -18,3 +18,6 @@ libc.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+bento_test_support.workspace = true

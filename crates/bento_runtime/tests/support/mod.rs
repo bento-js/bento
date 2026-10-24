@@ -59,30 +59,3 @@ pub(crate) fn fixture() -> tempfile::TempDir {
     assert!(installed.success());
     directory
 }
-
-#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
-pub(crate) fn isolated_fixture_test(name: &str) -> bool {
-    if std::env::var("BENTO_FIXTURE_TEST").as_deref() == Ok(name) {
-        assert!(std::env::var_os("NODE_PATH").is_none(), "fixture process inherited NODE_PATH");
-        return false;
-    }
-    let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", name, "--nocapture"])
-        .env("BENTO_FIXTURE_TEST", name)
-        .env_remove("NODE_PATH")
-        .output()
-        .unwrap();
-    assert!(
-        child.status.success(),
-        "{}\n{}",
-        String::from_utf8_lossy(&child.stdout),
-        String::from_utf8_lossy(&child.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&child.stdout);
-    assert!(
-        stdout.lines().any(|line| line.starts_with("test result: ok. 1 passed;")),
-        "fixture child did not run exactly one test:\n{stdout}"
-    );
-    eprint!("{}", String::from_utf8_lossy(&child.stderr));
-    true
-}

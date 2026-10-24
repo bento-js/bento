@@ -45,6 +45,7 @@ bento_host = { path = "crates/bento_host" }
 bento_package = { path = "crates/bento_package" }
 bento_runtime = { path = "crates/bento_runtime" }
 bento_task = { path = "crates/bento_task" }
+bento_test_support = { path = "crates/bento_test_support" }
 bento_workspace = { path = "crates/bento_workspace" }
 
 anyhow = "1.0.57"

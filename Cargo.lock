@@ -462,6 +462,7 @@ dependencies = [
  "bento_package",
  "bento_runtime",
  "bento_task",
+ "bento_test_support",
  "bento_workspace",
  "clap",
  "deno_napi",
@@ -493,6 +494,7 @@ version = "0.1.0"
 dependencies = [
  "bento_host",
  "bento_runtime",
+ "bento_test_support",
  "chrono",
  "clap",
  "deno_napi",
@@ -534,6 +536,7 @@ dependencies = [
  "async-trait",
  "bento_compiler",
  "bento_host",
+ "bento_test_support",
  "deno_core",
  "deno_error",
  "deno_lib",
@@ -566,12 +569,17 @@ name = "bento_task"
 version = "0.1.0"
 dependencies = [
  "bento_host",
+ "bento_test_support",
  "bento_workspace",
  "libc",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "bento_test_support"
+version = "0.1.0"
 
 [[package]]
 name = "bento_workspace"

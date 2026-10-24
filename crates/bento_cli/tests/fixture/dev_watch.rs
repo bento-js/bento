@@ -6,7 +6,8 @@ use std::time::Duration;
 use crate::support::guest_book::GuestBook;
 use crate::support::guest_book_page::{assert_guest_book_page, wait_for_page};
 use crate::support::http;
-use crate::support::running::{Background, wait_until};
+use crate::support::running::Background;
+use bento_test_support::ports::wait_until;
 
 const PAGE: &str = "app/actions/guest-book/page.tsx";
 const BROWSER_ENTRY: &str = "app/actions/public/entry.ts";
@@ -31,8 +32,8 @@ fn edit(guest_book: &GuestBook, file: &str, from: &str, to: &str) {
 
 /// Saving an entry writes the database, which must not restart the server.
 pub(crate) fn sign_without_restarting(bento: &Background, port: u16) {
-    let [name, message] = PERSISTED_ENTRY.map(|text| text.replace(' ', "+"));
-    let signed = http::post_form(port, &format!("name={name}&message={message}")).unwrap();
+    let [name, message] = PERSISTED_ENTRY;
+    let signed = http::post_form(port, &[("name", name), ("message", message)]).unwrap();
     assert_eq!(signed.status, 303, "{}", signed.body);
     thread::sleep(SETTLE);
     assert_eq!(restarts(bento), 0, "{}", bento.stderr.text());

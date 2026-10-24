@@ -49,6 +49,7 @@ oxc = { workspace = true, features = ["ast_visit"] }
 oxc_resolver.workspace = true
 
 [dev-dependencies]
+bento_test_support.workspace = true
 tempfile.workspace = true
 
 # deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features
