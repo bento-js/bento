@@ -3,7 +3,7 @@ id: proposal.0002
 title: Web Prompt API with macOS Foundation Models
 authors: [Mark]
 status: draft
-pull-request: https://github.com/bento-js/bento/pull/248
+pull-request: https://github.com/bento-js/bento/pull/249
 issues: []
 supersedes: []
 ---
@@ -20,7 +20,7 @@ On 2026-10-24, Mark requested the Web Prompt API, macOS Foundation Models as the
 
 That consent covers proposal preparation and its draft PR, not approval of the design below. This proposal remains `draft`. The earlier runtime build mandate does not authorize this work. Implementation, acceptance, merging, upstream dependency publication, and release have not been approved. The recommended choices below require the human's decision in Open questions before tests, guides, or production code are written.
 
-The feature branch is based on `sesh/rust-style-guide-alignment`, initially at `791c5f76a354efc9f70a41f7b0593fe0522cb8e9`. PR #248 targets that branch, not `main`; it must retain only this feature's diff when the stack is subsequently updated.
+The feature branch was stacked on `sesh/rust-style-guide-alignment` at `791c5f76a354efc9f70a41f7b0593fe0522cb8e9`. During proposal preparation, PR #247 merged into `main` as `60ca248`, and deletion of its branch automatically closed PR #248. GitHub rejected reopening the closed PR or changing its base. [PR #249](https://github.com/bento-js/bento/pull/249) replaces it against `main`, which contains the prerequisite commits. The pushed feature history was not rewritten.
 
 ## Motivation
 
