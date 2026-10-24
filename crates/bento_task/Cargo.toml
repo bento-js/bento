@@ -11,7 +11,7 @@ rust-version.workspace = true
 [dependencies]
 bento_host.workspace = true
 bento_workspace.workspace = true
-libc = "0.2"
+libc.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true

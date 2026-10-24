@@ -39,11 +39,11 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-parking_lot = "0.12"
-libc = "0.2"
+parking_lot.workspace = true
+libc.workspace = true
 
-oxc = { version = "=0.153.0", features = ["ast_visit"] }
-oxc_resolver = "=11.24.3"
+oxc = { workspace = true, features = ["ast_visit"] }
+oxc_resolver.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

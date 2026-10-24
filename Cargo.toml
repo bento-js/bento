@@ -39,8 +39,14 @@ bento_task = { path = "crates/bento_task" }
 bento_workspace = { path = "crates/bento_workspace" }
 
 anyhow = "1.0.57"
+clap = { version = "4.6.6", features = ["derive"] }
+libc = "0.2.190"
+oxc = "=0.153.0"
+oxc_resolver = "=11.24.3"
+parking_lot = "0.12.5"
 serde = { version = "1.0.149", features = ["derive"] }
 serde_json = "1.0.85"
+signal-hook = "0.3.18"
 tempfile = "3"
 thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["full"] }
