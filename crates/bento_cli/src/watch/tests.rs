@@ -13,6 +13,8 @@ const SCRATCH: &str = "/tmp/bento-cli/watch";
 const SETTLE: Duration = Duration::from_millis(300);
 const CHANGE_DEADLINE: Duration = Duration::from_secs(5);
 const QUIET_WINDOW: Duration = Duration::from_millis(600);
+/// Shorter than the watcher's quiet period, so the writes of a burst are reported as one change.
+const BURST_GAP: Duration = Duration::from_millis(10);
 
 /// A disposable directory holding a project in `app/` and files outside it.
 struct Workspace {
@@ -88,7 +90,7 @@ fn a_burst_of_edits_is_one_change() {
 
     for edit in 0..5 {
         workspace.write("app/message.mjs", &format!("export default {edit};\n"));
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(BURST_GAP);
     }
 
     assert_eq!(next_change(&changes), vec![workspace.path("app/message.mjs")]);

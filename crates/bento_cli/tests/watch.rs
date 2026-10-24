@@ -14,6 +14,8 @@ const GRANTS: [&str; 3] = ["--allow-read=.", "--allow-net", "--allow-env=PORT"];
 const RESPONSE_DEADLINE: Duration = Duration::from_secs(15);
 /// Long enough for a change to have caused a restart, had it caused one.
 const SETTLE: Duration = Duration::from_secs(1);
+/// Shorter than the watcher's quiet period, so the writes of a burst cause one restart.
+const BURST_GAP: Duration = Duration::from_millis(20);
 
 /// `server.mjs` serves the message it imports from `message.mjs`, and prints `listening`
 /// each time it starts.
@@ -112,7 +114,7 @@ fn a_burst_of_edits_restarts_the_server_once() {
 
     for edit in 1..=5 {
         temp.write("message.mjs", &message_module(&format!("edit {edit}")));
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(BURST_GAP);
     }
 
     wait_for_response(port, "edit 5");
