@@ -101,9 +101,8 @@ impl TaskRunner {
     }
 
     fn run_step(&self, step: &Step, cancellation: &Cancellation) -> Result<(), TaskError> {
-        let task = step.task.clone();
         if let Some(signal) = cancellation.requested() {
-            return Err(TaskError::Cancelled { task, signal, status: None });
+            return Err(TaskError::Cancelled { task: step.task.clone(), signal, status: None });
         }
         let process_error = |source| TaskError::Process {
             task: step.task.clone(),
@@ -113,11 +112,13 @@ impl TaskRunner {
         let group = ProcessGroup::spawn(self.shell(&step.command)).map_err(process_error)?;
         match group.wait(cancellation, self.grace_period).map_err(process_error)? {
             Outcome::Exited(status) if status.success() => Ok(()),
-            Outcome::Exited(status) => {
-                Err(TaskError::Failed { task, command: step.command.clone(), status })
-            }
+            Outcome::Exited(status) => Err(TaskError::Failed {
+                task: step.task.clone(),
+                command: step.command.clone(),
+                status,
+            }),
             Outcome::Cancelled { signal, status } => {
-                Err(TaskError::Cancelled { task, signal, status })
+                Err(TaskError::Cancelled { task: step.task.clone(), signal, status })
             }
         }
     }

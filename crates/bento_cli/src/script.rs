@@ -55,7 +55,7 @@ pub(crate) fn runtime_config(
     RuntimeConfig {
         cwd: invocation_directory.to_owned(),
         grants: launch.grants,
-        env: launch.environment.vars().clone(),
+        env: launch.environment.into_vars(),
         argv: arguments.to_vec(),
         ..RuntimeConfig::new(launch.project.root())
     }

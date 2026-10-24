@@ -87,6 +87,11 @@ impl LaunchEnvironment {
         &self.vars
     }
 
+    /// The variables, for a caller that owns the environment and keeps nothing else of it.
+    pub fn into_vars(self) -> BTreeMap<String, String> {
+        self.vars
+    }
+
     pub fn mode(&self) -> Option<&str> {
         self.mode.as_deref()
     }
