@@ -1,10 +1,11 @@
 //! Embeddable runtime for Node-compatible JavaScript applications.
 //!
-//! One [`RunningRuntime`] is one V8 isolate on its own thread, launched by [`start`] from a
-//! [`RuntimeConfig`] that fixes the instance's grants, environment, arguments, and host
-//! modules for its lifetime. Dependencies must already be installed: execution downloads
-//! nothing and starts no Node, Deno, Bun, or Bento subprocess. The runtime writes nothing to
-//! stdout or stderr, so the host decides what to report.
+//! One [`RunningRuntime`] runs one guest program, with any workers it starts, on its own
+//! thread, launched by [`start`] from a [`RuntimeConfig`] that fixes the instance's grants,
+//! environment, arguments, and host modules for its lifetime. Dependencies must already be
+//! installed: execution downloads nothing and starts no Node, Deno, Bun, or Bento subprocess.
+//! The runtime prints none of its own diagnostics; the guest's console output goes to the
+//! process's stdout and stderr as it would in Node.
 //!
 //! ```no_run
 //! # use std::collections::{BTreeMap, BTreeSet};
