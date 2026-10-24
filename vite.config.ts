@@ -74,7 +74,8 @@ export default defineConfig({
         },
     },
     // Bento's Rust gate is its own task rather than part of `check`: Bento supports only
-    // macOS on Apple silicon for now while CI runs on Linux, and the full suite takes minutes.
+    // macOS on Apple silicon for now, so CI runs it in a separate macOS job, and the full
+    // suite takes minutes.
     run: {
         tasks: {
             rust: {
