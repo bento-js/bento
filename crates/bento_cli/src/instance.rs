@@ -12,14 +12,17 @@ pub(crate) struct Instance {
 }
 
 impl Instance {
-    /// Starts executing `entry` under `config`. Once the instance has ended, `Event::Ended`
-    /// reports how.
+    /// Starts executing `entry` under `config`, reporting the project's compiler diagnostics
+    /// on stderr. Once the instance has ended, `Event::Ended` reports how.
     pub(crate) fn start(
         config: RuntimeConfig,
         entry: &Path,
         events: &Sender<Event>,
     ) -> Result<Instance, RuntimeError> {
         let running = bento_runtime::start(config, entry)?;
+        for diagnostic in running.diagnostics() {
+            eprintln!("{diagnostic}");
+        }
         let handle = running.handle();
         let events = events.clone();
         thread::spawn(move || {

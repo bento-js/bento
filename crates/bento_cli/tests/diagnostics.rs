@@ -39,6 +39,21 @@ fn a_malformed_environment_file_names_the_line_without_showing_its_contents() {
     assert!(!report.contains("3000"), "the file's contents were printed: {report}");
 }
 
+#[test]
+fn a_compiler_option_bento_ignores_is_reported_once_on_stderr() {
+    let temp = TempProject::new(json!({ "type": "module" }));
+    temp.write("tsconfig.json", r#"{"compilerOptions":{"baseUrl":"."}}"#);
+    temp.write("server.ts", "const ready: boolean = true;\nconsole.log(ready);\n");
+
+    let output = temp.bento(&["run", "--allow-read=.", "server.ts"]).output().unwrap();
+
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let report = stderr(&output);
+    let warnings: Vec<&str> = report.lines().filter(|line| line.contains(": warning:")).collect();
+    assert_eq!(warnings.len(), 1, "{report}");
+    assert!(warnings[0].contains("baseUrl"), "{report}");
+}
+
 /// Runs the TypeScript module `source` as `name`, expects it to fail, and returns the report.
 /// A styling terminal type is set, as in an ordinary shell, so that a report still free of
 /// escape codes shows that piped output stays plain.

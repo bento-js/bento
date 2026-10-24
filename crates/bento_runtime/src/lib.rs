@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use bento_host::Grants;
 
+pub use bento_compiler::{Diagnostic, Severity};
 pub use error::{ErrorKind, RunOutcome, RuntimeError, SourceLocation, StartError};
 pub use host::{HostError, HostModule};
 pub use lifecycle::{RuntimeHandle, ShutdownOutcome, ShutdownReport, Signal};
@@ -47,6 +48,7 @@ pub struct RuntimeConfig {
 pub struct RunningRuntime {
     thread: Option<JoinHandle<RunOutcome>>,
     handle: RuntimeHandle,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl RuntimeConfig {
@@ -75,7 +77,8 @@ pub fn start(mut config: RuntimeConfig, entry: &Path) -> Result<RunningRuntime, 
     let entry = std::fs::canonicalize(&entry)
         .map_err(|error| RuntimeError::startup(format!("{}: {error}", entry.display())))?;
     let modules = host::HostModules::new(std::mem::take(&mut config.host_modules))?;
-    let sources = Arc::new(sources::Sources::load(&config.project_root)?);
+    let (sources, diagnostics) = sources::Sources::load(&config.project_root)?;
+    let sources = Arc::new(sources);
     let (control, commands) = lifecycle::Control::new(config.shutdown_deadline)?;
     let handle = RuntimeHandle { control: control.clone() };
     LazyLock::force(&V8_PLATFORM);
@@ -87,7 +90,7 @@ pub fn start(mut config: RuntimeConfig, entry: &Path) -> Result<RunningRuntime, 
             handle.control.complete(&RunOutcome::Failed(error.clone()));
             error
         })?;
-    Ok(RunningRuntime { thread: Some(thread), handle })
+    Ok(RunningRuntime { thread: Some(thread), handle, diagnostics })
 }
 
 fn run_thread(
@@ -113,6 +116,13 @@ fn run_thread(
 impl RunningRuntime {
     pub fn handle(&self) -> RuntimeHandle {
         self.handle.clone()
+    }
+
+    /// The project's `tsconfig.json` options that Bento handles differently from `tsc`, found
+    /// once while this instance started. The runtime prints nothing; the host decides how to
+    /// report them.
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
     }
 
     pub fn is_finished(&self) -> bool {

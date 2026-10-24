@@ -45,6 +45,9 @@ pub fn serve(launch: &Launch, access: Access, entry: &Path) -> Result<Served, Se
     let mut signals = Signals::new([SIGINT, SIGTERM]).map_err(ServeError::Signals)?;
     let store = GuestBookStore::open(launch.database(), access)?;
     let runtime = start(launch.runtime_config(store), entry)?;
+    for diagnostic in runtime.diagnostics() {
+        eprintln!("{diagnostic}");
+    }
     let handle = runtime.handle();
 
     let (outcomes, first_outcome) = mpsc::channel();

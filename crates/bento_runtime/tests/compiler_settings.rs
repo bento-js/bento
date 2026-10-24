@@ -4,11 +4,11 @@ use std::collections::BTreeSet;
 use std::fs;
 
 use bento_host::Scope;
-use bento_runtime::{ErrorKind, RunOutcome};
+use bento_runtime::{ErrorKind, RunOutcome, Severity};
 use support::{completed, config, run};
 
 #[test]
-fn settings_are_loaded_once_and_warnings_are_printed_once_per_instance() {
+fn settings_are_loaded_once_and_warnings_are_returned_to_the_host() {
     if let Some(root) = std::env::var_os("BENTO_SETTINGS_TEST_ROOT") {
         compiler_settings_child(std::path::Path::new(&root));
         return;
@@ -26,7 +26,7 @@ fn settings_are_loaded_once_and_warnings_are_printed_once_per_instance() {
     let child = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
-            "settings_are_loaded_once_and_warnings_are_printed_once_per_instance",
+            "settings_are_loaded_once_and_warnings_are_returned_to_the_host",
             "--nocapture",
         ])
         .env("BENTO_SETTINGS_TEST_ROOT", root.path())
@@ -39,15 +39,16 @@ fn settings_are_loaded_once_and_warnings_are_printed_once_per_instance() {
         String::from_utf8_lossy(&child.stderr)
     );
     let stderr = String::from_utf8(child.stderr).unwrap();
-    assert_eq!(stderr.matches(": warning:").count(), 1, "{stderr}");
-    assert!(stderr.contains("baseUrl"), "{stderr}");
-    eprintln!("captured instance warning: {}", stderr.trim());
+    assert!(!stderr.contains(": warning:"), "the runtime printed a diagnostic: {stderr}");
 }
 
+/// Asserts in its own process that one instance reports the project's `baseUrl` warning once
+/// through `diagnostics()`, and that the settings behind it are loaded once: rewriting
+/// `tsconfig.json` mid-run leaves the second module transformed under the original settings.
 fn compiler_settings_child(root: &std::path::Path) {
-    completed(run(
-        config(root),
-        "settings.mjs",
+    let entry = root.join("settings.mjs");
+    fs::write(
+        &entry,
         r#"
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
@@ -57,7 +58,14 @@ writeFileSync('tsconfig.json', JSON.stringify({ compilerOptions: { useDefineForC
 const { instance: second } = await import('./second.ts');
 assert.equal(second.seen, 'assigned');
 "#,
-    ));
+    )
+    .unwrap();
+    let running = bento_runtime::start(config(root), &entry).unwrap();
+    let diagnostics = running.diagnostics();
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].severity, Severity::Warning, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].option, "baseUrl", "{diagnostics:?}");
+    completed(running.wait());
 }
 
 #[test]
