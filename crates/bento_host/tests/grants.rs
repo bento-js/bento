@@ -1,4 +1,6 @@
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use bento_host::{GrantKind, GrantRequest, Grants, NetTarget, Scope, canonical_path};
@@ -214,9 +216,19 @@ fn ceiling_round_trips_through_its_serialized_form() {
         env: Scope::only(["PORT".to_string(), "NODE_ENV".to_string()]),
         addons: paths(&["/project/node_modules"]),
     };
-    let encoded = ceiling.to_ceiling_value();
+    let encoded = ceiling.to_ceiling_value().unwrap();
     assert_eq!(Grants::from_ceiling_value(&encoded).unwrap(), ceiling);
     assert!(Grants::from_ceiling_value("not json").is_err());
+}
+
+#[test]
+fn a_path_that_is_not_utf8_cannot_be_encoded_as_a_ceiling() {
+    let grants = Grants {
+        read: Scope::only([PathBuf::from(OsStr::from_bytes(b"/project/\xff"))]),
+        ..Grants::none()
+    };
+
+    assert!(grants.to_ceiling_value().is_err());
 }
 
 #[test]
@@ -228,7 +240,7 @@ fn raw_empty_scopes_remain_empty_through_ceiling_inheritance_and_host_checks() {
         env: Scope::Only(BTreeSet::new()),
         addons: Scope::Only(BTreeSet::new()),
     };
-    let decoded = Grants::from_ceiling_value(&empty.to_ceiling_value()).unwrap();
+    let decoded = Grants::from_ceiling_value(&empty.to_ceiling_value().unwrap()).unwrap();
     assert_eq!(decoded, empty);
     let inherited = GrantRequest::default().resolve(Some(&decoded)).unwrap();
     assert!(!inherited.read.allows(Path::new("/project/entry.mjs")));

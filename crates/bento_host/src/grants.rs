@@ -55,14 +55,23 @@ pub struct WiderGrant {
 #[error("invalid inherited grant policy: {0}")]
 pub struct InvalidCeiling(#[from] serde_json::Error);
 
+/// A granted path is not valid UTF-8, so the policy has no JSON encoding.
+#[derive(Debug, Error)]
+#[error("cannot encode the grant policy as a ceiling: {0}")]
+pub struct UnencodableCeiling(#[from] serde_json::Error);
+
 impl Grants {
     pub fn none() -> Self {
         Grants::default()
     }
 
     /// Encodes this policy for a nested launch to read back as its ceiling.
-    pub fn to_ceiling_value(&self) -> String {
-        serde_json::to_string(self).expect("grants always serialize")
+    ///
+    /// # Errors
+    ///
+    /// Fails when a granted path is not valid UTF-8; JSON cannot carry such a path.
+    pub fn to_ceiling_value(&self) -> Result<String, UnencodableCeiling> {
+        Ok(serde_json::to_string(self)?)
     }
 
     pub fn from_ceiling_value(value: &str) -> Result<Self, InvalidCeiling> {

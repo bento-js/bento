@@ -77,7 +77,7 @@ fn a_script_runs_in_bento_without_trying_another_runtime() {
 #[test]
 fn script_grants_are_validated_before_the_script_runs() {
     let (temp, _) = script_project();
-    let ceiling = Grants::none().to_ceiling_value();
+    let ceiling = Grants::none().to_ceiling_value().unwrap();
 
     let output = temp
         .bento(&["run", "--allow-net", "./server.mjs"])

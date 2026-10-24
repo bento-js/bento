@@ -171,7 +171,7 @@ fn a_whole_kind_beyond_the_inherited_grant_names_the_bare_flag() {
 
     let output = temp
         .bento(&["run", "--allow-write", "ceiling"])
-        .env("BENTO_GRANT_CEILING", ceiling.to_ceiling_value())
+        .env("BENTO_GRANT_CEILING", ceiling.to_ceiling_value().unwrap())
         .output()
         .unwrap();
 
@@ -188,7 +188,7 @@ fn an_inherited_empty_allow_list_is_reported_as_no_grant() {
 
     let output = temp
         .bento(&["run", "--allow-write=.", "ceiling"])
-        .env("BENTO_GRANT_CEILING", ceiling.to_ceiling_value())
+        .env("BENTO_GRANT_CEILING", ceiling.to_ceiling_value().unwrap())
         .output()
         .unwrap();
 

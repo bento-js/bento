@@ -13,7 +13,7 @@ use crate::assignments::assigned_names;
 use crate::cancellation::{Cancellation, Signal};
 use crate::plan::{Plan, Step};
 use crate::process_group::{Outcome, ProcessGroup};
-use bento_host::{CEILING_ENV, Grants};
+use bento_host::{CEILING_ENV, Grants, UnencodableCeiling};
 use bento_workspace::{FILE_KEYS_ENV, LaunchEnvironment, Project};
 
 /// How long a command's process group may take to exit after a forwarded cancellation
@@ -40,6 +40,8 @@ pub enum TaskError {
     UnrepresentablePath(PathBuf),
     #[error("cannot put the running bento on task commands' PATH: {0}")]
     BentoLink(#[source] io::Error),
+    #[error("cannot pass the grant ceiling to task commands: {0}")]
+    GrantCeiling(#[source] UnencodableCeiling),
     #[error("task `{task}` could not run `{command}`: {source}")]
     Process { task: String, command: String, source: io::Error },
     #[error("task `{task}` failed: `{command}` {}", describe(.status))]
@@ -74,7 +76,8 @@ impl TaskRunner {
         let search_path =
             search_path(project.root(), bento_link.path(), executable, environment.get("PATH"))?;
         environment.insert("PATH".to_owned(), search_path);
-        environment.insert(CEILING_ENV.to_owned(), grants.to_ceiling_value());
+        let ceiling = grants.to_ceiling_value().map_err(TaskError::GrantCeiling)?;
+        environment.insert(CEILING_ENV.to_owned(), ceiling);
         Ok(TaskRunner {
             root: project.root().to_owned(),
             launch: launch.clone(),
