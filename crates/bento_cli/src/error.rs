@@ -6,6 +6,7 @@ use std::process::{ExitCode, ExitStatus};
 use thiserror::Error;
 
 use crate::diagnostic::{self, Diagnostic};
+use crate::ending::process_exit_code;
 use crate::grant_flags::GrantError;
 use crate::runtime_report;
 use bento_package::InstallError;
@@ -85,9 +86,10 @@ impl CliError {
 }
 
 /// A child's status as a shell reports it: its exit code, or 128 plus the signal that ended it.
+/// `FAILURE` stands in for a status that reports neither.
 pub(crate) fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
-    code.and_then(|code| u8::try_from(code).ok()).map_or(ExitCode::FAILURE, ExitCode::from)
+    code.map_or(ExitCode::FAILURE, process_exit_code)
 }
 
 fn manifest_diagnostic(error: &ManifestError) -> Option<Diagnostic<'_>> {

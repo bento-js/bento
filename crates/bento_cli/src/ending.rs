@@ -69,8 +69,8 @@ pub(crate) fn finished(outcome: RunOutcome) -> Result<ExitCode, CliError> {
     }
 }
 
-/// The status the operating system reports for `process.exit(code)`: the code's low eight
-/// bits, as for any process.
-fn process_exit_code(code: i32) -> ExitCode {
+/// The status the operating system reports for exit code `code`: its low eight bits, as for
+/// any process.
+pub(crate) fn process_exit_code(code: i32) -> ExitCode {
     ExitCode::from(code.to_le_bytes()[0])
 }
