@@ -8,7 +8,10 @@ use deno_media_type::MediaType;
 use deno_runtime::deno_permissions::{OpenAccessKind, PermissionsContainer};
 use node_resolver::analyze::{CjsAnalysis, CjsAnalysisExports, CjsMemberReExport, EsmAnalysisMode};
 use oxc::allocator::Allocator;
-use oxc::ast::ast::*;
+use oxc::ast::ast::{
+    Argument, AssignmentExpression, CallExpression, Expression, MemberExpression,
+    ObjectPropertyKind, Statement,
+};
 use oxc::ast_visit::{Visit, walk};
 use oxc::parser::Parser;
 use oxc::span::SourceType;
