@@ -93,18 +93,24 @@ impl GrantFlags {
     fn request(&self, directory: &Path) -> Result<GrantRequest, GrantError> {
         let path = |kind| move |item: &str| canonical_item(kind, directory, item);
         Ok(GrantRequest {
-            read: scope(GrantKind::Read, &self.allow_read, path(GrantKind::Read))?,
-            write: scope(GrantKind::Write, &self.allow_write, path(GrantKind::Write))?,
-            net: scope(GrantKind::Net, &self.allow_net, |item| Ok(item.parse::<NetTarget>()?))?,
-            env: scope(GrantKind::Env, &self.allow_env, |item| Ok(item.to_owned()))?,
-            addons: scope(GrantKind::Addons, &self.allow_addons, path(GrantKind::Addons))?,
+            read: scope(GrantKind::Read, self.allow_read.as_deref(), path(GrantKind::Read))?,
+            write: scope(GrantKind::Write, self.allow_write.as_deref(), path(GrantKind::Write))?,
+            net: scope(GrantKind::Net, self.allow_net.as_deref(), |item| {
+                Ok(item.parse::<NetTarget>()?)
+            })?,
+            env: scope(GrantKind::Env, self.allow_env.as_deref(), |item| Ok(item.to_owned()))?,
+            addons: scope(
+                GrantKind::Addons,
+                self.allow_addons.as_deref(),
+                path(GrantKind::Addons),
+            )?,
         })
     }
 }
 
 fn scope<T: Ord>(
     kind: GrantKind,
-    values: &Option<Vec<String>>,
+    values: Option<&[String]>,
     parse: impl Fn(&str) -> Result<T, GrantError>,
 ) -> Result<Option<Scope<T>>, GrantError> {
     let Some(values) = values else {
@@ -130,11 +136,11 @@ fn canonical_item(kind: GrantKind, directory: &Path, item: &str) -> Result<PathB
 
 fn exceeded(wider: &WiderGrant, request: &GrantRequest, ceiling: &Grants) -> GrantError {
     let (requested_all, limit) = match wider.kind {
-        GrantKind::Read => (is_all(&request.read), describe(&ceiling.read)),
-        GrantKind::Write => (is_all(&request.write), describe(&ceiling.write)),
-        GrantKind::Net => (is_all(&request.net), describe(&ceiling.net)),
-        GrantKind::Env => (is_all(&request.env), describe(&ceiling.env)),
-        GrantKind::Addons => (is_all(&request.addons), describe(&ceiling.addons)),
+        GrantKind::Read => (is_all(request.read.as_ref()), describe(&ceiling.read)),
+        GrantKind::Write => (is_all(request.write.as_ref()), describe(&ceiling.write)),
+        GrantKind::Net => (is_all(request.net.as_ref()), describe(&ceiling.net)),
+        GrantKind::Env => (is_all(request.env.as_ref()), describe(&ceiling.env)),
+        GrantKind::Addons => (is_all(request.addons.as_ref()), describe(&ceiling.addons)),
     };
     let flag = if requested_all {
         format!("--allow-{}", wider.kind)
@@ -144,7 +150,7 @@ fn exceeded(wider: &WiderGrant, request: &GrantRequest, ceiling: &Grants) -> Gra
     GrantError::Wider { flag, kind: wider.kind, limit }
 }
 
-fn is_all<T: Ord>(requested: &Option<Scope<T>>) -> bool {
+fn is_all<T: Ord>(requested: Option<&Scope<T>>) -> bool {
     matches!(requested, Some(Scope::All))
 }
 

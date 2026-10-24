@@ -73,8 +73,12 @@ impl TaskRunner {
     ) -> Result<TaskRunner, TaskError> {
         let bento_link = link_bento(executable).map_err(TaskError::BentoLink)?;
         let mut environment = launch.vars().clone();
-        let search_path =
-            search_path(project.root(), bento_link.path(), executable, environment.get("PATH"))?;
+        let search_path = search_path(
+            project.root(),
+            bento_link.path(),
+            executable,
+            environment.get("PATH").map(String::as_str),
+        )?;
         environment.insert("PATH".to_owned(), search_path);
         let ceiling = grants.to_ceiling_value().map_err(TaskError::GrantCeiling)?;
         environment.insert(CEILING_ENV.to_owned(), ceiling);
@@ -142,13 +146,13 @@ fn search_path(
     root: &Path,
     bento_link: &Path,
     executable: &Path,
-    inherited: Option<&String>,
+    inherited: Option<&str>,
 ) -> Result<String, TaskError> {
     let local_bin = root.join("node_modules").join(".bin");
     let executable_dir = executable.parent().expect("an executable path has a parent directory");
     let mut entries =
         vec![path_entry(bento_link)?, path_entry(&local_bin)?, path_entry(executable_dir)?];
-    entries.extend(inherited.filter(|path| !path.is_empty()).map(String::as_str));
+    entries.extend(inherited.filter(|path| !path.is_empty()));
     Ok(entries.join(":"))
 }
 

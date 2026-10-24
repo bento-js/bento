@@ -67,8 +67,9 @@ pub fn install(
     invocation_directory: &Path,
 ) -> Result<(), InstallError> {
     require_pnpm_declaration(project)?;
-    let pnpm = find_executable(PNPM, environment.get("PATH"), invocation_directory)
-        .ok_or(InstallError::MissingPnpm)?;
+    let pnpm =
+        find_executable(PNPM, environment.get("PATH").map(String::as_str), invocation_directory)
+            .ok_or(InstallError::MissingPnpm)?;
     let mut command = Command::new(pnpm);
     command
         .arg("install")
@@ -99,7 +100,7 @@ fn require_pnpm_declaration(project: &Project) -> Result<(), InstallError> {
 /// empty entry (a leading, trailing, or doubled colon) is `working_directory` itself.
 fn find_executable(
     program: &str,
-    search_path: Option<&String>,
+    search_path: Option<&str>,
     working_directory: &Path,
 ) -> Option<PathBuf> {
     env::split_paths(search_path?)

@@ -107,7 +107,7 @@ fn ensure_executable(
     if let JsxMode::Unavailable { configured } = &settings.jsx
         && let Some(span) = survey.first_jsx
     {
-        let message = jsx_unavailable(configured);
+        let message = jsx_unavailable(configured.as_deref());
         return Err(TransformError::at(path, source, span.start as usize, message));
     }
     if !settings.experimental_decorators
@@ -123,7 +123,7 @@ fn ensure_executable(
     Ok(())
 }
 
-fn jsx_unavailable(configured: &Option<String>) -> String {
+fn jsx_unavailable(configured: Option<&str>) -> String {
     const CHOICES: &str = "set \"jsx\" to \"react-jsx\" (with \"jsxImportSource\"), \"react-jsxdev\", or \"react\" in tsconfig.json";
     match configured {
         Some(configured) => format!(
