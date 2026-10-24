@@ -20,6 +20,7 @@ mod sources;
 mod watch_inputs;
 mod workers;
 
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -132,7 +133,9 @@ impl RunningRuntime {
     pub fn wait(mut self) -> RunOutcome {
         match self.thread.take().expect("runtime thread available").join() {
             Ok(outcome) => outcome,
-            Err(_) => RunOutcome::Failed(RuntimeError::startup("runtime thread panicked")),
+            Err(payload) => {
+                RunOutcome::Failed(RuntimeError::startup(panic_message(payload.as_ref())))
+            }
         }
     }
 }
@@ -142,8 +145,22 @@ impl Drop for RunningRuntime {
         if let Some(thread) = self.thread.take() {
             let report = self.handle.shutdown();
             if report.outcome != ShutdownOutcome::TimedOut {
+                // Dropping an instance instead of waiting for it discards its outcome, a
+                // runtime-thread panic included.
                 let _ = thread.join();
             }
         }
+    }
+}
+
+/// The text a panic carried, which is a payload only for `panic!` with a message.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    let text = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str));
+    match text {
+        Some(text) => format!("runtime thread panicked: {text}"),
+        None => "runtime thread panicked".to_owned(),
     }
 }
