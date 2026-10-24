@@ -9,9 +9,9 @@ use crate::sources::Sources;
 /// Which stage of a run an error belongs to, for hosts that report the stages differently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
-    /// The instance could not be set up (paths, host modules, worker setup), a CommonJS
-    /// module could not be compiled, or the runtime thread panicked; the last two may happen
-    /// after guest code has run.
+    /// The instance could not be set up (paths, host modules, worker setup), a module could
+    /// not be compiled, or the runtime thread panicked; the last two may happen after guest
+    /// code has run.
     Startup,
     /// An import named a module that could not be found.
     Resolution,
