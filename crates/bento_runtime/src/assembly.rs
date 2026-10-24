@@ -105,7 +105,14 @@ fn close_resources(worker: &mut LibMainWorker) {
     let resources = {
         let mut state = state.borrow_mut();
         let ids: Vec<_> = state.resource_table.names().map(|(id, _)| id).collect();
-        ids.into_iter().filter_map(|id| state.resource_table.take_any(id).ok()).collect::<Vec<_>>()
+        ids.into_iter()
+            .map(|id| {
+                state
+                    .resource_table
+                    .take_any(id)
+                    .expect("every id was listed by this table under the same borrow")
+            })
+            .collect::<Vec<_>>()
     };
     for resource in resources {
         resource.close();
