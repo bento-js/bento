@@ -2,7 +2,7 @@
 id: proposal.0002
 title: Web Prompt API with macOS Foundation Models
 authors: [Mark]
-status: draft
+status: awaiting-implementation
 pull-request: https://github.com/bento-js/bento/pull/249
 issues: []
 supersedes: []
@@ -18,7 +18,7 @@ Add the Web Prompt API's text-session interface to Bento, backed by Apple's on-d
 
 On 2026-10-24, Mark requested the Web Prompt API, macOS Foundation Models as the MVP, a reusable crate, and a pull request stacked on [PR #247](https://github.com/bento-js/bento/pull/247). When asked whether to prepare a proposal, he selected “Yes, prepare the proposal.” The authorization and initial research are recorded in [PR #248](https://github.com/bento-js/bento/pull/248#issuecomment-6386256803).
 
-That consent covers proposal preparation and its draft PR, not approval of the design below. This proposal remains `draft`. The earlier runtime build mandate does not authorize this work. Implementation, acceptance, merging, upstream dependency publication, and release have not been approved. The recommended choices below require the human's decision in Open questions before tests, guides, or production code are written.
+On 2026-10-24, Mark approved this design for implementation, with macOS 27.0 as the native-backend minimum. He approved the text-session/constrained-JSON scope, engine-independent crate with optional Deno adapter, default-enabled CLI backend, opt-in library backend, and backend-free builds. He also authorized creating and using a fork containing the narrowly scoped binding changes, with eventual upstreaming if the author is amenable. His instruction was “This design is approved to go to implementation”; the [approval record](https://github.com/bento-js/bento/pull/249#issuecomment-6388198021) preserves these decisions. This authorizes implementation and feature/dependency branch publication, not acceptance, merging, package release, or production deployment. The earlier runtime mandate is not used.
 
 The feature branch was stacked on `sesh/rust-style-guide-alignment` at `791c5f76a354efc9f70a41f7b0593fe0522cb8e9`. During proposal preparation, PR #247 merged into `main` as `60ca248`, and deletion of its branch automatically closed PR #248. GitHub rejected reopening the closed PR or changing its base. [PR #249](https://github.com/bento-js/bento/pull/249) replaces it against `main`, which contains the prerequisite commits. The pushed feature history was not rewritten.
 
@@ -56,7 +56,7 @@ The common text path should retain the API's observable promise, stream, event, 
 
 ### Remaining uncertainty
 
-The released Rust dependency has two concrete integration gaps: its safe streaming API blocks and does not expose a caller-owned cancellation handle, and its [coverage report](https://github.com/doom-fish/foundation-models-rs/blob/cf7ab5592b985b0766a3c0ef83e4625c76bef5eb/COVERAGE.md) says macOS 27's newer `LanguageModelError` maps to `FMError::Unknown`. A corrected dependency is recommended rather than weakening Bento's cancellation or error contract. Its acquisition and maintenance route is an approval question below.
+The released Rust dependency has two concrete integration gaps: its safe streaming API blocks and does not expose a caller-owned cancellation handle, and its [coverage report](https://github.com/doom-fish/foundation-models-rs/blob/cf7ab5592b985b0766a3c0ef83e4625c76bef5eb/COVERAGE.md) says macOS 27's newer `LanguageModelError` maps to `FMError::Unknown`. Use the authorized, narrowly patched Bento-owned fork at an immutable revision rather than weakening cancellation or error behavior. Keep the changes suitable for eventual upstream contribution; this work does not require an upstream release.
 
 Rust-level transcript reconstruction, supported-schema translation, stream cancellation, and deployment-floor behavior still need implementation-time proof. Native Swift probes establish feasibility, not Rust binding correctness or Bento compatibility.
 
@@ -80,7 +80,7 @@ Direct Swift probes on 2026-10-24, using Swift 6.4 and SDK 27.0, observed:
 
 ## Proposed solution
 
-The recommended MVP is the text-session Prompt API, including constrained JSON output, backed by Apple's default on-device model on macOS 26.4 or newer. Expose `globalThis.LanguageModel` in Bento's main and worker isolates. Put reusable session behavior and the native adapter in `bento_prompt`; make its Deno extension an optional feature. Do not introduce a public backend plugin registry or placeholder Windows/Linux implementations.
+The approved MVP is the text-session Prompt API, including constrained JSON output, backed by Apple's default on-device model on macOS 27.0 or newer. Expose `globalThis.LanguageModel` in Bento's main and worker isolates. Put reusable session behavior and the native adapter in `bento_prompt`; make its Deno extension an optional feature. Do not introduce a public backend plugin registry or placeholder Windows/Linux implementations.
 
 The intended usage is ordinary Prompt API JavaScript, with authority supplied outside the script:
 
@@ -111,9 +111,9 @@ Add `crates/bento_prompt` as a normal workspace library with inherited package m
 
 The core crate selects the compiled native implementation internally. No user-selectable model names, provider registry, cloud configuration, or public trait hierarchy for hypothetical backends is introduced. Unsupported-target and backend-disabled paths report genuine unavailability and cannot generate responses.
 
-`bento_runtime` installs the Deno adapter independently of whether a native backend is compiled. Its `prompt-foundation-models` Cargo feature is opt-in for embedding hosts. The recommended CLI build enables its forwarding feature by default on its currently supported macOS-arm64 target; `--no-default-features` provides a backend-free build without the new SDK dependency. The native dependency is target-gated as well as feature-gated. Enabling a build feature never grants runtime permission.
+`bento_runtime` installs the Deno adapter independently of whether a native backend is compiled. Its `prompt-foundation-models` Cargo feature is opt-in for embedding hosts. The CLI build enables its forwarding feature by default on its currently supported macOS-arm64 target; `--no-default-features` provides a backend-free build without the new SDK dependency. The native dependency is target-gated as well as feature-gated. Enabling a build feature never grants runtime permission.
 
-The recommended enabled-backend runtime floor is macOS 26.4, with Xcode/SDK 26.4 or newer for builds. Native-enabled artifacts must declare their deployment requirement; they must not be advertised as binaries for earlier macOS releases. Backend-free artifacts retain the pre-feature platform requirements. CI must verify both feature configurations and record the actual SDK used rather than assuming a moving runner label establishes compatibility.
+The enabled-backend runtime floor is macOS 27.0, with Xcode/SDK 27.0 or newer for builds. Native-enabled artifacts must declare their deployment requirement; they must not be advertised as binaries for earlier macOS releases. Backend-free artifacts retain the pre-feature platform requirements. CI must verify both feature configurations and record the actual SDK used rather than assuming a moving runner label establishes compatibility.
 
 ### Authority and isolation
 
@@ -139,7 +139,7 @@ Accept string prompts and arrays of role-bearing messages whose content is a str
 
 Image, audio, tool-call, and tool-response capabilities are not supported by this MVP. Well-formed configurations requesting them report unavailable; using unsupported content rejects with `NotSupportedError`. Invalid enum values and malformed dictionaries follow WebIDL validation. Experimental tools and `samplingMode`, and deprecated `params()`, `topK`, `temperature`, `inputUsage`, and `inputQuota`, are not implemented. Unknown dictionary members follow normal WebIDL handling, not a custom strict-options parser.
 
-A syntactically valid assistant `prefix: true` rejects with `NotSupportedError`: the selected backend cannot faithfully continue a partial assistant turn. An invalid prefix position or role still produces the specified `SyntaxError`. Do not simulate continuation by inserting an instruction into a new user turn. This limitation is a deliberate compatibility boundary requiring approval, not a full-conformance claim.
+A syntactically valid assistant `prefix: true` rejects with `NotSupportedError`: the selected backend cannot faithfully continue a partial assistant turn. An invalid prefix position or role still produces the specified `SyntaxError`. Do not simulate continuation by inserting an instruction into a new user turn. This is an approved compatibility boundary, not a full-conformance claim.
 
 Ship matching ambient declarations with `bento_prompt` and expose their text for Rust embedders to write into their guest projects. Include their use in the runnable TypeScript example. This requires no npm package publication or new runtime command. The guide must distinguish the declared web API shape from backend capability support.
 
@@ -195,11 +195,11 @@ This is a documented server-side adaptation of the pinned Prompt API text surfac
 
 Existing guests receive no new model authority. Existing Rust callers constructing `Grants` or `GrantRequest` exhaustively need the new field; migrate all repository callers without a compatibility shim. Old serialized ceilings deny the new capability. No session history is persisted, logged, or exported by default.
 
-The default CLI's recommended native feature raises the requirements of that build to macOS 26.4 and a suitable SDK. Backend-free builds and default library embeddings do not acquire those requirements. This packaging choice is pending approval.
+The default CLI's native feature raises the requirements of that build to macOS 27.0 and a suitable SDK. Backend-free builds and default library embeddings do not acquire those requirements.
 
 ## Implications on adoption
 
-A native-enabled consumer needs Apple Silicon, macOS 26.4 or newer, Apple Intelligence enabled, and the OS model ready. Developers building it need Xcode/SDK 26.4 or newer and the Swift toolchain. Enabling the Rust feature and granting guest access are separate steps. Unavailable users must receive an actionable explanation in the guide; Bento does not install model assets or change settings for them.
+A native-enabled consumer needs Apple Silicon, macOS 27.0 or newer, Apple Intelligence enabled, and the OS model ready. Developers building it need Xcode/SDK 27.0 or newer and the Swift toolchain. Enabling the Rust feature and granting guest access are separate steps. Unavailable users must receive an actionable explanation in the guide; Bento does not install model assets or change settings for them.
 
 The new library remains a workspace/path-or-Git dependency under the repository's existing `publish = false` policy. Reuse does not require public crates.io or npm publication. Removing the native feature removes the Swift/framework dependency; removing the grant denies guest access without removing the API surface.
 
@@ -231,14 +231,12 @@ A Windows backend or a portable quantized-model backend could implement the same
 
 ## Alternatives considered
 
-1. **Recommended: text sessions and constrained JSON in an engine-independent crate with an optional Deno adapter.** This supports both Rust reuse and the requested web global, keeps the native dependency selectable, and makes the known Apple capability boundaries explicit. It requires schema translation and a dependency correction for cancellable streaming and modern errors.
+1. **Selected: text sessions and constrained JSON in an engine-independent crate with an optional Deno adapter.** This supports both Rust reuse and the requested web global, keeps the native dependency selectable, and makes the known Apple capability boundaries explicit. It requires schema translation and a dependency correction for cancellable streaming and modern errors.
 2. **A reusable Deno-extension-only crate.** This also implements the requested JavaScript surface and can be embedded into other Deno-based runtimes, with less public Rust API. It makes every consumer depend on the engine substrate and does not provide standalone native-session reuse. It is viable if reuse is intended only for Deno/V8 hosts.
 3. **A private host module or a minimal `prompt()` wrapper.** This is smaller but does not deliver the requested global, conversation-management surface, or stream/lifecycle contract. It is not recommended as an implementation of the Web Prompt API.
 
-Supporting macOS 26.0–26.3 would require a different, explicitly approximate context-accounting contract or omitting context operations. The recommended 26.4 floor avoids that compromise. Using a separate Swift bridge would give Bento control over missing bindings but duplicate the dependency's work; a narrow corrected upstream dependency is preferred. A temporary pinned fork is a possible fallback only with permission to maintain and publish it.
+Supporting macOS 26.0–26.3 would require a different, explicitly approximate context-accounting contract or omitting context operations. Although 26.4 supplies token counting, Mark selected macOS 27.0 as the minimum. Using a separate Swift bridge would give Bento control over missing bindings but duplicate the dependency's work; the approved route is a narrowly patched, pinned fork suitable for eventual upstream contribution.
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: Approve the recommended text-session and constrained-JSON surface, explicit unsupported assistant-prefix/multimodal/experimental capabilities, and engine-independent bento_prompt crate with an optional Deno adapter, or choose extension-only Rust reuse?]
-- [NEEDS CLARIFICATION: Approve macOS 26.4 as the native-backend minimum and enable that backend by default in the CLI, while library embeddings and --no-default-features builds remain opt-in/backend-free, or require native support to be opt-in for the CLI as well?]
-- [NEEDS CLARIFICATION: May the implementation include narrowly scoped upstream binding changes for cancellable async streaming and typed macOS 27 errors, and, if an upstream release is unavailable, may it create/use a pinned Bento-owned dependency fork? No fork creation, upstream publication, or public release is authorized by this draft.]
+None. The human resolved the three design and dependency-authority questions and authorized implementation on 2026-10-24.
