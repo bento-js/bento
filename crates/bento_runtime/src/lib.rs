@@ -108,8 +108,8 @@ pub struct RuntimeConfig {
     pub argv: Vec<String>,
     /// Modules the guest may import under their `host:` specifiers.
     pub host_modules: Vec<HostModule>,
-    /// How long a requested shutdown may run before the isolate is terminated; expiry
-    /// reports [`ShutdownOutcome::TimedOut`].
+    /// How long a requested shutdown may run before execution is terminated, which reports
+    /// [`ShutdownOutcome::Interrupted`].
     pub shutdown_deadline: Duration,
 }
 
@@ -233,9 +233,10 @@ impl RunningRuntime {
 }
 
 impl Drop for RunningRuntime {
-    /// Requests shutdown and blocks until the instance is disposed, unless the shutdown
-    /// deadline expired first. The outcome is discarded, a runtime-thread panic included;
-    /// [`RunningRuntime::wait`] is how a host keeps it.
+    /// Requests shutdown and blocks until the instance is disposed, unless disposal did not
+    /// finish ([`ShutdownOutcome::TimedOut`]), in which case the runtime thread is detached.
+    /// The outcome is discarded, a runtime-thread panic included; [`RunningRuntime::wait`] is
+    /// how a host keeps it.
     fn drop(&mut self) {
         if let Some(thread) = self.thread.take() {
             let report = self.handle.shutdown();
