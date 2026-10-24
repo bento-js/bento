@@ -57,6 +57,13 @@ pub enum ManifestProblem {
 }
 
 impl Manifest {
+    /// Reads the `package.json` at `path`, keeping only the fields Bento acts on.
+    ///
+    /// # Errors
+    ///
+    /// [`ManifestError::Read`] when the file cannot be read, [`ManifestError::Syntax`] when
+    /// it is not JSON, and [`ManifestError::Invalid`] when one of those fields has a shape
+    /// Bento cannot use.
     pub fn read(path: &Path) -> Result<Manifest, ManifestError> {
         let text = fs::read_to_string(path)
             .map_err(|source| ManifestError::Read { path: path.to_owned(), source })?;

@@ -57,6 +57,14 @@ impl LaunchEnvironment {
     /// is chosen once. Later files override earlier ones; inherited values override all
     /// files, except values an outer launch forwarded from its own files (recorded in
     /// [`crate::FILE_KEYS_ENV`]), which this launch may load again for its own mode.
+    ///
+    /// # Errors
+    ///
+    /// [`EnvironmentError::Read`] when an environment file exists but cannot be read,
+    /// [`EnvironmentError::Dotenv`] when one cannot be parsed,
+    /// [`EnvironmentError::InvalidMode`] when the selected `NODE_ENV` contains `/`, and
+    /// [`EnvironmentError::FileKeys`] when the inherited [`crate::FILE_KEYS_ENV`] entry is
+    /// malformed.
     pub fn load(
         project_root: &Path,
         inherited: BTreeMap<String, String>,

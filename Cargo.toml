@@ -16,6 +16,8 @@ unreachable_pub = "warn"
 allow_attributes_without_reason = "warn"
 cast_possible_truncation = "warn"
 cast_sign_loss = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
 undocumented_unsafe_blocks = "warn"
 
 # Upstream runtime crates are pinned to exactly the set published with Deno v2.9.7 so

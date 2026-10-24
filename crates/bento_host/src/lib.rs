@@ -5,6 +5,8 @@
 //! decision; the runtime enforces it at its native operation boundaries. Nested Bento
 //! launches receive the invoking launch's policy as a ceiling they may only narrow.
 
+#![warn(missing_docs)]
+
 mod grants;
 mod net;
 mod path;

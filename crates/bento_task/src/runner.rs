@@ -65,6 +65,13 @@ impl TaskError {
 impl TaskRunner {
     /// `executable` is the absolute path of the running `bento` executable, which task
     /// commands reach by the name `bento`.
+    ///
+    /// # Errors
+    ///
+    /// [`TaskError::BentoLink`] when that link cannot be made,
+    /// [`TaskError::UnrepresentablePath`] when a directory going on `PATH` is not UTF-8 or
+    /// contains `:`, and [`TaskError::GrantCeiling`] when `grants` cannot be encoded for
+    /// nested launches.
     pub fn new(
         project: &Project,
         launch: &LaunchEnvironment,
@@ -96,6 +103,12 @@ impl TaskRunner {
     }
 
     /// Runs the plan's commands in order, stopping at the first failure or cancellation.
+    ///
+    /// # Errors
+    ///
+    /// The first step's failure: [`TaskError::Process`] when the shell cannot be started,
+    /// [`TaskError::Failed`] when a command exits non-zero or on a signal, and
+    /// [`TaskError::Cancelled`] when cancellation was requested.
     pub fn run(&self, plan: &Plan, cancellation: &Cancellation) -> Result<(), TaskError> {
         plan.steps().iter().try_for_each(|step| self.run_step(step, cancellation))
     }

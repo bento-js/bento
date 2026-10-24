@@ -60,6 +60,13 @@ impl InstallError {
 /// started it would; pnpm itself still runs in the project root. Bento adds
 /// `--production=false` so an inherited `NODE_ENV=production` cannot drop development
 /// dependencies, and nothing that approves dependency build scripts.
+///
+/// # Errors
+///
+/// [`InstallError::UnsupportedPackageManager`] when the manifest's `packageManager` is not
+/// pnpm, [`InstallError::MissingPnpm`] when that search finds no `pnpm`,
+/// [`InstallError::Spawn`] when it cannot be started, and [`InstallError::Failed`] when
+/// pnpm itself exits non-zero.
 pub fn install(
     project: &Project,
     lockfile: Lockfile,

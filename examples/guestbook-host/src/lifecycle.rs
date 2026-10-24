@@ -41,6 +41,17 @@ pub struct Served {
 /// runtime to shut down, which delivers `SIGTERM` to the guest's own handler and waits for it
 /// within the deadline. A signal that arrives while the guest is still starting ends it the
 /// same way.
+///
+/// # Errors
+///
+/// [`ServeError::Signals`] when the host cannot take over Ctrl-C and `SIGTERM`,
+/// [`ServeError::Store`] when the database cannot be opened, and [`ServeError::Runtime`]
+/// when the instance cannot start.
+///
+/// # Panics
+///
+/// If the signal-forwarding thread panics. The outcome channel itself never runs dry: the
+/// thread waiting on the instance always sends one.
 pub fn serve(launch: &Launch, access: Access, entry: &Path) -> Result<Served, ServeError> {
     let mut signals = Signals::new([SIGINT, SIGTERM]).map_err(ServeError::Signals)?;
     let store = GuestBookStore::open(launch.database(), access)?;

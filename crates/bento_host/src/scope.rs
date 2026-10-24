@@ -9,8 +9,10 @@ use crate::NetTarget;
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "scope", content = "items")]
 pub enum Scope<T: Ord> {
+    /// Nothing is authorized; the default for every kind.
     #[default]
     None,
+    /// Every item of the kind is authorized, including items created later.
     All,
     /// Only these items are authorized; an empty set grants nothing, like [`Scope::None`].
     Only(BTreeSet<T>),
@@ -21,7 +23,10 @@ pub trait Covers {
     /// The borrowed form operations are checked against (`Path` for paths, `str` for names).
     type Target: ?Sized;
 
+    /// Whether this granted item authorizes an operation on `requested`.
     fn covers(&self, requested: &Self::Target) -> bool;
+    /// This item seen as an operation target, so granted items can be checked against a
+    /// scope of their own kind.
     fn as_target(&self) -> &Self::Target;
     /// How the item reads in diagnostics.
     fn describe(&self) -> String;
@@ -88,6 +93,8 @@ impl<T: Ord> Scope<T> {
 }
 
 impl<T: Ord + Covers> Scope<T> {
+    /// Whether an operation on `requested` is authorized; the check a runtime makes at its
+    /// native operation boundaries.
     pub fn allows(&self, requested: &T::Target) -> bool {
         match self {
             Scope::None => false,

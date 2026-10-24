@@ -37,6 +37,16 @@ const TRANSFORMED_EXTENSIONS: &[&str] = &["ts", "mts", "cts", "tsx", "jsx"];
 
 /// Removes type syntax and compiles JSX in `source`, read from `path`, according to
 /// `settings`. Module syntax is kept as written; nothing is downleveled or type checked.
+///
+/// # Errors
+///
+/// [`TransformError`] when `path` has none of the transformed extensions, when the source
+/// does not parse, or when it uses syntax the settings leave untransformed: JSX without a
+/// usable `jsx` option, and decorators without `experimentalDecorators`.
+///
+/// # Panics
+///
+/// Never: code generation is always given the source map path that produces the map.
 pub fn transform(
     path: &Path,
     source: &str,

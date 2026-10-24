@@ -6,41 +6,65 @@ use thiserror::Error;
 
 use crate::sources::Sources;
 
+/// Which stage of a run an error belongs to, for hosts that report the stages differently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
+    /// The instance never reached the guest's code: paths, host modules, worker setup, or a
+    /// CommonJS module that could not be compiled.
     Startup,
+    /// An import named a module that could not be found.
     Resolution,
+    /// A module's TypeScript or JSX could not be transformed, or the project's
+    /// `tsconfig.json` could not be loaded.
     Transform,
+    /// The guest attempted an operation outside its grants.
     Permission,
+    /// The guest threw and nothing handled it.
     Uncaught,
 }
 
+/// A failure that ended, or prevented, one run.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error("{message}")]
 pub struct RuntimeError {
+    /// The stage this failure belongs to.
     pub kind: ErrorKind,
+    /// Ready to show: terminal escapes are stripped, and a guest failure is prefixed with
+    /// the entry path and carries the formatted stack.
     pub message: String,
     location: Option<SourceLocation>,
 }
 
+/// Where in the project's own sources a failure happened.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceLocation {
+    /// Absolute path of the file the failure is attributed to: a project source, except for
+    /// a permission failure, which may be placed in a dependency.
     pub path: PathBuf,
+    /// One-based line.
     pub line: u32,
+    /// One-based column.
     pub column: u32,
 }
 
+/// Failure to start an instance, which is always a [`RuntimeError`].
 pub type StartError = RuntimeError;
 
+/// How one run ended.
 #[derive(Debug)]
 pub enum RunOutcome {
+    /// The guest's event loop drained with nothing left to do.
     Completed,
+    /// The guest exited with this code.
     Exited(i32),
+    /// The instance failed before or during execution.
     Failed(RuntimeError),
+    /// A host-requested shutdown ended the run; the report says how far it got.
     Shutdown(crate::ShutdownReport),
 }
 
 impl RuntimeError {
+    /// Where this failure happened, when it can be placed in the project's own sources.
     pub fn location(&self) -> Option<&SourceLocation> {
         self.location.as_ref()
     }

@@ -12,9 +12,13 @@ use crate::{RunOutcome, RuntimeError, StartError};
 // Reserve a bounded window for isolate/resource destruction after interrupting JavaScript.
 // Expiry reports incomplete disposal, not proof that native execution is the cause.
 const DISPOSAL_MARGIN: Duration = Duration::from_millis(100);
+
+/// A process signal a host forwards into one instance.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Signal {
+    /// `SIGINT`, as a terminal sends it on Ctrl-C.
     Interrupt,
+    /// `SIGTERM`, the stop request a supervisor sends.
     Terminate,
 }
 
@@ -27,19 +31,34 @@ impl Signal {
     }
 }
 
+/// How an instance ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShutdownOutcome {
-    Graceful { exit_code: Option<i32> },
+    /// The guest stopped on its own terms rather than being terminated.
+    Graceful {
+        /// `Some(0)` when the guest ran to the end, `Some(code)` when it exited with one,
+        /// `None` when it stopped only because shutdown was requested.
+        exit_code: Option<i32>,
+    },
+    /// Startup failed, or the guest ended on an error it did not handle.
     Failed(RuntimeError),
+    /// The shutdown deadline expired, so execution was terminated mid-flight.
     Interrupted,
+    /// Terminated execution did not release the isolate and its resources either; disposal
+    /// is incomplete, and the thread may still be inside native code.
     TimedOut,
 }
 
+/// What one instance's shutdown came to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShutdownReport {
+    /// The ending that was recorded, which is the instance's own if it had already finished
+    /// before shutdown was requested.
     pub outcome: ShutdownOutcome,
 }
 
+/// Signal and shutdown access to one started instance. Clonable, and usable from any thread
+/// for as long as the instance exists.
 #[derive(Clone)]
 pub struct RuntimeHandle {
     pub(crate) control: Arc<Control>,
@@ -83,12 +102,20 @@ pub(crate) struct Control {
 }
 
 impl RuntimeHandle {
+    /// Delivers `signal` to the guest's handlers for it and returns at once. A guest with no
+    /// handler for that signal is shut down instead, without waiting for the report.
     pub fn signal(&self, signal: Signal) {
         if !self.control.deliver(signal.name()) {
             self.control.request_shutdown();
         }
     }
 
+    /// Asks the instance to stop and blocks until it has ended, at most for the config's
+    /// shutdown deadline plus a short disposal margin. Later calls return the same report.
+    ///
+    /// # Panics
+    ///
+    /// Never: the report is only awaited here, and it is never cleared once recorded.
     pub fn shutdown(&self) -> ShutdownReport {
         self.control.request_shutdown();
         let mut state = self.control.state.lock();

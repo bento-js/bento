@@ -41,6 +41,12 @@ impl Plan {
     /// Plans `task` from the manifest's top-level tasks. Dependencies come first,
     /// depth-first in declared order, each once; `arguments` are appended, shell-quoted,
     /// to the selected task's own single command.
+    ///
+    /// # Errors
+    ///
+    /// [`PlanError`]: the task or one of its dependencies is unknown or malformed, the
+    /// dependencies form a cycle, or `arguments` were given for a task whose own commands
+    /// cannot receive them.
     pub fn new(manifest: &Manifest, task: &str, arguments: &[String]) -> Result<Plan, PlanError> {
         if !manifest.tasks.contains_key(task) {
             return Err(PlanError::UnknownTask { task: task.to_owned() });
