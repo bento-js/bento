@@ -4,7 +4,7 @@ pub(crate) fn line_column(source: &str, offset: usize) -> (u32, u32) {
     let line = before.matches('\n').count() + 1;
     let line_start = before.rfind('\n').map_or(0, |newline| newline + 1);
     let column = before[line_start..].chars().count() + 1;
-    (line as u32, column as u32)
+    (u32::try_from(line).unwrap_or(u32::MAX), u32::try_from(column).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]

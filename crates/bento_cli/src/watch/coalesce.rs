@@ -11,11 +11,11 @@ use super::scope::WatchScope;
 /// How long the watched files must stay unchanged before a burst of changes is reported.
 const QUIET_PERIOD: Duration = Duration::from_millis(100);
 
-pub type Notification = notify::Result<Event>;
+pub(super) type Notification = notify::Result<Event>;
 
 /// Reports each burst of changes in `scope` among `notifications` to `on_change`, once,
 /// after the files have been quiet for `QUIET_PERIOD`. Returns when the notifications end.
-pub fn report_bursts(
+pub(super) fn report_bursts(
     notifications: &Receiver<Notification>,
     scope: &Mutex<WatchScope>,
     mut on_change: impl FnMut(Vec<PathBuf>),

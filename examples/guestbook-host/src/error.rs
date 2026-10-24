@@ -8,7 +8,7 @@ use bento_guestbook_host::store::StoreError;
 use bento_runtime::RuntimeError;
 
 #[derive(Debug, Error)]
-pub enum CommandError {
+pub(crate) enum CommandError {
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]

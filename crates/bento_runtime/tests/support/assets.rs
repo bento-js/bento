@@ -8,7 +8,7 @@ use oxc::span::{GetSpan, SourceType, Span};
 
 use super::http;
 
-pub fn urls(document: &str) -> BTreeSet<String> {
+pub(crate) fn urls(document: &str) -> BTreeSet<String> {
     let mut urls = BTreeSet::new();
     for attribute in ["href=\"", "src=\""] {
         for tail in document.split(attribute).skip(1) {
@@ -42,7 +42,7 @@ fn collect_import_map_urls(import_map: &serde_json::Value, urls: &mut BTreeSet<S
     }
 }
 
-pub fn check(
+pub(crate) fn check(
     port: u16,
     document: &str,
     development: bool,
@@ -81,7 +81,7 @@ pub fn check(
 /// never allows other server modules, so neither of the latter is served in either mode.
 /// Production serves files only under fingerprinted URLs, so the allowed module is requested by
 /// its source path in development.
-pub fn check_rules(port: u16, development: bool) {
+pub(crate) fn check_rules(port: u16, development: bool) {
     for (url, source) in [
         ("/assets/app/actions/guest-book/controller.test.ts", "guest-book.test"),
         ("/assets/app/router.ts", "createRouter"),
@@ -118,7 +118,10 @@ fn check_source_map(port: u16, url: &str, source: &str) {
     assert!(!map["sources"].as_array().unwrap().is_empty());
 }
 
-pub fn compare_minified_with_development(port: u16, minified_scripts: &BTreeMap<String, String>) {
+pub(crate) fn compare_minified_with_development(
+    port: u16,
+    minified_scripts: &BTreeMap<String, String>,
+) {
     assert!(!minified_scripts.is_empty(), "no production JavaScript assets");
     for (url, minified) in minified_scripts {
         let response = http::request(port, "GET", url, "").unwrap();

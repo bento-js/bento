@@ -53,7 +53,7 @@ impl fmt::Debug for HostModule {
 pub(crate) struct HostModules(BTreeMap<String, HostModule>);
 
 impl HostModules {
-    pub fn new(modules: Vec<HostModule>) -> Result<Self, StartError> {
+    pub(crate) fn new(modules: Vec<HostModule>) -> Result<Self, StartError> {
         let mut registered = BTreeMap::new();
         for module in modules {
             if !module.specifier.starts_with("host:") || module.specifier.len() == 5 {
@@ -71,15 +71,15 @@ impl HostModules {
         Ok(Self(registered))
     }
 
-    pub fn contains(&self, specifier: &str) -> bool {
+    pub(crate) fn contains(&self, specifier: &str) -> bool {
         self.0.contains_key(specifier)
     }
 
-    pub fn handler(&self, specifier: &str, name: &str) -> Option<HostFunction> {
+    pub(crate) fn handler(&self, specifier: &str, name: &str) -> Option<HostFunction> {
         self.0.get(specifier)?.functions.get(name).cloned()
     }
 
-    pub fn source(&self, specifier: &str) -> Option<String> {
+    pub(crate) fn source(&self, specifier: &str) -> Option<String> {
         let module = self.0.get(specifier)?;
         let specifier = serde_json::to_string(specifier).expect("string serialization");
         let mut source = "const invoke = globalThis[Symbol.for('bento.host.invoke')];\n".to_owned();

@@ -4,7 +4,7 @@
 
 /// Appends two entries, then checks `list()` returns them oldest first with RFC 3339 UTC
 /// timestamps, and that the environment carries the port and mode but no database location.
-pub const ROUND_TRIP: &str = r#"
+pub(crate) const ROUND_TRIP: &str = r#"
 import assert from 'node:assert/strict';
 import { append, list } from 'host:guestbook';
 
@@ -30,7 +30,7 @@ assert.deepEqual(Object.keys(process.env).sort(), ['NODE_ENV', 'PORT']);
 
 /// Expects one saved entry, a refused `append` carrying the `PermissionDenied` name, and an
 /// unchanged listing afterwards.
-pub const READ_ONLY: &str = r#"
+pub(crate) const READ_ONLY: &str = r#"
 import assert from 'node:assert/strict';
 import { append, list } from 'host:guestbook';
 
@@ -44,7 +44,7 @@ assert.deepEqual(await list(), before);
 "#;
 
 /// Lists the entries, then tries to read the database file named by its first argument.
-pub const PROBE_STORE_FILE: &str = r#"
+pub(crate) const PROBE_STORE_FILE: &str = r#"
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -57,12 +57,12 @@ assert.throws(() => readFileSync(database), /permission|NotCapable|Requires/i);
 "#;
 
 /// Imports the module without having it registered.
-pub const UNREGISTERED: &str = "import 'host:guestbook';\n";
+pub(crate) const UNREGISTERED: &str = "import 'host:guestbook';\n";
 
 /// An HTTP guest shaped like the fixture's embedded entrypoint: `GET /` answers the entries as
 /// JSON, a form `POST /` appends one and redirects, a refused append answers 500 with the error's
 /// name, and `SIGTERM` closes the server and exits.
-pub const SERVER: &str = r#"
+pub(crate) const SERVER: &str = r#"
 import http from 'node:http';
 import { append, list } from 'host:guestbook';
 
@@ -106,7 +106,7 @@ process.on('SIGTERM', shutdown);
 
 /// A guest still busy starting: it has opened its port but is waiting on startup work, like
 /// asset compilation, before it would install signal handlers and begin serving.
-pub const STARTING: &str = r#"
+pub(crate) const STARTING: &str = r#"
 import net from 'node:net';
 
 net.createServer().listen(Number(process.env.PORT));
@@ -115,7 +115,7 @@ process.on('SIGTERM', () => process.exit(0));
 "#;
 
 /// A guest whose `SIGTERM` handler throws, so its shutdown fails with an uncaught error.
-pub const FAILING_SHUTDOWN: &str = r#"
+pub(crate) const FAILING_SHUTDOWN: &str = r#"
 import net from 'node:net';
 
 net.createServer().listen(Number(process.env.PORT));

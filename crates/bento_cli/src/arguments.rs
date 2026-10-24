@@ -5,13 +5,13 @@ use crate::grant_flags::GrantFlags;
 /// Run TypeScript applications and project tasks.
 #[derive(Debug, Parser)]
 #[command(name = "bento", version)]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Run a script, or a task from the `tasks` field of package.json
     Run(RunArguments),
     /// Install dependencies and devDependencies with the project's pnpm
@@ -19,7 +19,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
-pub struct RunArguments {
+pub(crate) struct RunArguments {
     /// Restart the script whenever its source changes
     #[arg(long)]
     pub watch: bool,
@@ -31,18 +31,18 @@ pub struct RunArguments {
 }
 
 impl RunArguments {
-    pub fn target(&self) -> &str {
+    pub(crate) fn target(&self) -> &str {
         &self.target_and_arguments[0]
     }
 
     /// Every word after the target, exactly as given, including a leading `--`.
-    pub fn arguments(&self) -> &[String] {
+    pub(crate) fn arguments(&self) -> &[String] {
         &self.target_and_arguments[1..]
     }
 }
 
 #[derive(Debug, Args)]
-pub struct InstallArguments {
+pub(crate) struct InstallArguments {
     /// Install exactly the locked graph, failing if package.json and the lockfile disagree
     #[arg(long)]
     pub frozen_lockfile: bool,

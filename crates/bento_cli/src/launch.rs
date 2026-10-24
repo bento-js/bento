@@ -7,7 +7,7 @@ use bento_host::Grants;
 use bento_workspace::{LaunchEnvironment, LaunchKind, Project};
 
 /// What a launch settles before it runs anything, whether it runs a script or a task.
-pub struct Launch {
+pub(crate) struct Launch {
     pub project: Project,
     pub grants: Grants,
     pub environment: LaunchEnvironment,
@@ -16,7 +16,7 @@ pub struct Launch {
 impl Launch {
     /// Resolves `flags` against the inherited ceiling, then loads the project's environment
     /// files beneath the environment `bento` was started with.
-    pub fn prepare(
+    pub(crate) fn prepare(
         project: Project,
         flags: &GrantFlags,
         invocation_directory: &Path,

@@ -10,7 +10,7 @@ use crate::watch;
 use bento_workspace::{LaunchKind, Selection, Target, select_target};
 
 /// `bento run`: selects the target, prepares its launch, and runs it.
-pub fn run(arguments: &RunArguments) -> Result<ExitCode, CliError> {
+pub(crate) fn run(arguments: &RunArguments) -> Result<ExitCode, CliError> {
     let invocation_directory = env::current_dir().map_err(CliError::CurrentDirectory)?;
     let Selection { project, target } = select_target(arguments.target(), &invocation_directory)?;
     match target {

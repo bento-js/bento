@@ -18,11 +18,11 @@ use parking_lot::Mutex;
 
 use self::scope::WatchScope;
 
-pub use self::restarts::run;
+pub(crate) use self::restarts::run;
 
 /// Watches a project for the changes that should restart its script, and reports each burst
 /// of them once. Dropping it stops watching.
-pub struct SourceWatcher {
+pub(crate) struct SourceWatcher {
     watcher: RecommendedWatcher,
     scope: Arc<Mutex<WatchScope>>,
     directories_outside_project: BTreeMap<PathBuf, RecursiveMode>,
@@ -32,11 +32,11 @@ pub struct SourceWatcher {
 }
 
 /// A source or configuration file that cannot be watched, and why.
-pub type UnwatchedFile = (PathBuf, notify::Error);
+pub(crate) type UnwatchedFile = (PathBuf, notify::Error);
 
 impl SourceWatcher {
     /// Watches `project_root` and calls `on_change` once for each burst of source changes.
-    pub fn start(
+    pub(crate) fn start(
         project_root: &Path,
         on_change: impl FnMut(Vec<PathBuf>) + Send + 'static,
     ) -> notify::Result<SourceWatcher> {
@@ -62,7 +62,7 @@ impl SourceWatcher {
 
     /// Watches the files `tsconfig.json` is read from as it is now. An edit can make it extend
     /// other files, so this is worth repeating after each change.
-    pub fn watch_configuration(&mut self) -> Vec<UnwatchedFile> {
+    pub(crate) fn watch_configuration(&mut self) -> Vec<UnwatchedFile> {
         let project_root = self.scope.lock().project_root().to_owned();
         configuration::files(&project_root)
             .into_iter()
@@ -72,7 +72,7 @@ impl SourceWatcher {
 
     /// Returns each registration failure once and retries it on later calls.
     /// Dependency checks ignore ancestors of the project, which may itself be in `node_modules`.
-    pub fn watch_inputs(
+    pub(crate) fn watch_inputs(
         &mut self,
         inputs: impl IntoIterator<Item = PathBuf>,
     ) -> Vec<UnwatchedFile> {

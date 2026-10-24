@@ -7,14 +7,14 @@ use bento_runtime::{RuntimeConfig, RuntimeError, RuntimeHandle};
 use crate::events::Event;
 
 /// A runtime instance executing the script.
-pub struct Instance {
+pub(crate) struct Instance {
     handle: RuntimeHandle,
 }
 
 impl Instance {
     /// Starts executing `entry` under `config`. Once the instance has ended, `Event::Ended`
     /// reports how.
-    pub fn start(
+    pub(crate) fn start(
         config: RuntimeConfig,
         entry: &Path,
         events: &Sender<Event>,
@@ -29,12 +29,12 @@ impl Instance {
         Ok(Instance { handle })
     }
 
-    pub fn handle(&self) -> &RuntimeHandle {
+    pub(crate) fn handle(&self) -> &RuntimeHandle {
         &self.handle
     }
 
     /// Requests the runtime's bounded shutdown without waiting for it; `Event::Ended` follows.
-    pub fn shut_down(&self) {
+    pub(crate) fn shut_down(&self) {
         let handle = self.handle.clone();
         thread::spawn(move || handle.shutdown());
     }

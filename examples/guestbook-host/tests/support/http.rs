@@ -7,7 +7,7 @@ use std::time::Duration;
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
-pub struct Response {
+pub(crate) struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: String,
@@ -15,18 +15,18 @@ pub struct Response {
 
 impl Response {
     /// The first header with this name, compared case-insensitively.
-    pub fn header(&self, name: &str) -> Option<&str> {
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
         let name = name.to_ascii_lowercase();
         self.headers.iter().find(|(header, _)| *header == name).map(|(_, value)| value.as_str())
     }
 }
 
-pub fn get(port: u16, path: &str) -> Response {
+pub(crate) fn get(port: u16, path: &str) -> Response {
     request(port, "GET", path, &[], b"")
 }
 
 /// `POST`s `fields` as `application/x-www-form-urlencoded`, as a browser form submission does.
-pub fn post_form(port: u16, path: &str, fields: &[(&str, &str)]) -> Response {
+pub(crate) fn post_form(port: u16, path: &str, fields: &[(&str, &str)]) -> Response {
     let body = fields
         .iter()
         .map(|(name, value)| format!("{}={}", form_encode(name), form_encode(value)))

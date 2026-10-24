@@ -9,6 +9,15 @@ publish = false
 repository = "https://github.com/markmals/bento"
 rust-version = "1.99"
 
+[workspace.lints.rust]
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+allow_attributes_without_reason = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+undocumented_unsafe_blocks = "warn"
+
 # Upstream runtime crates are pinned to exactly the set published with Deno v2.9.7 so
 # their internal compatibility assumptions hold. Change them together, never one at a time.
 [workspace.dependencies]

@@ -16,8 +16,8 @@ pub(crate) fn import_position(path: &Path, source: &str, specifier: &str) -> Opt
     let mut imports = ImportPosition { specifier, offset: None };
     imports.visit_program(&parsed.program);
     let prefix = &source[..imports.offset?];
-    let line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1;
-    let column = prefix.rsplit('\n').next()?.encode_utf16().count() as u32 + 1;
+    let line = u32::try_from(prefix.bytes().filter(|byte| *byte == b'\n').count() + 1).ok()?;
+    let column = u32::try_from(prefix.rsplit('\n').next()?.encode_utf16().count() + 1).ok()?;
     Some((line, column))
 }
 

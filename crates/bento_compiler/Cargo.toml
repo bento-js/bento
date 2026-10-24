@@ -8,6 +8,9 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 oxc = { workspace = true, features = ["ast_visit", "codegen", "semantic", "transformer"] }
 oxc_resolver.workspace = true

@@ -8,7 +8,7 @@ use crate::error::CommandError;
 
 /// Prints every saved entry as one JSON object per line, oldest first, reading the store
 /// directly rather than through a runtime.
-pub fn entries(arguments: &EntriesArguments) -> Result<ExitCode, CommandError> {
+pub(crate) fn entries(arguments: &EntriesArguments) -> Result<ExitCode, CommandError> {
     let store = GuestBookStore::open(&arguments.database, Access::ReadOnly)?;
     let executor =
         tokio::runtime::Builder::new_current_thread().build().map_err(CommandError::Executor)?;

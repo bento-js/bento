@@ -21,7 +21,7 @@ const CHECK_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Runs the script at `entry` and runs it again, in a new instance, after each burst of
 /// changes to its source, until a signal stops it.
-pub fn run(
+pub(crate) fn run(
     launch: Launch,
     entry: &Path,
     invocation_directory: &Path,

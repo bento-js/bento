@@ -108,7 +108,7 @@ impl RuntimeHandle {
 }
 
 impl Control {
-    pub fn new(
+    pub(crate) fn new(
         deadline: Duration,
     ) -> Result<(Arc<Self>, mpsc::UnboundedReceiver<Command>), StartError> {
         let (commands, receiver) = mpsc::unbounded_channel();
@@ -127,11 +127,11 @@ impl Control {
         Ok((control, receiver))
     }
 
-    pub fn dispose(&self) {
+    pub(crate) fn dispose(&self) {
         let _ = self.commands.send(Command::Dispose);
     }
 
-    pub fn install_isolate(&self, isolate: IsolateHandle) {
+    pub(crate) fn install_isolate(&self, isolate: IsolateHandle) {
         let mut state = self.state.lock();
         if state.interrupted {
             isolate.terminate_execution();
@@ -139,7 +139,7 @@ impl Control {
         state.isolate = Some(isolate);
     }
 
-    pub fn register_signal(&self, name: String, sender: watch::Sender<()>) -> u64 {
+    pub(crate) fn register_signal(&self, name: String, sender: watch::Sender<()>) -> u64 {
         let mut state = self.state.lock();
         state.next_id += 1;
         let id = state.next_id;
@@ -147,11 +147,11 @@ impl Control {
         id
     }
 
-    pub fn unregister_signal(&self, id: u64) {
+    pub(crate) fn unregister_signal(&self, id: u64) {
         self.state.lock().signals.remove(&id);
     }
 
-    pub fn deliver(&self, name: &str) -> bool {
+    pub(crate) fn deliver(&self, name: &str) -> bool {
         let state = self.state.lock();
         let mut delivered = false;
         for (registered, sender) in state.signals.values() {
@@ -162,7 +162,7 @@ impl Control {
         delivered
     }
 
-    pub fn register_worker(&self, isolate: IsolateHandle) -> u64 {
+    pub(crate) fn register_worker(&self, isolate: IsolateHandle) -> u64 {
         let mut state = self.state.lock();
         if state.interrupted || state.closing_workers {
             isolate.terminate_execution();
@@ -173,12 +173,12 @@ impl Control {
         id
     }
 
-    pub fn finish_worker(&self, id: u64) {
+    pub(crate) fn finish_worker(&self, id: u64) {
         self.state.lock().workers.remove(&id);
         self.changed.notify_all();
     }
 
-    pub fn close_workers(&self) {
+    pub(crate) fn close_workers(&self) {
         let mut state = self.state.lock();
         state.closing_workers = true;
         for isolate in state.workers.values() {
@@ -189,26 +189,26 @@ impl Control {
         }
     }
 
-    pub fn watch_inputs(&self) -> Arc<Mutex<BTreeSet<PathBuf>>> {
+    pub(crate) fn watch_inputs(&self) -> Arc<Mutex<BTreeSet<PathBuf>>> {
         self.watch_inputs.clone()
     }
 
-    pub fn default_shutdown(&self) {
+    pub(crate) fn default_shutdown(&self) {
         self.state.lock().default_shutdown = true;
     }
 
-    pub fn fail_feature(&self, error: RuntimeError) {
+    pub(crate) fn fail_feature(&self, error: RuntimeError) {
         let mut state = self.state.lock();
         state.feature_failure.get_or_insert(error);
         state.terminate_isolates();
     }
 
-    pub fn feature_failure(&self) -> Option<RuntimeError> {
+    pub(crate) fn feature_failure(&self) -> Option<RuntimeError> {
         self.state.lock().feature_failure.clone()
     }
 
     // A completion report is retained for later shutdown calls, but returned only for requested shutdown.
-    pub fn complete(&self, execution: &RunOutcome) -> Option<ShutdownReport> {
+    pub(crate) fn complete(&self, execution: &RunOutcome) -> Option<ShutdownReport> {
         let mut state = self.state.lock();
         state.disposed = true;
         state.isolate = None;

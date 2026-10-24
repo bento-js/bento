@@ -14,7 +14,7 @@ use bento_host::{
 /// the comma-separated items. Each flag may be given once.
 #[derive(Debug, Args)]
 #[command(next_help_heading = "Grants")]
-pub struct GrantFlags {
+pub(crate) struct GrantFlags {
     /// Allow reading beneath these paths, or anywhere
     #[arg(
         long, value_name = "PATH", num_args = 0.., action = ArgAction::Set,
@@ -49,7 +49,7 @@ pub struct GrantFlags {
 }
 
 #[derive(Debug, Error)]
-pub enum GrantError {
+pub(crate) enum GrantError {
     #[error("--allow-{kind} has an empty item")]
     EmptyItem { kind: GrantKind },
     #[error("--allow-{kind}: cannot resolve `{path}`: {source}")]
@@ -63,7 +63,7 @@ pub enum GrantError {
 }
 
 /// Removes the policy an invoking launch handed down from `environment` and returns it.
-pub fn take_ceiling(
+pub(crate) fn take_ceiling(
     environment: &mut BTreeMap<String, String>,
 ) -> Result<Option<Grants>, GrantError> {
     let ceiling = environment.remove(CEILING_ENV);
@@ -73,7 +73,7 @@ pub fn take_ceiling(
 impl GrantFlags {
     /// The grants these flags give a launch started in `invocation_directory` under `ceiling`,
     /// the policy of the launch that started this one, if any.
-    pub fn resolve(
+    pub(crate) fn resolve(
         &self,
         invocation_directory: &Path,
         ceiling: Option<&Grants>,

@@ -11,7 +11,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 /// Generous, because a first request may wait for assets to compile in a debug build.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-pub struct Response {
+pub(crate) struct Response {
     pub status: u16,
     /// Header names in lower case.
     pub headers: BTreeMap<String, String>,
@@ -19,17 +19,17 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn header(&self, name: &str) -> &str {
+    pub(crate) fn header(&self, name: &str) -> &str {
         self.headers.get(name).map_or("", String::as_str)
     }
 }
 
-pub fn get(port: u16, path: &str) -> io::Result<Response> {
+pub(crate) fn get(port: u16, path: &str) -> io::Result<Response> {
     request(port, "GET", path, "")
 }
 
 /// Submits `form`, already URL-encoded, to `/` as a browser without JavaScript would.
-pub fn post_form(port: u16, form: &str) -> io::Result<Response> {
+pub(crate) fn post_form(port: u16, form: &str) -> io::Result<Response> {
     request(port, "POST", "/", form)
 }
 

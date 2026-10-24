@@ -14,7 +14,9 @@ static SIGNAL_CHECK: Mutex<()> = Mutex::new(());
 
 fn disposition() -> libc::sigaction {
     let mut action = std::mem::MaybeUninit::uninit();
+    // SAFETY: a null new action only reads the current one into `action`.
     assert_eq!(unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), action.as_mut_ptr()) }, 0);
+    // SAFETY: sigaction returned 0, so it initialized `action`.
     unsafe { action.assume_init() }
 }
 

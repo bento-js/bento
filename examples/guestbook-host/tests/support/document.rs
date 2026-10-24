@@ -9,7 +9,7 @@ use bento_guestbook_host::launch::Mode;
 use super::http::{self, Response};
 
 /// The page rendered the guest book with its form and every listed entry.
-pub fn assert_page(page: &Response, entries: &[(&str, &str)]) {
+pub(crate) fn assert_page(page: &Response, entries: &[(&str, &str)]) {
     assert_eq!(page.status, 200, "{}", page.body);
     for content in [
         "<!DOCTYPE html>",
@@ -33,7 +33,7 @@ pub fn assert_page(page: &Response, entries: &[(&str, &str)]) {
 }
 
 /// The page's sign form is blank: neither field echoes a submitted value.
-pub fn assert_form_cleared(page: &Response) {
+pub(crate) fn assert_form_cleared(page: &Response) {
     let (name, _) = named_element(&page.body, "input", "name");
     let value = name.split_once(" value=\"").map(|(_, value)| value.split('"').next().unwrap());
     assert!(value.unwrap_or_default().is_empty(), "the name field kept a value: <input{name}>");
@@ -54,7 +54,7 @@ fn named_element<'a>(document: &'a str, tag: &str, name: &str) -> (&'a str, &'a 
 }
 
 /// Every `/assets/` URL the document references through `href`, `src`, or its import map.
-pub fn asset_urls(document: &str) -> BTreeSet<String> {
+pub(crate) fn asset_urls(document: &str) -> BTreeSet<String> {
     let mut urls = BTreeSet::new();
     for attribute in ["href=\"", "src=\""] {
         for tail in document.split(attribute).skip(1) {
@@ -90,7 +90,7 @@ fn collect_import_map_urls(import_map: &serde_json::Value, urls: &mut BTreeSet<S
 
 /// Every referenced asset is served with its content type. Development serves plain names with
 /// source maps; production serves fingerprinted, immutable names.
-pub fn assert_assets_served(port: u16, document: &str, mode: Mode) {
+pub(crate) fn assert_assets_served(port: u16, document: &str, mode: Mode) {
     let urls = asset_urls(document);
     assert!(urls.iter().any(|url| url.ends_with(".js")), "{urls:?}");
     assert!(urls.iter().any(|url| url.ends_with(".css")), "{urls:?}");

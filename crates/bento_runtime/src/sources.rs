@@ -25,7 +25,7 @@ pub(crate) struct RecordedFailure {
 }
 
 impl Sources {
-    pub fn load(root: &Path) -> Result<Self, RuntimeError> {
+    pub(crate) fn load(root: &Path) -> Result<Self, RuntimeError> {
         let (settings, diagnostics) = CompilerSettings::load(root)
             .map_err(|error| RuntimeError::transform(error.to_string(), None))?;
         // An unexecutable JSX setting only matters for modules that contain JSX: the compiler
@@ -41,7 +41,7 @@ impl Sources {
         })
     }
 
-    pub fn transform(&self, path: &Path, text: String) -> Result<String, JsErrorBox> {
+    pub(crate) fn transform(&self, path: &Path, text: String) -> Result<String, JsErrorBox> {
         if !path.extension().is_some_and(|extension| {
             matches!(extension.to_str(), Some("ts" | "mts" | "cts" | "tsx" | "jsx"))
         }) {
@@ -60,11 +60,16 @@ impl Sources {
         Ok(transformed.code)
     }
 
-    pub fn source_map(&self, name: &str) -> Option<Vec<u8>> {
+    pub(crate) fn source_map(&self, name: &str) -> Option<Vec<u8>> {
         self.maps.lock().get(name).cloned()
     }
 
-    pub fn resolution_error(&self, specifier: &str, referrer: &str, detail: &str) -> JsErrorBox {
+    pub(crate) fn resolution_error(
+        &self,
+        specifier: &str,
+        referrer: &str,
+        detail: &str,
+    ) -> JsErrorBox {
         let location = ModuleSpecifier::parse(referrer)
             .ok()
             .and_then(|url| url.to_file_path().ok())
@@ -105,7 +110,7 @@ impl Sources {
         JsErrorBox::new(class, message)
     }
 
-    pub fn error_failure(&self, class: &str, message: &str) -> Option<RecordedFailure> {
+    pub(crate) fn error_failure(&self, class: &str, message: &str) -> Option<RecordedFailure> {
         self.errors
             .lock()
             .iter()
@@ -114,11 +119,11 @@ impl Sources {
             .map(|(_, failure)| failure.clone())
     }
 
-    pub fn is_project_source(&self, path: &Path) -> bool {
+    pub(crate) fn is_project_source(&self, path: &Path) -> bool {
         is_watch_source(&self.root, path)
     }
 
-    pub fn is_local_source(&self, path: &Path) -> bool {
+    pub(crate) fn is_local_source(&self, path: &Path) -> bool {
         !is_environment_file(path)
     }
 }

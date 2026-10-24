@@ -7,13 +7,13 @@ use bento_guestbook_host::launch::Mode;
 /// Run the Remix guest book in-process, with entries stored in SQLite that Rust owns.
 #[derive(Debug, Parser)]
 #[command(name = "bento-guestbook-host", version)]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum Command {
+pub(crate) enum Command {
     /// Serve the guest book's `server.embedded.ts` over the `host:guestbook` module
     Serve(ServeArguments),
     /// Print the saved entries straight from the Rust-owned store, without a runtime
@@ -21,7 +21,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
-pub struct ServeArguments {
+pub(crate) struct ServeArguments {
     /// The guest book project: the fixture, or a copy with installed dependencies
     #[arg(long, value_name = "DIR")]
     pub project: PathBuf,
@@ -40,7 +40,7 @@ pub struct ServeArguments {
 }
 
 #[derive(Debug, Args)]
-pub struct EntriesArguments {
+pub(crate) struct EntriesArguments {
     /// The SQLite file the host owns
     #[arg(long, value_name = "PATH")]
     pub database: PathBuf,

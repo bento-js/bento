@@ -8,6 +8,9 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 # The engine, Web/Node compatibility, and Node-API come from the dependency set of Deno v2.9.7's
 # standalone runtime (`cli/rt`): deno_lib's worker factory over deno_runtime. Per policy.0001,
 # parsing and ESM resolution use Oxc; node_resolver remains only where deno_node's CommonJS

@@ -71,20 +71,20 @@ impl From<FsStat> for Stat {
 }
 
 impl Stat {
-    pub fn write(self, output: &mut [u32]) {
+    pub(super) fn write(self, output: &mut [u32]) {
         let fields = [
             self.is_file as u64,
             self.is_directory as u64,
             self.is_symlink as u64,
             self.size,
             self.mtime_set as u64,
-            self.mtime as u64,
+            self.mtime.cast_unsigned(),
             self.atime_set as u64,
-            self.atime as u64,
+            self.atime.cast_unsigned(),
             self.birthtime_set as u64,
-            self.birthtime as u64,
+            self.birthtime.cast_unsigned(),
             self.ctime_set as u64,
-            self.ctime as u64,
+            self.ctime.cast_unsigned(),
             self.dev,
             self.ino_set as u64,
             self.ino,
@@ -103,7 +103,7 @@ impl Stat {
             self.is_socket as u64,
         ];
         for (field, pair) in fields.into_iter().zip(output.as_chunks_mut::<2>().0) {
-            pair[0] = field as u32;
+            pair[0] = (field & 0xffff_ffff) as u32;
             pair[1] = (field >> 32) as u32;
         }
     }

@@ -3,13 +3,18 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-pub struct Response {
+pub(crate) struct Response {
     pub status: u16,
     pub headers: BTreeMap<String, String>,
     pub body: String,
 }
 
-pub fn request(port: u16, method: &str, path: &str, body: &str) -> std::io::Result<Response> {
+pub(crate) fn request(
+    port: u16,
+    method: &str,
+    path: &str,
+    body: &str,
+) -> std::io::Result<Response> {
     let mut stream = TcpStream::connect_timeout(
         &format!("127.0.0.1:{port}").parse().unwrap(),
         Duration::from_secs(1),

@@ -50,10 +50,12 @@ impl node_resolver::analyze::CjsCodeAnalyzer for Analyzer {
             return Err(self.sources.failure(
                 ErrorKind::Startup,
                 format!("{specifier}:{line}:{column}: {error}"),
-                specifier.to_file_path().ok().map(|path| SourceLocation {
-                    path,
-                    line: line as u32,
-                    column: column as u32,
+                specifier.to_file_path().ok().and_then(|path| {
+                    Some(SourceLocation {
+                        path,
+                        line: u32::try_from(line).ok()?,
+                        column: u32::try_from(column).ok()?,
+                    })
                 }),
             ));
         }

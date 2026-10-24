@@ -9,7 +9,7 @@ use bento_runtime::{RunOutcome, Signal};
 use crate::error::CliError;
 use crate::signals;
 
-pub enum Event {
+pub(crate) enum Event {
     /// The instance ended and released everything it held, such as its listeners' ports.
     Ended(RunOutcome),
     /// `bento` received the signal.
@@ -19,7 +19,7 @@ pub enum Event {
 }
 
 /// Sends each SIGINT and SIGTERM `bento` receives to `events`.
-pub fn send_signals(events: &Sender<Event>) -> Result<(), CliError> {
+pub(crate) fn send_signals(events: &Sender<Event>) -> Result<(), CliError> {
     let events = events.clone();
     signals::listen(move |signal| {
         // Sending fails only once `bento` has stopped listening because it is exiting.
@@ -29,7 +29,7 @@ pub fn send_signals(events: &Sender<Event>) -> Result<(), CliError> {
 }
 
 /// The next event, or `None` if `until` passes first.
-pub fn next_event(received: &Receiver<Event>, until: Option<Instant>) -> Option<Event> {
+pub(crate) fn next_event(received: &Receiver<Event>, until: Option<Instant>) -> Option<Event> {
     match until {
         Some(until) => received.recv_timeout(until.saturating_duration_since(Instant::now())).ok(),
         None => received.recv().ok(),

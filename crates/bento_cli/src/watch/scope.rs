@@ -12,32 +12,32 @@ const ENVIRONMENT_FILE: &str = ".env";
 
 /// The paths whose changes restart a watched script: the project's own files, except what
 /// running or building it writes, and files added explicitly wherever they are.
-pub struct WatchScope {
+pub(super) struct WatchScope {
     project_root: PathBuf,
     files: BTreeSet<PathBuf>,
 }
 
 impl WatchScope {
-    pub fn new(project_root: PathBuf) -> WatchScope {
+    pub(super) fn new(project_root: PathBuf) -> WatchScope {
         WatchScope { project_root, files: BTreeSet::new() }
     }
 
-    pub fn project_root(&self) -> &Path {
+    pub(super) fn project_root(&self) -> &Path {
         &self.project_root
     }
 
-    pub fn add_file(&mut self, file: PathBuf) {
+    pub(super) fn add_file(&mut self, file: PathBuf) {
         self.files.insert(file);
     }
 
-    pub fn includes(&self, path: &Path) -> bool {
+    pub(super) fn includes(&self, path: &Path) -> bool {
         self.files.contains(path)
             || path.strip_prefix(&self.project_root).is_ok_and(is_project_source)
     }
 }
 
 /// Ancestors of the project do not make its own files dependencies, even if named `node_modules`.
-pub fn is_dependency(project_root: &Path, module: &Path) -> bool {
+pub(super) fn is_dependency(project_root: &Path, module: &Path) -> bool {
     module
         .strip_prefix(project_root)
         .unwrap_or(module)

@@ -33,7 +33,7 @@ pub(crate) struct WorkerFactory {
 }
 
 impl WorkerFactory {
-    pub fn new(
+    pub(crate) fn new(
         loader: LoaderFactory,
         environment: InstanceEnvironment,
         argv: Vec<String>,
@@ -49,7 +49,7 @@ impl WorkerFactory {
         }
     }
 
-    pub fn callback(self: &Arc<Self>) -> Arc<CreateWebWorkerCb> {
+    pub(crate) fn callback(self: &Arc<Self>) -> Arc<CreateWebWorkerCb> {
         let factory = self.clone();
         Arc::new(move |args| factory.create(args))
     }
