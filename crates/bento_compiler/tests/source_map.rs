@@ -55,10 +55,10 @@ fn decode_mappings(mappings: &str) -> Vec<Mapping> {
                 original_column += fields[3];
                 decoded.push(Mapping {
                     generated_line,
-                    generated_column: generated_column as usize,
-                    source_index: source_index as usize,
-                    original_line: original_line as usize,
-                    original_column: original_column as usize,
+                    generated_column: usize::try_from(generated_column).unwrap(),
+                    source_index: usize::try_from(source_index).unwrap(),
+                    original_line: usize::try_from(original_line).unwrap(),
+                    original_column: usize::try_from(original_column).unwrap(),
                 });
             }
         }

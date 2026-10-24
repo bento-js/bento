@@ -14,7 +14,7 @@ use bento_host::{
 /// the comma-separated items. Each flag may be given once.
 #[derive(Debug, Args)]
 #[command(next_help_heading = "Grants")]
-pub struct GrantFlags {
+pub(crate) struct GrantFlags {
     /// Allow reading beneath these paths, or anywhere
     #[arg(
         long, value_name = "PATH", num_args = 0.., action = ArgAction::Set,
@@ -49,7 +49,7 @@ pub struct GrantFlags {
 }
 
 #[derive(Debug, Error)]
-pub enum GrantError {
+pub(crate) enum GrantError {
     #[error("--allow-{kind} has an empty item")]
     EmptyItem { kind: GrantKind },
     #[error("--allow-{kind}: cannot resolve `{path}`: {source}")]
@@ -63,7 +63,7 @@ pub enum GrantError {
 }
 
 /// Removes the policy an invoking launch handed down from `environment` and returns it.
-pub fn take_ceiling(
+pub(crate) fn take_ceiling(
     environment: &mut BTreeMap<String, String>,
 ) -> Result<Option<Grants>, GrantError> {
     let ceiling = environment.remove(CEILING_ENV);
@@ -73,7 +73,7 @@ pub fn take_ceiling(
 impl GrantFlags {
     /// The grants these flags give a launch started in `invocation_directory` under `ceiling`,
     /// the policy of the launch that started this one, if any.
-    pub fn resolve(
+    pub(crate) fn resolve(
         &self,
         invocation_directory: &Path,
         ceiling: Option<&Grants>,
@@ -93,18 +93,24 @@ impl GrantFlags {
     fn request(&self, directory: &Path) -> Result<GrantRequest, GrantError> {
         let path = |kind| move |item: &str| canonical_item(kind, directory, item);
         Ok(GrantRequest {
-            read: scope(GrantKind::Read, &self.allow_read, path(GrantKind::Read))?,
-            write: scope(GrantKind::Write, &self.allow_write, path(GrantKind::Write))?,
-            net: scope(GrantKind::Net, &self.allow_net, |item| Ok(item.parse::<NetTarget>()?))?,
-            env: scope(GrantKind::Env, &self.allow_env, |item| Ok(item.to_owned()))?,
-            addons: scope(GrantKind::Addons, &self.allow_addons, path(GrantKind::Addons))?,
+            read: scope(GrantKind::Read, self.allow_read.as_deref(), path(GrantKind::Read))?,
+            write: scope(GrantKind::Write, self.allow_write.as_deref(), path(GrantKind::Write))?,
+            net: scope(GrantKind::Net, self.allow_net.as_deref(), |item| {
+                Ok(item.parse::<NetTarget>()?)
+            })?,
+            env: scope(GrantKind::Env, self.allow_env.as_deref(), |item| Ok(item.to_owned()))?,
+            addons: scope(
+                GrantKind::Addons,
+                self.allow_addons.as_deref(),
+                path(GrantKind::Addons),
+            )?,
         })
     }
 }
 
 fn scope<T: Ord>(
     kind: GrantKind,
-    values: &Option<Vec<String>>,
+    values: Option<&[String]>,
     parse: impl Fn(&str) -> Result<T, GrantError>,
 ) -> Result<Option<Scope<T>>, GrantError> {
     let Some(values) = values else {
@@ -130,11 +136,11 @@ fn canonical_item(kind: GrantKind, directory: &Path, item: &str) -> Result<PathB
 
 fn exceeded(wider: &WiderGrant, request: &GrantRequest, ceiling: &Grants) -> GrantError {
     let (requested_all, limit) = match wider.kind {
-        GrantKind::Read => (is_all(&request.read), describe(&ceiling.read)),
-        GrantKind::Write => (is_all(&request.write), describe(&ceiling.write)),
-        GrantKind::Net => (is_all(&request.net), describe(&ceiling.net)),
-        GrantKind::Env => (is_all(&request.env), describe(&ceiling.env)),
-        GrantKind::Addons => (is_all(&request.addons), describe(&ceiling.addons)),
+        GrantKind::Read => (is_all(request.read.as_ref()), describe(&ceiling.read)),
+        GrantKind::Write => (is_all(request.write.as_ref()), describe(&ceiling.write)),
+        GrantKind::Net => (is_all(request.net.as_ref()), describe(&ceiling.net)),
+        GrantKind::Env => (is_all(request.env.as_ref()), describe(&ceiling.env)),
+        GrantKind::Addons => (is_all(request.addons.as_ref()), describe(&ceiling.addons)),
     };
     let flag = if requested_all {
         format!("--allow-{}", wider.kind)
@@ -144,7 +150,7 @@ fn exceeded(wider: &WiderGrant, request: &GrantRequest, ceiling: &Grants) -> Gra
     GrantError::Wider { flag, kind: wider.kind, limit }
 }
 
-fn is_all<T: Ord>(requested: &Option<Scope<T>>) -> bool {
+fn is_all<T: Ord>(requested: Option<&Scope<T>>) -> bool {
     matches!(requested, Some(Scope::All))
 }
 

@@ -3,7 +3,15 @@ use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use deno_runtime::deno_permissions::*;
+use deno_runtime::deno_permissions::{
+    AllowRunDescriptorParseResult, CheckedPath, DenyRunDescriptor, EnvDescriptor,
+    EnvDescriptorParseError, FfiDescriptor, ImportDescriptor, NetDescriptor,
+    NetDescriptorParseError, OpenAccessKind, PathQueryDescriptor, PathResolveError,
+    PermissionCheckError, PermissionDescriptorParser, Permissions, PermissionsContainer,
+    PermissionsOptions, ReadDescriptor, RunDescriptorParseError, RunQueryDescriptor,
+    RuntimePermissionDescriptorParser, SpecialFilePathQueryDescriptor, SysDescriptor,
+    SysDescriptorParseError, WriteDescriptor,
+};
 use sys_traits::impls::RealSys;
 
 use bento_host::{Grants, Scope, canonical_path};

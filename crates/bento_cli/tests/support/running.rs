@@ -1,8 +1,8 @@
 //! Driving a `bento` that keeps running: its output as it arrives, the signals it receives,
 //! and the port it serves.
 
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -10,6 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
+
+use bento_test_support::ports::loopback;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(20);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -20,30 +22,14 @@ const SERVER_PORTS: std::ops::Range<u16> = 17950..18000;
 /// A port no other test in this process serves on. It is chosen without binding it to check:
 /// on macOS a new socket becomes close-on-exec only after it is created, so a probe can leak
 /// into a `bento` another test starts at that moment and keep the port from its server.
-pub fn free_port() -> u16 {
+pub(crate) fn free_port() -> u16 {
     static NEXT: AtomicU16 = AtomicU16::new(SERVER_PORTS.start);
     let port = NEXT.fetch_add(1, Ordering::Relaxed);
     assert!(SERVER_PORTS.contains(&port), "no ports left for test servers");
     port
 }
 
-pub fn loopback(port: u16) -> SocketAddr {
-    SocketAddr::from((Ipv4Addr::LOCALHOST, port))
-}
-
-pub fn port_is_taken(address: SocketAddr) -> bool {
-    matches!(TcpListener::bind(address), Err(error) if error.kind() == io::ErrorKind::AddrInUse)
-}
-
-pub fn wait_until(deadline: Duration, mut condition: impl FnMut() -> bool) {
-    let start = Instant::now();
-    while !condition() {
-        assert!(start.elapsed() < deadline, "condition not reached within {deadline:?}");
-        thread::sleep(POLL_INTERVAL);
-    }
-}
-
-pub fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
+pub(crate) fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().unwrap() {
@@ -58,7 +44,7 @@ pub fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
 }
 
 /// The response to `GET /` on the loopback `port`, or `None` when nothing answers there.
-pub fn get(port: u16) -> Option<String> {
+pub(crate) fn get(port: u16) -> Option<String> {
     let mut connection = TcpStream::connect_timeout(&loopback(port), REQUEST_TIMEOUT).ok()?;
     connection.set_read_timeout(Some(REQUEST_TIMEOUT)).unwrap();
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
@@ -70,7 +56,7 @@ pub fn get(port: u16) -> Option<String> {
 
 /// Lines a child writes to one of its output streams, collected as they arrive.
 #[derive(Clone, Default)]
-pub struct Lines(Arc<Mutex<Vec<String>>>);
+pub(crate) struct Lines(Arc<Mutex<Vec<String>>>);
 
 impl Lines {
     fn collect(stream: impl Read + Send + 'static) -> Lines {
@@ -85,29 +71,29 @@ impl Lines {
         lines
     }
 
-    pub fn all(&self) -> Vec<String> {
+    pub(crate) fn all(&self) -> Vec<String> {
         self.0.lock().clone()
     }
 
-    pub fn text(&self) -> String {
+    pub(crate) fn text(&self) -> String {
         self.all().join("\n")
     }
 
-    pub fn count(&self, line: &str) -> usize {
+    pub(crate) fn count(&self, line: &str) -> usize {
         self.all().iter().filter(|written| *written == line).count()
     }
 }
 
 /// A `bento` started in the background. Dropping it kills `bento` if it is still running,
 /// so that a failing test leaves nothing behind.
-pub struct Background {
+pub(crate) struct Background {
     child: Child,
     pub stdout: Lines,
     pub stderr: Lines,
 }
 
 impl Background {
-    pub fn spawn(mut command: Command) -> Background {
+    pub(crate) fn spawn(mut command: Command) -> Background {
         let mut child = command.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         let stdout = Lines::collect(child.stdout.take().unwrap());
         let stderr = Lines::collect(child.stderr.take().unwrap());
@@ -115,21 +101,21 @@ impl Background {
     }
 
     /// Waits until `bento` has written `line` to standard output `count` times in all.
-    pub fn wait_for_stdout(&self, line: &str, count: usize) {
+    pub(crate) fn wait_for_stdout(&self, line: &str, count: usize) {
         self.wait_for(&format!("`{line}` printed {count} times"), || {
             (self.stdout.count(line) >= count).then_some(())
         });
     }
 
     /// Waits for a line of standard output that starts with `prefix`, and returns it.
-    pub fn wait_for_stdout_starting(&self, prefix: &str) -> String {
+    pub(crate) fn wait_for_stdout_starting(&self, prefix: &str) -> String {
         self.wait_for(&format!("a line starting `{prefix}`"), || {
             self.stdout.all().into_iter().find(|line| line.starts_with(prefix))
         })
     }
 
     /// Waits until standard error contains `text`.
-    pub fn wait_for_stderr(&self, text: &str) {
+    pub(crate) fn wait_for_stderr(&self, text: &str) {
         self.wait_for(&format!("`{text}` on stderr"), || {
             self.stderr.text().contains(text).then_some(())
         });
@@ -151,17 +137,17 @@ impl Background {
         }
     }
 
-    pub fn signal(&self, signal: libc::c_int) {
+    pub(crate) fn signal(&self, signal: libc::c_int) {
         let pid = libc::pid_t::try_from(self.child.id()).unwrap();
         // SAFETY: `kill` has no memory-safety preconditions; `bento` has not been reaped.
         unsafe { libc::kill(pid, signal) };
     }
 
-    pub fn is_running(&mut self) -> bool {
+    pub(crate) fn is_running(&mut self) -> bool {
         self.child.try_wait().unwrap().is_none()
     }
 
-    pub fn wait(&mut self, deadline: Duration) -> ExitStatus {
+    pub(crate) fn wait(&mut self, deadline: Duration) -> ExitStatus {
         wait_for_exit(&mut self.child, deadline)
     }
 }

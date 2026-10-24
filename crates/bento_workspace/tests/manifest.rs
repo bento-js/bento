@@ -2,7 +2,9 @@ mod support;
 
 use serde_json::json;
 
-use bento_workspace::{PackageManager, PackageType, Project, ProjectError};
+use bento_workspace::{
+    ManifestError, ManifestProblem, PackageManager, PackageType, Project, ProjectError,
+};
 use support::{TempProject, fixture_root};
 
 #[test]
@@ -71,4 +73,17 @@ fn malformed_manifest_names_the_file_and_the_field() {
     let syntax = Project::for_directory(temp.root()).unwrap_err().to_string();
     assert!(syntax.contains(&manifest.display().to_string()), "{syntax}");
     assert!(syntax.contains("line 1"), "{syntax}");
+}
+
+#[test]
+fn an_unknown_package_type_is_reported_as_a_problem_with_that_field() {
+    let temp = TempProject::new();
+    temp.write("package.json", r#"{ "type": "esm" }"#);
+
+    let error = Project::for_directory(temp.root()).unwrap_err();
+
+    let ProjectError::Manifest(ManifestError::Invalid { problem, .. }) = error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(problem, ManifestProblem::InvalidPackageType);
 }

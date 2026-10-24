@@ -8,6 +8,9 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "bento-guestbook-host"
 path = "src/main.rs"
@@ -15,17 +18,18 @@ path = "src/main.rs"
 [dependencies]
 bento_host.workspace = true
 bento_runtime.workspace = true
-clap = { version = "4.6.6", features = ["derive"] }
+clap.workspace = true
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
-signal-hook = "0.3.18"
+signal-hook.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+bento_test_support.workspace = true
 chrono = "0.4.45"
-libc = "0.2.190"
+libc.workspace = true
 tempfile.workspace = true
 
 # Executables that embed the runtime export the Node-API symbols so the fixture's native

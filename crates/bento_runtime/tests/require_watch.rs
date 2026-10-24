@@ -15,7 +15,7 @@ fn watch_inputs(app: &Path, entry: &str) -> Vec<PathBuf> {
 }
 
 #[test]
-fn proposal_0001_dependency_probes_ignore_application_anchored_require_parents() {
+fn dependency_probes_ignore_application_anchored_require_parents() {
     for entry in ["main.cjs", "main.mjs"] {
         for anchor in ["noop.js", entry] {
             for resolve in [
@@ -60,7 +60,7 @@ fn proposal_0001_dependency_probes_ignore_application_anchored_require_parents()
 }
 
 #[test]
-fn proposal_0001_synthetic_require_parents_do_not_record_failed_targets() {
+fn synthetic_require_parents_do_not_record_failed_targets() {
     for anchor in ["noop.js", "main.cjs"] {
         for resolve in [
             "createRequire(anchor).resolve('../shared/missing.cjs')",
@@ -89,7 +89,7 @@ fn proposal_0001_synthetic_require_parents_do_not_record_failed_targets() {
 }
 
 #[test]
-fn proposal_0001_source_loaded_after_a_failed_require_records_its_package_scope() {
+fn source_loaded_after_a_failed_require_records_its_package_scope() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -146,21 +146,21 @@ fn wrapped_require_inputs(hook: &str) -> (tempfile::TempDir, Vec<PathBuf>) {
 }
 
 #[test]
-fn proposal_0001_wrapped_require_retains_the_application_failed_target() {
+fn wrapped_require_retains_the_application_failed_target() {
     let (root, recorded) = wrapped_require_inputs("Module.prototype.require");
     let target = root.path().canonicalize().unwrap().join("shared/missing.cjs");
     assert!(recorded.contains(&target), "{recorded:?}");
 }
 
 #[test]
-fn proposal_0001_wrapped_resolve_filename_retains_the_application_failed_target() {
+fn wrapped_resolve_filename_retains_the_application_failed_target() {
     let (root, recorded) = wrapped_require_inputs("Module._resolveFilename");
     let target = root.path().canonicalize().unwrap().join("shared/missing.cjs");
     assert!(recorded.contains(&target), "{recorded:?}");
 }
 
 #[test]
-fn proposal_0001_failed_require_of_esm_discards_successful_nested_resolution_candidates() {
+fn failed_require_of_esm_discards_successful_nested_resolution_candidates() {
     let root = project();
     let library = project();
     let app = root.path().join("app");
@@ -199,7 +199,7 @@ fn proposal_0001_failed_require_of_esm_discards_successful_nested_resolution_can
 }
 
 #[test]
-fn proposal_0001_successful_custom_require_resolution_discards_probes_when_loading_fails() {
+fn successful_custom_require_resolution_discards_probes_when_loading_fails() {
     for resolution in [
         "require.extensions['.txt'] = (m, f) => { m.exports = fs.readFileSync(f + '.absent', 'utf8'); };",
         "require('node:module').registerHooks({ resolve(request, context, next) { if (request === '../shared/data') return { url: new URL('../shared/data.txt', require('node:url').pathToFileURL(__filename)).href, shortCircuit: true }; return next(request, context); }, load(url, context, next) { if (url.endsWith('/data.txt')) fs.readFileSync(require('node:url').fileURLToPath(url) + '.absent'); return next(url, context); } });",
@@ -225,7 +225,7 @@ fn proposal_0001_successful_custom_require_resolution_discards_probes_when_loadi
 }
 
 #[test]
-fn proposal_0001_missing_custom_require_extensions_are_retained() {
+fn missing_custom_require_extensions_are_retained() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -242,7 +242,7 @@ fn proposal_0001_missing_custom_require_extensions_are_retained() {
 }
 
 #[test]
-fn proposal_0001_load_failure_does_not_repeat_registered_resolution_hooks() {
+fn load_failure_does_not_repeat_registered_resolution_hooks() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -259,7 +259,7 @@ fn proposal_0001_load_failure_does_not_repeat_registered_resolution_hooks() {
 }
 
 #[test]
-fn proposal_0001_dependency_calls_borrowing_cached_application_parents_are_attributable() {
+fn dependency_calls_borrowing_cached_application_parents_are_attributable() {
     for require in [
         "require.main.require(target)",
         "module.parent.require(target)",
@@ -292,7 +292,7 @@ fn proposal_0001_dependency_calls_borrowing_cached_application_parents_are_attri
 }
 
 #[test]
-fn proposal_0001_require_resolve_with_search_paths_records_no_failed_targets() {
+fn require_resolve_with_search_paths_records_no_failed_targets() {
     for paths in ["[path.join(__dirname, '../other/sub')]", "[]"] {
         let root = project();
         let app = root.path().join("app");

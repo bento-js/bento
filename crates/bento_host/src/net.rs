@@ -17,6 +17,7 @@ pub struct NetTarget {
     port: Option<u16>,
 }
 
+/// Text that does not name a network endpoint.
 #[derive(Debug, Error, PartialEq, Eq)]
 #[error(
     "invalid network target `{0}`: expected a hostname, an IPv4 address, or a bracketed IPv6 \
@@ -41,6 +42,7 @@ impl NetTarget {
         &self.host
     }
 
+    /// The port, or `None` when every port of the host is meant.
     pub fn port(&self) -> Option<u16> {
         self.port
     }

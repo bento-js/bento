@@ -11,6 +11,10 @@ pub const SPECIFIER: &str = "host:guestbook";
 /// The module one runtime instance imports as `host:guestbook`. `list()` resolves to the saved
 /// entries oldest first; `append({ name, message })` saves one. A refusal rejects with the
 /// store error's name, so a read-only store surfaces as `PermissionDenied`.
+///
+/// # Panics
+///
+/// Never: `list` converts entries of strings and integers, which JSON always represents.
 pub fn guest_book_module(store: GuestBookStore) -> HostModule {
     let listing = store.clone();
     HostModule::new(SPECIFIER)

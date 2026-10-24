@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
+use bento_test_support::ports::{loopback, port_is_taken, wait_until};
 use support::TempProject;
-use support::running::{free_port, loopback, port_is_taken, wait_for_exit, wait_until};
+use support::running::{free_port, wait_for_exit};
 
 /// `serve.sh` stands in for a server script: it starts a listener as its own child, so the
 /// listener is a grandchild of the task command.

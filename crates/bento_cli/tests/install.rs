@@ -30,14 +30,16 @@ fn manifest(dev_dependencies: Value) -> Value {
     })
 }
 
-/// `bento install` with the caller's own `PATH`, where pnpm lives, minus `CI`'s frozen
-/// default so the test observes pnpm's ordinary local behavior.
+/// `bento install` with the caller's own `PATH`, where pnpm lives, outside CI so the test
+/// observes pnpm's ordinary local lockfile behavior. `CI=false` is the one setting that
+/// overrides pnpm's detection of a CI service such as GitHub Actions (`GITHUB_ACTIONS`).
 fn bento_install(temp: &TempProject, arguments: &[&str]) -> Command {
     let mut command = temp.bento(&[&["install"][..], arguments].concat());
     let caller: Vec<(String, String)> =
-        std::env::vars().filter(|(name, _)| name != "CI" && !name.starts_with("BENTO_")).collect();
+        std::env::vars().filter(|(name, _)| !name.starts_with("BENTO_")).collect();
     command
         .envs(caller)
+        .env("CI", "false")
         .env("pnpm_config_store_dir", "/tmp/bento-cli-tasks/pnpm-store")
         .env("NODE_ENV", "production");
     command

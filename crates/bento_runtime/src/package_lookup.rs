@@ -3,6 +3,14 @@ use std::path::{Path, PathBuf};
 
 use bento_host::canonical_path;
 
+/// The `node_modules` directories a guest resolves packages from: one per ancestor of
+/// `project_root`, nearest first, down to `/`. Each is canonical, and directories that do
+/// not exist yet are kept, so the list stands as a read scope before anything is installed.
+///
+/// # Errors
+///
+/// [`std::io::Error`] of kind `InvalidInput` when `project_root` is not absolute, or
+/// whatever the operating system reports while resolving a path along the way.
 pub fn package_lookup_paths(project_root: &Path) -> io::Result<Vec<PathBuf>> {
     canonical_path(project_root)?
         .ancestors()

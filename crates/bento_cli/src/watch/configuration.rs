@@ -10,7 +10,7 @@ use oxc_resolver::{
 use parking_lot::Mutex;
 
 /// Configuration reads and missing resolution candidates, so repairing either can restart a run.
-pub fn files(project_root: &Path) -> BTreeSet<PathBuf> {
+pub(super) fn files(project_root: &Path) -> BTreeSet<PathBuf> {
     let file_system =
         RecordingFileSystem { project_root: project_root.to_owned(), ..RecordingFileSystem::new() };
     let read = Arc::clone(&file_system.read);

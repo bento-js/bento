@@ -6,7 +6,7 @@ use bento_runtime::{ErrorKind, RuntimeError};
 use crate::diagnostic::Diagnostic;
 
 /// `error` as a report of the place in a source file it points at, if it points at one.
-pub fn diagnostic(error: &RuntimeError) -> Option<Diagnostic<'_>> {
+pub(crate) fn diagnostic(error: &RuntimeError) -> Option<Diagnostic<'_>> {
     let location = error.location()?;
     let message = DividedMessage::new(&error.message);
     Some(Diagnostic {
@@ -19,7 +19,7 @@ pub fn diagnostic(error: &RuntimeError) -> Option<Diagnostic<'_>> {
     })
 }
 
-pub fn describe(kind: ErrorKind) -> &'static str {
+pub(crate) fn describe(kind: ErrorKind) -> &'static str {
     match kind {
         ErrorKind::Startup => "the script could not start",
         ErrorKind::Resolution => "a module could not be resolved",
@@ -41,7 +41,7 @@ fn label(kind: ErrorKind) -> &'static str {
 
 /// `text` without terminal styling. The runtime styles parts of its messages for terminals
 /// whatever the output, and `bento` decides itself when its reports are styled.
-pub fn plain_text(text: &str) -> String {
+pub(crate) fn plain_text(text: &str) -> String {
     let mut plain = String::with_capacity(text.len());
     let mut characters = text.chars().peekable();
     while let Some(character) = characters.next() {

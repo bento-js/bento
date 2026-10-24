@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 
 use crate::import_position::import_position;
 use crate::{ErrorKind, RuntimeError, SourceLocation};
-use bento_compiler::{CompilerSettings, transform};
+use bento_compiler::{CompilerSettings, Diagnostic, transform};
 
 pub(crate) struct Sources {
     root: PathBuf,
@@ -25,23 +25,24 @@ pub(crate) struct RecordedFailure {
 }
 
 impl Sources {
-    pub fn load(root: &Path) -> Result<Self, RuntimeError> {
+    /// Loads the project's compiler settings, reporting the `tsconfig.json` options Bento
+    /// handles differently from `tsc` for the caller to hand to the host.
+    ///
+    /// An unexecutable JSX setting only matters for modules that contain JSX: the compiler
+    /// rejects those at transform time, naming the setting, so other modules still run.
+    pub(crate) fn load(root: &Path) -> Result<(Self, Vec<Diagnostic>), RuntimeError> {
         let (settings, diagnostics) = CompilerSettings::load(root)
             .map_err(|error| RuntimeError::transform(error.to_string(), None))?;
-        // An unexecutable JSX setting only matters for modules that contain JSX: the compiler
-        // rejects those at transform time, naming the setting, so other modules still run.
-        for diagnostic in diagnostics {
-            eprintln!("{diagnostic}");
-        }
-        Ok(Self {
+        let sources = Self {
             root: root.to_owned(),
             settings,
             maps: Mutex::default(),
             errors: Mutex::default(),
-        })
+        };
+        Ok((sources, diagnostics))
     }
 
-    pub fn transform(&self, path: &Path, text: String) -> Result<String, JsErrorBox> {
+    pub(crate) fn transform(&self, path: &Path, text: String) -> Result<String, JsErrorBox> {
         if !path.extension().is_some_and(|extension| {
             matches!(extension.to_str(), Some("ts" | "mts" | "cts" | "tsx" | "jsx"))
         }) {
@@ -60,11 +61,16 @@ impl Sources {
         Ok(transformed.code)
     }
 
-    pub fn source_map(&self, name: &str) -> Option<Vec<u8>> {
+    pub(crate) fn source_map(&self, name: &str) -> Option<Vec<u8>> {
         self.maps.lock().get(name).cloned()
     }
 
-    pub fn resolution_error(&self, specifier: &str, referrer: &str, detail: &str) -> JsErrorBox {
+    pub(crate) fn resolution_error(
+        &self,
+        specifier: &str,
+        referrer: &str,
+        detail: &str,
+    ) -> JsErrorBox {
         let location = ModuleSpecifier::parse(referrer)
             .ok()
             .and_then(|url| url.to_file_path().ok())
@@ -105,7 +111,7 @@ impl Sources {
         JsErrorBox::new(class, message)
     }
 
-    pub fn error_failure(&self, class: &str, message: &str) -> Option<RecordedFailure> {
+    pub(crate) fn error_failure(&self, class: &str, message: &str) -> Option<RecordedFailure> {
         self.errors
             .lock()
             .iter()
@@ -114,11 +120,11 @@ impl Sources {
             .map(|(_, failure)| failure.clone())
     }
 
-    pub fn is_project_source(&self, path: &Path) -> bool {
+    pub(crate) fn is_project_source(&self, path: &Path) -> bool {
         is_watch_source(&self.root, path)
     }
 
-    pub fn is_local_source(&self, path: &Path) -> bool {
+    pub(crate) fn is_local_source(&self, path: &Path) -> bool {
         !is_environment_file(path)
     }
 }
@@ -156,7 +162,7 @@ mod tests {
                 r#"{"compilerOptions":{"jsx":"react","jsxFactory":"h"}}"#,
             )
             .unwrap();
-            let sources = Sources::load(&root).unwrap();
+            let (sources, _) = Sources::load(&root).unwrap();
             for (base, ancestor_dependency) in [
                 (root.join("src"), false),
                 (workspace.path().join("shared"), false),
@@ -180,7 +186,7 @@ mod tests {
         for project_directory in ["app", "node_modules/app"] {
             let root = workspace.path().join(project_directory);
             std::fs::create_dir_all(&root).unwrap();
-            let sources = Sources::load(&root).unwrap();
+            let (sources, _) = Sources::load(&root).unwrap();
             for (base, ancestor_dependency) in [
                 (root.join("src"), false),
                 (workspace.path().join("shared"), false),
@@ -215,7 +221,7 @@ mod tests {
     #[test]
     fn caught_module_failures_keep_a_bounded_location_history() {
         let root = tempfile::tempdir().unwrap();
-        let sources = Sources::load(root.path()).unwrap();
+        let (sources, _) = Sources::load(root.path()).unwrap();
         for index in 0..512 {
             let _ = sources.failure(
                 ErrorKind::Resolution,

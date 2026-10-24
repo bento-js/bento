@@ -6,7 +6,8 @@ use std::time::Duration;
 use crate::support::guest_book::GuestBook;
 use crate::support::guest_book_page::{assert_guest_book_page, wait_for_page};
 use crate::support::http;
-use crate::support::running::{Background, wait_until};
+use crate::support::running::Background;
+use bento_test_support::ports::wait_until;
 
 const PAGE: &str = "app/actions/guest-book/page.tsx";
 const BROWSER_ENTRY: &str = "app/actions/public/entry.ts";
@@ -30,16 +31,16 @@ fn edit(guest_book: &GuestBook, file: &str, from: &str, to: &str) {
 }
 
 /// Saving an entry writes the database, which must not restart the server.
-pub fn sign_without_restarting(bento: &Background, port: u16) {
-    let [name, message] = PERSISTED_ENTRY.map(|text| text.replace(' ', "+"));
-    let signed = http::post_form(port, &format!("name={name}&message={message}")).unwrap();
+pub(crate) fn sign_without_restarting(bento: &Background, port: u16) {
+    let [name, message] = PERSISTED_ENTRY;
+    let signed = http::post_form(port, &[("name", name), ("message", message)]).unwrap();
     assert_eq!(signed.status, 303, "{}", signed.body);
     thread::sleep(SETTLE);
     assert_eq!(restarts(bento), 0, "{}", bento.stderr.text());
 }
 
 /// The page module is imported by the server through the router, not by `server.ts`.
-pub fn edit_server_source(guest_book: &GuestBook, bento: &Background, port: u16) {
+pub(crate) fn edit_server_source(guest_book: &GuestBook, bento: &Background, port: u16) {
     edit(guest_book, PAGE, "Welcome to Remix 3<", "Welcome to Remix 3, served by Bento<");
 
     let page = wait_for_page(port, |page| page.body.contains("served by Bento"));
@@ -49,7 +50,7 @@ pub fn edit_server_source(guest_book: &GuestBook, bento: &Background, port: u16)
 }
 
 /// The browser entry is compiled by the asset server, never imported by the server.
-pub fn edit_browser_source(guest_book: &GuestBook, bento: &Background, port: u16) {
+pub(crate) fn edit_browser_source(guest_book: &GuestBook, bento: &Background, port: u16) {
     edit(guest_book, BROWSER_ENTRY, "Frame adoption failed:", "Frame adoption stopped:");
     let url = format!("/assets/{BROWSER_ENTRY}");
 
@@ -61,7 +62,7 @@ pub fn edit_browser_source(guest_book: &GuestBook, bento: &Background, port: u16
 }
 
 /// A syntax error stops the server and is reported at its place; fixing it serves again.
-pub fn break_and_repair(guest_book: &GuestBook, bento: &Background, port: u16) {
+pub(crate) fn break_and_repair(guest_book: &GuestBook, bento: &Background, port: u16) {
     let working = guest_book.read(PAGE);
     let broken_line = "let unfinished: number = ;";
     let declaration = "export interface";

@@ -24,6 +24,12 @@ impl CompilerSettings {
     /// yields the defaults; one that exists but cannot be read as a file is a `ConfigError`.
     /// Diagnostics report options Bento ignores (warnings) and settings under which some
     /// files cannot execute (errors); neither stops loading.
+    ///
+    /// # Errors
+    ///
+    /// [`ConfigError`] when something other than a readable regular file sits at
+    /// `tsconfig.json` (a directory, a dangling link, an unreadable entry), and when it or
+    /// a file in its `extends` chain cannot be resolved or parsed.
     pub fn load(project_root: &Path) -> Result<(CompilerSettings, Vec<Diagnostic>), ConfigError> {
         let tsconfig_path = project_root.join("tsconfig.json");
         if !tsconfig_present(&tsconfig_path)? {

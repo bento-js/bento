@@ -8,6 +8,9 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "bento"
 path = "src/main.rs"
@@ -19,11 +22,11 @@ bento_package.workspace = true
 bento_runtime.workspace = true
 bento_task.workspace = true
 bento_workspace.workspace = true
-clap = { version = "4.6.6", features = ["derive"] }
+clap.workspace = true
 notify = "8.2.0"
-oxc_resolver = "=11.24.3"
-parking_lot = "0.12.5"
-signal-hook = "0.3.18"
+oxc_resolver.workspace = true
+parking_lot.workspace = true
+signal-hook.workspace = true
 thiserror.workspace = true
 
 # Exports the Node-API symbols from the `bento` executable, where native addons look them up.
@@ -31,6 +34,7 @@ thiserror.workspace = true
 deno_napi.workspace = true
 
 [dev-dependencies]
-libc = "0.2"
+bento_test_support.workspace = true
+libc.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true

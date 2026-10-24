@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, onTestFinished, test } from "vite-plus/test";
 
-let statusScript = new URL("./status.ts", import.meta.url).pathname;
+let statusScript = path.join(import.meta.dirname, "status.ts");
 
 function statusWithPullRequests(
     pullRequests: object[],

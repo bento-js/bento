@@ -12,6 +12,12 @@ const MAX_LINKS: u32 = 40;
 /// target. From the first component that does not exist, the names that follow are kept as
 /// written, and a `..` among them removes the name before it. A grant for a file that will
 /// be created (a new database, say) therefore names the location its creator will reach.
+///
+/// # Errors
+///
+/// [`std::io::Error`] of kind `InvalidInput` when `path` is relative, and whatever the
+/// operating system reports for a component it cannot read; a chain of more than 40 links
+/// is reported as "too many levels of symbolic links".
 pub fn canonical_path(path: &Path) -> io::Result<PathBuf> {
     if !path.is_absolute() {
         return Err(io::Error::new(

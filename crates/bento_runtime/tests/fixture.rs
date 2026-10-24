@@ -14,12 +14,14 @@ use bento_host::Scope;
 use bento_runtime::{
     ErrorKind, RunOutcome, RunningRuntime, ShutdownOutcome, package_lookup_paths, start,
 };
+use bento_test_support::{ChildLimit, isolated_fixture_test};
 use support::{completed, config, fixture, run};
 
 #[test]
 fn real_fixture_renders_assets_validates_persists_and_restarts_in_both_modes() {
-    if support::isolated_fixture_test(
+    if isolated_fixture_test(
         "real_fixture_renders_assets_validates_persists_and_restarts_in_both_modes",
+        ChildLimit::Unbounded,
     ) {
         return;
     }
@@ -76,8 +78,9 @@ insert.run('Seeded visitor', 'A seeded greeting'); db.close();
 
 #[test]
 fn project_only_reads_preserve_asset_lookup_permission_error_and_location() {
-    if support::isolated_fixture_test(
+    if isolated_fixture_test(
         "project_only_reads_preserve_asset_lookup_permission_error_and_location",
+        ChildLimit::Unbounded,
     ) {
         return;
     }
@@ -97,7 +100,7 @@ fn project_only_reads_preserve_asset_lookup_permission_error_and_location() {
 fn wait_for_page(runtime: &RunningRuntime, port: u16) -> http::Response {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        if let Ok(page) = http::request(port, "GET", "/", "") {
+        if let Ok(page) = http::get(port, "/") {
             return page;
         }
         assert!(
@@ -144,17 +147,15 @@ fn assert_document(page: &http::Response) {
 }
 
 fn check_forms(port: u16, development: bool) {
-    let visitor = if development { "Persistent+visitor" } else { "Production+visitor" };
+    let visitor = if development { "Persistent visitor" } else { "Production visitor" };
     let valid =
-        http::request(port, "POST", "/", &format!("name={visitor}&message=Saved+through+Bento"))
+        http::post_form(port, "/", &[("name", visitor), ("message", "Saved through Bento")])
             .unwrap();
     assert_eq!(valid.status, 303, "{}", valid.body);
     assert_eq!(valid.headers["location"], "/");
-    let page = http::request(port, "GET", "/", "").unwrap();
-    assert!(
-        page.body.contains(&visitor.replace('+', " ")) && page.body.contains("Saved through Bento")
-    );
-    let invalid = http::request(port, "POST", "/", "name=+++&message=++").unwrap();
+    let page = http::get(port, "/").unwrap();
+    assert!(page.body.contains(visitor) && page.body.contains("Saved through Bento"));
+    let invalid = http::post_form(port, "/", &[("name", "   "), ("message", "  ")]).unwrap();
     assert_eq!(invalid.status, 400);
     for content in [
         "Enter your name.",
@@ -164,9 +165,9 @@ fn check_forms(port: u16, development: bool) {
     ] {
         assert!(invalid.body.contains(content), "missing {content}: {}", invalid.body);
     }
+    let long_message = "x".repeat(281);
     let too_long =
-        http::request(port, "POST", "/", &format!("name=Long&message={}", "x".repeat(281)))
-            .unwrap();
+        http::post_form(port, "/", &[("name", "Long"), ("message", &long_message)]).unwrap();
     assert_eq!(too_long.status, 400);
     assert!(too_long.body.contains("Keep your message to 280 characters or fewer."));
 }

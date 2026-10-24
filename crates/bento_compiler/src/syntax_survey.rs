@@ -10,7 +10,7 @@ pub(crate) struct SyntaxSurvey {
 }
 
 impl SyntaxSurvey {
-    pub fn of(program: &Program<'_>) -> Self {
+    pub(crate) fn of(program: &Program<'_>) -> Self {
         let mut survey = Self::default();
         survey.visit_program(program);
         survey

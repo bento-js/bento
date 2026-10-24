@@ -5,12 +5,14 @@
 //! decision; the runtime enforces it at its native operation boundaries. Nested Bento
 //! launches receive the invoking launch's policy as a ceiling they may only narrow.
 
+#![warn(missing_docs)]
+
 mod grants;
 mod net;
 mod path;
 mod scope;
 
-pub use grants::{GrantKind, GrantRequest, Grants, InvalidCeiling, WiderGrant};
+pub use grants::{GrantKind, GrantRequest, Grants, InvalidCeiling, UnencodableCeiling, WiderGrant};
 pub use net::{InvalidNetTarget, NetTarget};
 pub use path::canonical_path;
 pub use scope::{Covers, Scope};

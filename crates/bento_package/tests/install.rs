@@ -58,11 +58,12 @@ fn pnpm_manifest(dev_dependencies: Value) -> Value {
     })
 }
 
-/// The caller's environment as pnpm sees it: CI's frozen-by-default lockfile behavior is
-/// removed so tests observe pnpm's ordinary local behavior, and the store stays disposable.
+/// The caller's environment as pnpm sees it, outside CI so tests observe pnpm's ordinary
+/// local lockfile behavior, with a disposable store. `CI=false` is the one setting that
+/// overrides pnpm's detection of a CI service such as GitHub Actions (`GITHUB_ACTIONS`).
 fn environment(extra: &[(&str, &str)]) -> BTreeMap<String, String> {
-    let mut environment: BTreeMap<String, String> =
-        std::env::vars().filter(|(name, _)| name != "CI").collect();
+    let mut environment: BTreeMap<String, String> = std::env::vars().collect();
+    environment.insert("CI".to_string(), "false".to_string());
     environment
         .insert("pnpm_config_store_dir".to_string(), "/tmp/bento-project/pnpm-store".to_string());
     for (name, value) in extra {

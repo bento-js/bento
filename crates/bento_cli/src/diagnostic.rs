@@ -10,7 +10,7 @@ use ariadne::{Config, Label, Report, ReportKind, Source};
 const ENVIRONMENT_FILE: &str = ".env";
 
 /// An error that points at a place in a source file.
-pub struct Diagnostic<'a> {
+pub(crate) struct Diagnostic<'a> {
     pub message: String,
     pub path: &'a Path,
     /// One-based.
@@ -26,7 +26,7 @@ pub struct Diagnostic<'a> {
 /// `diagnostic` as a report quoting the source around its place, styled with colors when
 /// `color` is set. `None` when that source cannot be shown: the file cannot be read, has no
 /// such line, or is an environment file, whose values are often secrets.
-pub fn render(diagnostic: &Diagnostic, color: bool) -> Option<String> {
+pub(crate) fn render(diagnostic: &Diagnostic, color: bool) -> Option<String> {
     if is_environment_file(diagnostic.path) {
         return None;
     }

@@ -13,6 +13,8 @@ const SCRATCH: &str = "/tmp/bento-cli/watch";
 const SETTLE: Duration = Duration::from_millis(300);
 const CHANGE_DEADLINE: Duration = Duration::from_secs(5);
 const QUIET_WINDOW: Duration = Duration::from_millis(600);
+/// Shorter than the watcher's quiet period, so the writes of a burst are reported as one change.
+const BURST_GAP: Duration = Duration::from_millis(10);
 
 /// A disposable directory holding a project in `app/` and files outside it.
 struct Workspace {
@@ -88,7 +90,7 @@ fn a_burst_of_edits_is_one_change() {
 
     for edit in 0..5 {
         workspace.write("app/message.mjs", &format!("export default {edit};\n"));
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(BURST_GAP);
     }
 
     assert_eq!(next_change(&changes), vec![workspace.path("app/message.mjs")]);
@@ -277,7 +279,7 @@ fn refreshing_configuration_watches_a_retargeted_extended_symlink() {
 }
 
 #[test]
-fn proposal_0001_missing_extended_configuration_candidates_are_retained() {
+fn missing_extended_configuration_candidates_are_retained() {
     let workspace = Workspace::new();
     for (extended, expected) in [
         ("../configs/base.json", "configs/base.json"),
@@ -293,7 +295,7 @@ fn proposal_0001_missing_extended_configuration_candidates_are_retained() {
 }
 
 #[test]
-fn proposal_0001_creating_a_missing_configuration_outside_the_project_is_a_change() {
+fn creating_a_missing_configuration_outside_the_project_is_a_change() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "../configs/base.json" }"#);
     fs::create_dir(workspace.path("configs")).unwrap();
@@ -305,7 +307,7 @@ fn proposal_0001_creating_a_missing_configuration_outside_the_project_is_a_chang
 }
 
 #[test]
-fn proposal_0001_creating_missing_configuration_directories_is_a_change() {
+fn creating_missing_configuration_directories_is_a_change() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "../configs/deep/base.json" }"#);
     let (_watcher, changes) = workspace.watch();
@@ -316,7 +318,7 @@ fn proposal_0001_creating_missing_configuration_directories_is_a_change() {
 }
 
 #[test]
-fn proposal_0001_missing_configuration_packages_do_not_watch_project_ancestors() {
+fn missing_configuration_packages_do_not_watch_project_ancestors() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
 
@@ -337,7 +339,7 @@ fn proposal_0001_missing_configuration_packages_do_not_watch_project_ancestors()
 }
 
 #[test]
-fn proposal_0001_installing_a_missing_configuration_package_is_a_change() {
+fn installing_a_missing_configuration_package_is_a_change() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
     let (_watcher, changes) = workspace.watch();
@@ -348,7 +350,7 @@ fn proposal_0001_installing_a_missing_configuration_package_is_a_change() {
 }
 
 #[test]
-fn proposal_0001_a_missing_package_extended_by_an_outside_configuration_stays_watched() {
+fn a_missing_package_extended_by_an_outside_configuration_stays_watched() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "../shared/base.json" }"#);
     workspace.write("shared/base.json", r#"{ "extends": "@configs/strict/tsconfig.json" }"#);
@@ -360,7 +362,7 @@ fn proposal_0001_a_missing_package_extended_by_an_outside_configuration_stays_wa
 }
 
 #[test]
-fn proposal_0001_creating_a_missing_configuration_through_a_directory_symlink_is_a_change() {
+fn creating_a_missing_configuration_through_a_directory_symlink_is_a_change() {
     let workspace = Workspace::new();
     workspace.write("app/tsconfig.json", r#"{ "extends": "../shared/deep/base.json" }"#);
     fs::create_dir(workspace.path("real")).unwrap();

@@ -44,6 +44,9 @@ let config = RuntimeConfig {
     shutdown_deadline: Duration::from_secs(5),
 };
 let runtime = start(config, &PathBuf::from("main.ts"))?;
+for diagnostic in runtime.diagnostics() {
+    eprintln!("{diagnostic}");
+}
 let handle = runtime.handle();
 let outcome = runtime.wait();
 match outcome {
@@ -56,7 +59,7 @@ match outcome {
 
 `RuntimeConfig::new(root)` initializes `cwd` to the project root, denies grants, leaves environment, arguments, and registrations empty, and sets the shutdown deadline to five seconds. Configure authority explicitly before execution.
 
-The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration diagnostics print once per instance at startup to the host process's stderr. Unsupported JSX execution settings such as `jsx: preserve` and `react-native` allow non-JSX modules to run; only modules containing JSX fail at transform time as `ErrorKind::Transform`, naming the setting and the JSX location. An unreadable or malformed `tsconfig.json` returns from `start` as `ErrorKind::Transform` before execution. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
+The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration diagnostics are found once at startup and returned by `RunningRuntime::diagnostics()`; the runtime itself prints nothing, so the host decides how to show them, and the `bento` CLI prints each one to its stderr. Unsupported JSX execution settings such as `jsx: preserve` and `react-native` allow non-JSX modules to run; only modules containing JSX fail at transform time as `ErrorKind::Transform`, naming the setting and the JSX location. An unreadable or malformed `tsconfig.json` returns from `start` as `ErrorKind::Transform` before execution. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
 
 ## Grants and environment
 

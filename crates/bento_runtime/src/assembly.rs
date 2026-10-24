@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
-use deno_core::{ModuleSpecifier, error::CoreError};
+use deno_core::{Extension, ModuleSpecifier, error::CoreError};
 use deno_error::JsErrorBox;
 use deno_lib::npm::create_npm_process_state_provider;
 use deno_lib::worker::{
@@ -11,6 +11,7 @@ use deno_runtime::WorkerExecutionMode;
 use deno_runtime::WorkerLogLevel;
 use deno_runtime::deno_fs::RealFs;
 use deno_runtime::deno_os::{ExitCode, WatcherExitHandle, WatcherExited};
+use deno_runtime::deno_permissions::PermissionsContainer;
 use deno_tls::{RootCertStoreProvider, rustls::RootCertStore};
 use sys_traits::impls::RealSys;
 use tokio::sync::mpsc;
@@ -105,7 +106,14 @@ fn close_resources(worker: &mut LibMainWorker) {
     let resources = {
         let mut state = state.borrow_mut();
         let ids: Vec<_> = state.resource_table.names().map(|(id, _)| id).collect();
-        ids.into_iter().filter_map(|id| state.resource_table.take_any(id).ok()).collect::<Vec<_>>()
+        ids.into_iter()
+            .map(|id| {
+                state
+                    .resource_table
+                    .take_any(id)
+                    .expect("every id was listed by this table under the same borrow")
+            })
+            .collect::<Vec<_>>()
     };
     for resource in resources {
         resource.close();
@@ -122,11 +130,7 @@ fn create_worker(
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
     let node =
         NodeServices::new(&config.project_root, permissions.clone(), sources.clone(), &control);
-    let environment = InstanceEnvironment {
-        values: Arc::new(parking_lot::Mutex::new(std::mem::take(&mut config.env))),
-        allowed: std::mem::take(&mut config.grants.env),
-        cwd: config.cwd.clone(),
-    };
+    let environment = instance_environment(&mut config);
     let loader = LoaderFactory {
         node: node.clone(),
         cwd: config.cwd.clone(),
@@ -134,14 +138,41 @@ fn create_worker(
         control: control.clone(),
         sources,
     };
-    let worker_factory = Arc::new(WorkerFactory::new(
+    let workers = Arc::new(WorkerFactory::new(
         loader.clone(),
         environment.clone(),
         config.argv.clone(),
         Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
     ));
-    let factory = LibMainWorkerFactory::new(
-        worker_factory.blobs.clone(),
+    let factory = main_worker_factory(config, loader, &node, &workers, &control);
+    let extensions = vec![
+        bento_instance::init(environment, modules, control.clone(), node.inputs),
+        crate::feature_ops::extension(workers.callback()),
+    ];
+    let mut worker = main_worker(&factory, entry, permissions, extensions)?;
+    load_require_watch(&mut worker)?;
+    install_worker_host(&mut worker, &workers)?;
+    install_exit_handle(&mut worker, &control);
+    Ok(worker)
+}
+
+fn instance_environment(config: &mut RuntimeConfig) -> InstanceEnvironment {
+    InstanceEnvironment {
+        values: Arc::new(parking_lot::Mutex::new(std::mem::take(&mut config.env))),
+        allowed: std::mem::take(&mut config.grants.env),
+        cwd: config.cwd.clone(),
+    }
+}
+
+fn main_worker_factory(
+    config: RuntimeConfig,
+    loader: LoaderFactory,
+    node: &NodeServices,
+    workers: &WorkerFactory,
+    control: &Arc<Control>,
+) -> LibMainWorkerFactory<RealSys> {
+    LibMainWorkerFactory::new(
+        workers.blobs.clone(),
         None,
         None,
         crate::features::checker(control.clone()),
@@ -149,46 +180,66 @@ fn create_worker(
         None,
         None,
         Box::new(loader),
-        node.resolver,
+        node.resolver.clone(),
         create_npm_process_state_provider(&node.npm),
-        node.packages,
-        worker_factory.certificates.clone(),
+        node.packages.clone(),
+        workers.certificates.clone(),
         StorageKeyResolver::empty(),
         RealSys,
         options(config),
-        worker_factory.roots.clone(),
+        workers.roots.clone(),
         None,
-    );
+    )
+}
+
+fn main_worker(
+    factory: &LibMainWorkerFactory<RealSys>,
+    entry: &Path,
+    permissions: PermissionsContainer,
+    extensions: Vec<Extension>,
+) -> anyhow::Result<LibMainWorker> {
     let main = ModuleSpecifier::from_file_path(entry)
-        .map_err(|_| anyhow::anyhow!("invalid entry path"))?;
-    let mut worker = factory.create_custom_worker(
+        .map_err(|()| anyhow::anyhow!("invalid entry path"))?;
+    Ok(factory.create_custom_worker(
         WorkerExecutionMode::Run,
         main,
         vec![ModuleSpecifier::parse("bento:compat")?, ModuleSpecifier::parse("bento:subprocess")?],
         Vec::new(),
         permissions,
-        vec![
-            bento_instance::init(environment, modules, control.clone(), node.inputs),
-            crate::feature_ops::extension(worker_factory.callback()),
-        ],
+        extensions,
         Default::default(),
         None,
-    )?;
-    // node:module must load after bootstrap has initialized process.platform and process.arch.
+    )?)
+}
+
+/// `node:module` loads only after bootstrap has initialized `process.platform` and
+/// `process.arch`, so the worker must already exist.
+fn load_require_watch(worker: &mut LibMainWorker) -> anyhow::Result<()> {
     worker.js_runtime().lazy_load_es_module_with_code(
         "ext:bento_instance/initialize_require_watch.mjs",
         "import { install } from 'ext:bento_instance/require_watch.mjs'; install();",
     )?;
-    // Install after the factory's lazy extension initialization, which resets its private callback.
+    Ok(())
+}
+
+/// The factory's lazy extension initialization resets the worker host's private callback, so
+/// ours has to be installed over it afterwards.
+fn install_worker_host(
+    worker: &mut LibMainWorker,
+    workers: &Arc<WorkerFactory>,
+) -> anyhow::Result<()> {
     let initialize =
-        deno_runtime::ops::worker_host::deno_worker_host::init(worker_factory.callback(), None)
+        deno_runtime::ops::worker_host::deno_worker_host::init(workers.callback(), None)
             .op_state_fn
             .ok_or_else(|| anyhow::anyhow!("worker host callback initializer unavailable"))?;
     initialize(&mut worker.js_runtime().op_state().borrow_mut());
+    Ok(())
+}
+
+fn install_exit_handle(worker: &mut LibMainWorker, control: &Control) {
     let handle = worker.js_runtime().v8_isolate().thread_safe_handle();
     control.install_isolate(handle.clone());
     worker.js_runtime().op_state().borrow_mut().put(WatcherExitHandle(handle));
-    Ok(worker)
 }
 
 fn options(config: RuntimeConfig) -> LibMainWorkerOptions {

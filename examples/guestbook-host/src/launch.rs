@@ -73,6 +73,12 @@ impl Launch {
     /// Resolves `project` to the canonical directory grants are checked against and `database`
     /// to the path the store will open, refusing a database that would fall under the guest's
     /// read grant.
+    ///
+    /// # Errors
+    ///
+    /// [`LaunchError::Project`] when the project directory or a package lookup path above it
+    /// cannot be resolved, [`LaunchError::Database`] when `database` cannot be resolved, and
+    /// [`LaunchError::DatabaseReadable`] when it resolves under a path the guest may read.
     pub fn prepare(
         project: &Path,
         database: &Path,

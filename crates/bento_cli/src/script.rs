@@ -12,7 +12,7 @@ use crate::launch::Launch;
 
 /// Runs the script at `entry` in a runtime instance until it ends, and returns the exit code
 /// it ended with. The first SIGINT or SIGTERM goes to the script; a second ends `bento` at once.
-pub fn run(
+pub(crate) fn run(
     launch: Launch,
     entry: &Path,
     invocation_directory: &Path,
@@ -47,7 +47,7 @@ pub fn run(
 
 /// The runtime configuration for running the script `launch` prepared: its grants and
 /// environment, the directory `bento` runs in, and the words after the script.
-pub fn runtime_config(
+pub(crate) fn runtime_config(
     launch: Launch,
     invocation_directory: &Path,
     arguments: &[String],
@@ -55,7 +55,7 @@ pub fn runtime_config(
     RuntimeConfig {
         cwd: invocation_directory.to_owned(),
         grants: launch.grants,
-        env: launch.environment.vars().clone(),
+        env: launch.environment.into_vars(),
         argv: arguments.to_vec(),
         ..RuntimeConfig::new(launch.project.root())
     }

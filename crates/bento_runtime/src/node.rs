@@ -41,7 +41,7 @@ pub(crate) struct NodeServices {
 }
 
 impl NodeServices {
-    pub fn new(
+    pub(crate) fn new(
         project: &Path,
         permissions: PermissionsContainer,
         sources: Arc<Sources>,

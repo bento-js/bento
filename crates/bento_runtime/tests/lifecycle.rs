@@ -151,9 +151,11 @@ fn registering_guest_signals_does_not_change_os_signal_disposition() {
     fn disposition() -> libc::sigaction {
         let mut action = std::mem::MaybeUninit::uninit();
         assert_eq!(
+            // SAFETY: a null new action only reads the current one into `action`.
             unsafe { libc::sigaction(libc::SIGUSR2, std::ptr::null(), action.as_mut_ptr()) },
             0
         );
+        // SAFETY: sigaction returned 0, so it initialized `action`.
         unsafe { action.assume_init() }
     }
     let before = disposition();

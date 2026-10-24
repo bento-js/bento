@@ -13,7 +13,7 @@ const FINGERPRINT_LENGTH: usize = 6;
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
 /// Waits until `GET /` on `port` answers with a page `wanted` accepts, and returns it.
-pub fn wait_for_page(port: u16, wanted: impl Fn(&Response) -> bool) -> Response {
+pub(crate) fn wait_for_page(port: u16, wanted: impl Fn(&Response) -> bool) -> Response {
     let start = Instant::now();
     loop {
         match http::get(port, "/") {
@@ -29,12 +29,12 @@ pub fn wait_for_page(port: u16, wanted: impl Fn(&Response) -> bool) -> Response 
 }
 
 /// The first page the server on `port` serves.
-pub fn first_page(port: u16) -> Response {
+pub(crate) fn first_page(port: u16) -> Response {
     wait_for_page(port, |_| true)
 }
 
 /// Asserts that `page` is the whole rendered guest book, showing `entries`.
-pub fn assert_guest_book_page(page: &Response, entries: &[&str]) {
+pub(crate) fn assert_guest_book_page(page: &Response, entries: &[&str]) {
     assert_eq!(page.status, 200, "{}", page.body);
     let document = [
         "<!DOCTYPE html>",
@@ -56,22 +56,26 @@ pub fn assert_guest_book_page(page: &Response, entries: &[&str]) {
 /// Signs the guest book on `port` as a browser without JavaScript would: a valid entry is
 /// saved, redirects home, and leaves a blank form; blank fields and a 281-character message are
 /// refused.
-pub fn assert_signing(port: u16) {
-    let valid =
-        http::post_form(port, "name=Bento+visitor&message=Signed+through+bento+run").unwrap();
+pub(crate) fn assert_signing(port: u16) {
+    let valid = http::post_form(
+        port,
+        &[("name", "Bento visitor"), ("message", "Signed through bento run")],
+    )
+    .unwrap();
     assert_eq!(valid.status, 303, "{}", valid.body);
-    assert_eq!(valid.header("location"), "/");
+    assert_eq!(valid.header("location"), Some("/"));
     let page = http::get(port, "/").unwrap();
     assert_guest_book_page(&page, &["Bento visitor", "Signed through bento run"]);
     assert_form_cleared(&page.body);
 
-    let blank = http::post_form(port, "name=+++&message=++").unwrap();
+    let blank = http::post_form(port, &[("name", "   "), ("message", "  ")]).unwrap();
     assert_eq!(blank.status, 400, "{}", blank.body);
     for error in ["Enter your name.", "Write a message to sign the guest book.", "value=\"   \""] {
         assert!(blank.body.contains(error), "missing {error}: {}", blank.body);
     }
 
-    let long = http::post_form(port, &format!("name=Long&message={}", "x".repeat(281))).unwrap();
+    let long_message = "x".repeat(281);
+    let long = http::post_form(port, &[("name", "Long"), ("message", &long_message)]).unwrap();
     assert_eq!(long.status, 400, "{}", long.body);
     assert!(long.body.contains("Keep your message to 280 characters or fewer."), "{}", long.body);
 }
@@ -99,28 +103,28 @@ fn named_element<'a>(document: &'a str, tag: &str, name: &str) -> (&'a str, &'a 
 
 /// Asserts that every asset `document` links is served, minified under a fingerprinted URL
 /// that browsers may cache forever, as in production.
-pub fn assert_production_assets(port: u16, document: &str) {
+pub(crate) fn assert_production_assets(port: u16, document: &str) {
     for url in asset_urls(document) {
         let asset = served_asset(port, &url);
         assert!(has_fingerprint(&url), "{url} has no fingerprint");
-        assert_eq!(asset.header("cache-control"), IMMUTABLE, "{url}");
+        assert_eq!(asset.header("cache-control"), Some(IMMUTABLE), "{url}");
     }
 }
 
 /// Asserts that every asset `document` links is served under its source path, scripts with
 /// a source map, as in development.
-pub fn assert_development_assets(port: u16, document: &str) {
+pub(crate) fn assert_development_assets(port: u16, document: &str) {
     for url in asset_urls(document) {
         let asset = served_asset(port, &url);
         assert!(!url.contains(".@"), "{url} has a fingerprint in development");
-        if asset.header("content-type").contains("javascript") {
+        if asset.header("content-type").is_some_and(|kind| kind.contains("javascript")) {
             assert_source_map(port, &url, &asset.body);
         }
     }
 }
 
 /// The `/assets/` URLs `document` links to or loads.
-pub fn asset_urls(document: &str) -> BTreeSet<String> {
+pub(crate) fn asset_urls(document: &str) -> BTreeSet<String> {
     let urls: BTreeSet<String> = ["href=\"", "src=\""]
         .iter()
         .flat_map(|attribute| document.split(attribute).skip(1))

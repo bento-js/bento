@@ -16,7 +16,7 @@ use crate::error::CommandError;
 
 const ENTRY: &str = "server.embedded.ts";
 
-pub fn serve(arguments: &ServeArguments) -> Result<ExitCode, CommandError> {
+pub(crate) fn serve(arguments: &ServeArguments) -> Result<ExitCode, CommandError> {
     let launch =
         Launch::prepare(&arguments.project, &arguments.database, arguments.port, arguments.mode)?;
     let access = if arguments.read_only { Access::ReadOnly } else { Access::ReadWrite };

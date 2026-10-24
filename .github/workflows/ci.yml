@@ -28,3 +28,15 @@ jobs:
                     .agents/hooks/check-scoped-commit "$message_file"
                     rm "$message_file"
                   done < <(git log --format=%s "$BASE_SHA..$HEAD_SHA")
+
+    rust:
+        # Bento supports only macOS on Apple silicon for now.
+        runs-on: macos-latest
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@v7
+            - uses: voidzero-dev/setup-vp@v1.21.1
+              with:
+                  cache: true
+            - uses: Swatinem/rust-cache@v2
+            - run: vp run rust

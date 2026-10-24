@@ -14,7 +14,7 @@ use bento_task::{PlanError, TaskError};
 use bento_workspace::{EnvironmentError, ManifestError, ProjectError, TargetError};
 
 #[derive(Debug, Error)]
-pub enum CliError {
+pub(crate) enum CliError {
     #[error(transparent)]
     Target(#[from] TargetError),
     #[error(transparent)]
@@ -54,7 +54,7 @@ pub enum CliError {
 impl CliError {
     /// Writes this error to standard error: as a report showing the place in a file it points
     /// at, when it has one Bento can show, and otherwise as one line.
-    pub fn report(&self) {
+    pub(crate) fn report(&self) {
         let color = io::stderr().is_terminal();
         let shown = self.diagnostic().and_then(|diagnostic| diagnostic::render(&diagnostic, color));
         match shown {
@@ -75,7 +75,7 @@ impl CliError {
 
     /// The failing child's status when a task command or pnpm failed, and `1` for everything
     /// else.
-    pub fn exit_code(&self) -> ExitCode {
+    pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
             CliError::Task(TaskError::Failed { status, .. }) => shell_status(status),
             CliError::Install(InstallError::Failed(status)) => shell_status(status),
@@ -85,9 +85,16 @@ impl CliError {
 }
 
 /// A child's status as a shell reports it: its exit code, or 128 plus the signal that ended it.
-pub fn shell_status(status: &ExitStatus) -> ExitCode {
+/// `FAILURE` stands in for a status that reports neither.
+pub(crate) fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
-    code.and_then(|code| u8::try_from(code).ok()).map_or(ExitCode::FAILURE, ExitCode::from)
+    code.map_or(ExitCode::FAILURE, process_exit_code)
+}
+
+/// The status the operating system reports for exit code `code`: its low eight bits, as for
+/// any process.
+pub(crate) fn process_exit_code(code: i32) -> ExitCode {
+    ExitCode::from(code.to_le_bytes()[0])
 }
 
 fn manifest_diagnostic(error: &ManifestError) -> Option<Diagnostic<'_>> {

@@ -121,5 +121,5 @@ Work in this repository follows [PROCESS.md](PROCESS.md), and [AGENTS.md](AGENTS
 vp install        # dependencies, with the pinned pnpm
 vp run status     # which phase the current work is in, and what comes next
 vp run check      # formatting, lint, types, artifact validation, tests, and the docs build
-vp run rust       # rustfmt, clippy with warnings denied, and every crate's tests (macOS arm64)
+vp run rust       # rustfmt, clippy and rustdoc with warnings denied, and every crate's tests (macOS arm64)
 ```

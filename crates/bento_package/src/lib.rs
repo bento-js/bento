@@ -60,6 +60,13 @@ impl InstallError {
 /// started it would; pnpm itself still runs in the project root. Bento adds
 /// `--production=false` so an inherited `NODE_ENV=production` cannot drop development
 /// dependencies, and nothing that approves dependency build scripts.
+///
+/// # Errors
+///
+/// [`InstallError::UnsupportedPackageManager`] when the manifest's `packageManager` is not
+/// pnpm, [`InstallError::MissingPnpm`] when that search finds no `pnpm`,
+/// [`InstallError::Spawn`] when it cannot be started, and [`InstallError::Failed`] when
+/// pnpm itself exits non-zero.
 pub fn install(
     project: &Project,
     lockfile: Lockfile,
@@ -67,8 +74,9 @@ pub fn install(
     invocation_directory: &Path,
 ) -> Result<(), InstallError> {
     require_pnpm_declaration(project)?;
-    let pnpm = find_executable(PNPM, environment.get("PATH"), invocation_directory)
-        .ok_or(InstallError::MissingPnpm)?;
+    let pnpm =
+        find_executable(PNPM, environment.get("PATH").map(String::as_str), invocation_directory)
+            .ok_or(InstallError::MissingPnpm)?;
     let mut command = Command::new(pnpm);
     command
         .arg("install")
@@ -99,7 +107,7 @@ fn require_pnpm_declaration(project: &Project) -> Result<(), InstallError> {
 /// empty entry (a leading, trailing, or doubled colon) is `working_directory` itself.
 fn find_executable(
     program: &str,
-    search_path: Option<&String>,
+    search_path: Option<&str>,
     working_directory: &Path,
 ) -> Option<PathBuf> {
     env::split_paths(search_path?)

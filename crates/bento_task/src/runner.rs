@@ -13,7 +13,7 @@ use crate::assignments::assigned_names;
 use crate::cancellation::{Cancellation, Signal};
 use crate::plan::{Plan, Step};
 use crate::process_group::{Outcome, ProcessGroup};
-use bento_host::{CEILING_ENV, Grants};
+use bento_host::{CEILING_ENV, Grants, UnencodableCeiling};
 use bento_workspace::{FILE_KEYS_ENV, LaunchEnvironment, Project};
 
 /// How long a command's process group may take to exit after a forwarded cancellation
@@ -40,6 +40,8 @@ pub enum TaskError {
     UnrepresentablePath(PathBuf),
     #[error("cannot put the running bento on task commands' PATH: {0}")]
     BentoLink(#[source] io::Error),
+    #[error("cannot pass the grant ceiling to task commands: {0}")]
+    GrantCeiling(#[source] UnencodableCeiling),
     #[error("task `{task}` could not run `{command}`: {source}")]
     Process { task: String, command: String, source: io::Error },
     #[error("task `{task}` failed: `{command}` {}", describe(.status))]
@@ -63,6 +65,13 @@ impl TaskError {
 impl TaskRunner {
     /// `executable` is the absolute path of the running `bento` executable, which task
     /// commands reach by the name `bento`.
+    ///
+    /// # Errors
+    ///
+    /// [`TaskError::BentoLink`] when that link cannot be made,
+    /// [`TaskError::UnrepresentablePath`] when a directory going on `PATH` is not UTF-8 or
+    /// contains `:`, and [`TaskError::GrantCeiling`] when `grants` cannot be encoded for
+    /// nested launches.
     pub fn new(
         project: &Project,
         launch: &LaunchEnvironment,
@@ -71,10 +80,15 @@ impl TaskRunner {
     ) -> Result<TaskRunner, TaskError> {
         let bento_link = link_bento(executable).map_err(TaskError::BentoLink)?;
         let mut environment = launch.vars().clone();
-        let search_path =
-            search_path(project.root(), bento_link.path(), executable, environment.get("PATH"))?;
+        let search_path = search_path(
+            project.root(),
+            bento_link.path(),
+            executable,
+            environment.get("PATH").map(String::as_str),
+        )?;
         environment.insert("PATH".to_owned(), search_path);
-        environment.insert(CEILING_ENV.to_owned(), grants.to_ceiling_value());
+        let ceiling = grants.to_ceiling_value().map_err(TaskError::GrantCeiling)?;
+        environment.insert(CEILING_ENV.to_owned(), ceiling);
         Ok(TaskRunner {
             root: project.root().to_owned(),
             launch: launch.clone(),
@@ -89,14 +103,19 @@ impl TaskRunner {
     }
 
     /// Runs the plan's commands in order, stopping at the first failure or cancellation.
+    ///
+    /// # Errors
+    ///
+    /// The first step's failure: [`TaskError::Process`] when the shell cannot be started,
+    /// [`TaskError::Failed`] when a command exits non-zero or on a signal, and
+    /// [`TaskError::Cancelled`] when cancellation was requested.
     pub fn run(&self, plan: &Plan, cancellation: &Cancellation) -> Result<(), TaskError> {
         plan.steps().iter().try_for_each(|step| self.run_step(step, cancellation))
     }
 
     fn run_step(&self, step: &Step, cancellation: &Cancellation) -> Result<(), TaskError> {
-        let task = step.task.clone();
         if let Some(signal) = cancellation.requested() {
-            return Err(TaskError::Cancelled { task, signal, status: None });
+            return Err(TaskError::Cancelled { task: step.task.clone(), signal, status: None });
         }
         let process_error = |source| TaskError::Process {
             task: step.task.clone(),
@@ -106,11 +125,13 @@ impl TaskRunner {
         let group = ProcessGroup::spawn(self.shell(&step.command)).map_err(process_error)?;
         match group.wait(cancellation, self.grace_period).map_err(process_error)? {
             Outcome::Exited(status) if status.success() => Ok(()),
-            Outcome::Exited(status) => {
-                Err(TaskError::Failed { task, command: step.command.clone(), status })
-            }
+            Outcome::Exited(status) => Err(TaskError::Failed {
+                task: step.task.clone(),
+                command: step.command.clone(),
+                status,
+            }),
             Outcome::Cancelled { signal, status } => {
-                Err(TaskError::Cancelled { task, signal, status })
+                Err(TaskError::Cancelled { task: step.task.clone(), signal, status })
             }
         }
     }
@@ -139,13 +160,13 @@ fn search_path(
     root: &Path,
     bento_link: &Path,
     executable: &Path,
-    inherited: Option<&String>,
+    inherited: Option<&str>,
 ) -> Result<String, TaskError> {
     let local_bin = root.join("node_modules").join(".bin");
     let executable_dir = executable.parent().expect("an executable path has a parent directory");
     let mut entries =
         vec![path_entry(bento_link)?, path_entry(&local_bin)?, path_entry(executable_dir)?];
-    entries.extend(inherited.filter(|path| !path.is_empty()).map(String::as_str));
+    entries.extend(inherited.filter(|path| !path.is_empty()));
     Ok(entries.join(":"))
 }
 

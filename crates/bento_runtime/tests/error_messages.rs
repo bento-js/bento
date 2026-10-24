@@ -3,6 +3,7 @@ mod support;
 use std::process::Command;
 
 use bento_runtime::{ErrorKind, RunOutcome};
+use bento_test_support::{ChildLimit, isolated_fixture_test};
 
 use support::{config, run};
 
@@ -154,7 +155,7 @@ fn runtime_messages_are_plain_even_when_terminal_color_is_enabled() {
 #[test]
 fn fixture_reexecution_rejects_a_filter_that_runs_no_tests() {
     let rejected = std::panic::catch_unwind(|| {
-        support::isolated_fixture_test("nonexistent_bento_fixture_test")
+        isolated_fixture_test("nonexistent_bento_fixture_test", ChildLimit::Unbounded)
     });
     let panic = rejected.expect_err("fixture helper accepted a child that ran zero tests");
     let message = panic

@@ -53,27 +53,27 @@ fn missing_worker_recovers(node: bool, target: &str) {
 }
 
 #[test]
-fn proposal_0001_missing_external_web_worker_is_retained_and_recovers() {
+fn missing_external_web_worker_is_retained_and_recovers() {
     missing_worker_recovers(false, "../shared/worker.mjs");
 }
 
 #[test]
-fn proposal_0001_missing_external_node_worker_is_retained_and_recovers() {
+fn missing_external_node_worker_is_retained_and_recovers() {
     missing_worker_recovers(true, "../shared/worker.mjs");
 }
 
 #[test]
-fn proposal_0001_missing_web_worker_in_dist_is_retained_and_recovers() {
+fn missing_web_worker_in_dist_is_retained_and_recovers() {
     missing_worker_recovers(false, "./dist/worker.mjs");
 }
 
 #[test]
-fn proposal_0001_missing_node_worker_in_dist_is_retained_and_recovers() {
+fn missing_node_worker_in_dist_is_retained_and_recovers() {
     missing_worker_recovers(true, "./dist/worker.mjs");
 }
 
 #[test]
-fn proposal_0001_missing_worker_in_node_modules_is_excluded() {
+fn missing_worker_in_node_modules_is_excluded() {
     for node in [false, true] {
         let root = project();
         let app = root.path().join("app");

@@ -12,7 +12,7 @@ unsafe extern "C" {
 }
 
 fn loaded_native_addons() -> Vec<String> {
-    // dyld owns these immutable, NUL-terminated image names for the process lifetime.
+    // SAFETY: dyld owns these immutable, NUL-terminated image names for the process lifetime.
     unsafe {
         (0.._dyld_image_count())
             .filter_map(|index| {

@@ -7,6 +7,7 @@ mod support;
 use std::process::Command;
 use std::time::Duration;
 
+use bento_test_support::ports::{loopback, port_is_taken};
 use support::guest_book::{
     GuestBook, README_GRANTS, fixture_file, run_with_readme_grants, tool_path,
 };
@@ -14,7 +15,7 @@ use support::guest_book_page::{
     assert_development_assets, assert_guest_book_page, assert_production_assets, assert_signing,
     first_page,
 };
-use support::running::{Background, loopback, port_is_taken};
+use support::running::Background;
 use support::{SYSTEM_PATH, path_without_other_runtimes, stderr, stdout};
 
 const START_PORT: u16 = 17901;

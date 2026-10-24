@@ -30,6 +30,17 @@ pub enum ProjectError {
 impl Project {
     /// The project enclosing a script: the nearest ancestor of the script's real
     /// location that contains `package.json`.
+    ///
+    /// # Errors
+    ///
+    /// [`ProjectError::MissingScript`] when nothing or no file is at `script`,
+    /// [`ProjectError::Resolve`] for any other failure to resolve it,
+    /// [`ProjectError::NotFound`] when no ancestor holds `package.json`, and
+    /// [`ProjectError::Manifest`] when that manifest cannot be read.
+    ///
+    /// # Panics
+    ///
+    /// Never: `script` resolved to a file, and a file path has a parent directory.
     pub fn for_script(script: &Path) -> Result<Project, ProjectError> {
         let resolved = script.canonicalize().map_err(|source| match source.kind() {
             io::ErrorKind::NotFound => ProjectError::MissingScript(script.to_owned()),
@@ -42,6 +53,12 @@ impl Project {
     }
 
     /// The project for a task or installation started from `directory`.
+    ///
+    /// # Errors
+    ///
+    /// [`ProjectError::Resolve`] when `directory` cannot be resolved,
+    /// [`ProjectError::NotFound`] when neither it nor an ancestor holds `package.json`, and
+    /// [`ProjectError::Manifest`] when that manifest cannot be read.
     pub fn for_directory(directory: &Path) -> Result<Project, ProjectError> {
         let resolved = directory
             .canonicalize()

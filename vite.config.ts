@@ -74,12 +74,13 @@ export default defineConfig({
         },
     },
     // Bento's Rust gate is its own task rather than part of `check`: Bento supports only
-    // macOS on Apple silicon for now while CI runs on Linux, and the full suite takes minutes.
+    // macOS on Apple silicon for now, so CI runs it in a separate macOS job, and the full
+    // suite takes minutes.
     run: {
         tasks: {
             rust: {
                 command:
-                    "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
+                    "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps && cargo test --workspace --no-fail-fast",
                 cache: false,
             },
             check: {

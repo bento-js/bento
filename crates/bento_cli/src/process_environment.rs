@@ -4,7 +4,7 @@ use std::env;
 use crate::error::CliError;
 
 /// The environment `bento` was started with.
-pub fn read() -> Result<BTreeMap<String, String>, CliError> {
+pub(crate) fn read() -> Result<BTreeMap<String, String>, CliError> {
     env::vars_os()
         .map(|(name, value)| match (name.into_string(), value.into_string()) {
             (Ok(name), Ok(value)) => Ok((name, value)),

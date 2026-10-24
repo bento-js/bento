@@ -37,6 +37,16 @@ const TRANSFORMED_EXTENSIONS: &[&str] = &["ts", "mts", "cts", "tsx", "jsx"];
 
 /// Removes type syntax and compiles JSX in `source`, read from `path`, according to
 /// `settings`. Module syntax is kept as written; nothing is downleveled or type checked.
+///
+/// # Errors
+///
+/// [`TransformError`] when `path` has none of the transformed extensions, when the source
+/// does not parse, or when it uses syntax the settings leave untransformed: JSX without a
+/// usable `jsx` option, and decorators without `experimentalDecorators`.
+///
+/// # Panics
+///
+/// Never: code generation is always given the source map path that produces the map.
 pub fn transform(
     path: &Path,
     source: &str,
@@ -107,7 +117,7 @@ fn ensure_executable(
     if let JsxMode::Unavailable { configured } = &settings.jsx
         && let Some(span) = survey.first_jsx
     {
-        let message = jsx_unavailable(configured);
+        let message = jsx_unavailable(configured.as_deref());
         return Err(TransformError::at(path, source, span.start as usize, message));
     }
     if !settings.experimental_decorators
@@ -123,7 +133,7 @@ fn ensure_executable(
     Ok(())
 }
 
-fn jsx_unavailable(configured: &Option<String>) -> String {
+fn jsx_unavailable(configured: Option<&str>) -> String {
     const CHOICES: &str = "set \"jsx\" to \"react-jsx\" (with \"jsxImportSource\"), \"react-jsxdev\", or \"react\" in tsconfig.json";
     match configured {
         Some(configured) => format!(

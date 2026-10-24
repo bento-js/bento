@@ -8,6 +8,9 @@ publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lints]
+workspace = true
+
 # The engine, Web/Node compatibility, and Node-API come from the dependency set of Deno v2.9.7's
 # standalone runtime (`cli/rt`): deno_lib's worker factory over deno_runtime. Per policy.0001,
 # parsing and ESM resolution use Oxc; node_resolver remains only where deno_node's CommonJS
@@ -39,13 +42,14 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-parking_lot = "0.12"
-libc = "0.2"
+parking_lot.workspace = true
+libc.workspace = true
 
-oxc = { version = "=0.153.0", features = ["ast_visit"] }
-oxc_resolver = "=11.24.3"
+oxc = { workspace = true, features = ["ast_visit"] }
+oxc_resolver.workspace = true
 
 [dev-dependencies]
+bento_test_support.workspace = true
 tempfile.workspace = true
 
 # deno_snapshots builds its V8 snapshot in a build script, where resolver 2+ keeps features

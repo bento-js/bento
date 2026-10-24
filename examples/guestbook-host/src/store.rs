@@ -61,6 +61,11 @@ pub struct GuestBookStore {
 impl GuestBookStore {
     /// Opens the database at `path`, creating it and the host's table in read-write mode. A
     /// read-only store never writes: the file must already exist.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::Missing`] when a read-only store finds no file, and
+    /// [`StoreError::Database`] when SQLite cannot open the file or create the table.
     pub fn open(path: &Path, access: Access) -> Result<GuestBookStore, StoreError> {
         let connection = match access {
             Access::ReadWrite => {
@@ -80,6 +85,10 @@ impl GuestBookStore {
     }
 
     /// Every entry, oldest first.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::Database`] when the query fails.
     pub async fn list(&self) -> Result<Vec<Entry>, StoreError> {
         self.blocking(|connection| {
             let mut statement = connection
@@ -98,6 +107,11 @@ impl GuestBookStore {
     }
 
     /// Saves `entry`; a read-only store refuses before touching the database.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::PermissionDenied`] for a read-only store, and
+    /// [`StoreError::Database`] when the insert fails.
     pub async fn append(&self, entry: NewEntry) -> Result<(), StoreError> {
         if self.access == Access::ReadOnly {
             return Err(StoreError::PermissionDenied);

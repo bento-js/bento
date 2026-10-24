@@ -19,7 +19,7 @@ pub(crate) struct WatchInputs {
 }
 
 impl WatchInputs {
-    pub fn new(root: PathBuf, paths: Arc<Mutex<BTreeSet<PathBuf>>>) -> Self {
+    pub(crate) fn new(root: PathBuf, paths: Arc<Mutex<BTreeSet<PathBuf>>>) -> Self {
         Self {
             root,
             paths,
@@ -36,7 +36,7 @@ impl WatchInputs {
         }
     }
 
-    pub fn record(&self, path: &Path) {
+    pub(crate) fn record(&self, path: &Path) {
         let Some(canonical) = self.watch_path(path) else { return };
         if !self.sources.lock().insert(canonical.clone()) {
             return;
@@ -45,13 +45,18 @@ impl WatchInputs {
         self.paths.lock().insert(canonical);
     }
 
-    pub fn record_failed_target(&self, path: &Path) {
+    pub(crate) fn record_failed_target(&self, path: &Path) {
         if let Some(canonical) = self.watch_path(path) {
             self.paths.lock().insert(canonical);
         }
     }
 
-    pub fn record_failed_require(&self, request: &str, importer: &Path, extensions: Vec<String>) {
+    pub(crate) fn record_failed_require(
+        &self,
+        request: &str,
+        importer: &Path,
+        extensions: Vec<String>,
+    ) {
         if !self.is_source(importer) {
             return;
         }
@@ -87,7 +92,7 @@ impl WatchInputs {
         }
     }
 
-    pub fn record_missing_require_target(&self, target: &Path, importer: &Path) {
+    pub(crate) fn record_missing_require_target(&self, target: &Path, importer: &Path) {
         if self.is_source(importer)
             && target.is_absolute()
             && std::fs::metadata(target)
@@ -97,7 +102,7 @@ impl WatchInputs {
         }
     }
 
-    pub fn record_cjs_resolution_failure(&self, failure: &JsErrorBox) {
+    pub(crate) fn record_cjs_resolution_failure(&self, failure: &JsErrorBox) {
         let extension_probes =
             failure.get_inner_ref().is_some_and(|error| error.is::<ModuleNotFoundError>());
         let mut error: &(dyn Error + 'static) = failure;
@@ -132,7 +137,7 @@ impl WatchInputs {
         }
     }
 
-    pub fn is_source(&self, path: &Path) -> bool {
+    pub(crate) fn is_source(&self, path: &Path) -> bool {
         crate::sources::is_watch_source(&self.root, path)
     }
 

@@ -33,6 +33,11 @@ pub enum TargetError {
 /// An argument containing a path separator, or with an extension naming an existing
 /// file, is a script. Otherwise an exact task name of the project around `cwd` wins
 /// over a same-named file. Anything else is an error, never a shell command.
+///
+/// # Errors
+///
+/// [`TargetError::Unknown`] when `argument` names neither a task nor a file, and
+/// [`TargetError::Project`] when the project a target belongs to cannot be read.
 pub fn select_target(argument: &str, cwd: &Path) -> Result<Selection, TargetError> {
     let candidate = cwd.join(argument);
     if is_explicit_path(argument, &candidate) {

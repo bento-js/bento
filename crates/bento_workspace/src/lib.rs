@@ -13,7 +13,7 @@ mod target;
 
 pub use dotenv::{DotenvError, DotenvProblem};
 pub use environment::{EnvironmentError, LaunchEnvironment, LaunchKind};
-pub use manifest::{Manifest, ManifestError, PackageManager, PackageType};
+pub use manifest::{Manifest, ManifestError, ManifestProblem, PackageManager, PackageType};
 pub use project::{Project, ProjectError};
 pub use provenance::{FILE_KEYS_ENV, InvalidFileKeys};
 pub use target::{Selection, Target, TargetError, select_target};

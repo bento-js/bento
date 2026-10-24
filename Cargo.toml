@@ -9,6 +9,17 @@ publish = false
 repository = "https://github.com/markmals/bento"
 rust-version = "1.99"
 
+[workspace.lints.rust]
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+allow_attributes_without_reason = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+undocumented_unsafe_blocks = "warn"
+
 # Upstream runtime crates are pinned to exactly the set published with Deno v2.9.7 so
 # their internal compatibility assumptions hold. Change them together, never one at a time.
 [workspace.dependencies]
@@ -36,11 +47,18 @@ bento_host = { path = "crates/bento_host" }
 bento_package = { path = "crates/bento_package" }
 bento_runtime = { path = "crates/bento_runtime" }
 bento_task = { path = "crates/bento_task" }
+bento_test_support = { path = "crates/bento_test_support" }
 bento_workspace = { path = "crates/bento_workspace" }
 
 anyhow = "1.0.57"
+clap = { version = "4.6.6", features = ["derive"] }
+libc = "0.2.190"
+oxc = "=0.153.0"
+oxc_resolver = "=11.24.3"
+parking_lot = "0.12.5"
 serde = { version = "1.0.149", features = ["derive"] }
 serde_json = "1.0.85"
+signal-hook = "0.3.18"
 tempfile = "3"
 thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["full"] }

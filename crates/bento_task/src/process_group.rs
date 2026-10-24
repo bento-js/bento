@@ -135,6 +135,8 @@ impl ProcessGroup {
     }
 
     fn send(&self, signal: libc::c_int) {
+        // Result ignored: ESRCH means the group already ended; a survivor fails in `kill_after`.
+        //
         // SAFETY: `killpg` has no memory-safety preconditions. The group cannot have been
         // reused yet: it has a member until `is_empty` observes otherwise, and nothing is
         // sent after that.

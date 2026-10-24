@@ -8,7 +8,7 @@ use bento_runtime::RuntimeConfig;
 
 use super::{config, fixture};
 
-pub fn prepare() -> (RuntimeConfig, TempDir, TempDir, u16) {
+pub(crate) fn prepare() -> (RuntimeConfig, TempDir, TempDir, u16) {
     let fixture_directory = fixture();
     let root = fixture_directory.path();
     let database_directory = tempdir_in(root.join("db")).unwrap();
