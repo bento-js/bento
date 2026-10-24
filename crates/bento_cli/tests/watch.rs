@@ -273,17 +273,17 @@ fn recover_missing_configuration(extended: &str, create_parent: bool) {
 }
 
 #[test]
-fn proposal_0001_creating_a_missing_extended_configuration_recovers_watch() {
+fn creating_a_missing_extended_configuration_recovers_watch() {
     recover_missing_configuration("../configs/base.json", true);
 }
 
 #[test]
-fn proposal_0001_creating_missing_configuration_parent_directories_recovers_watch() {
+fn creating_missing_configuration_parent_directories_recovers_watch() {
     recover_missing_configuration("../configs/deep/base.json", false);
 }
 
 #[test]
-fn proposal_0001_installing_a_missing_configuration_package_recovers_watch() {
+fn installing_a_missing_configuration_package_recovers_watch() {
     let temp = TempProject::new(json!({ "type": "module" }));
     temp.write("tsconfig.json", &json!({ "extends": "@configs/strict/tsconfig.json" }).to_string());
     temp.write("main.ts", "console.log('package configuration recovered');\n");
@@ -298,7 +298,7 @@ fn proposal_0001_installing_a_missing_configuration_package_recovers_watch() {
 }
 
 #[test]
-fn proposal_0001_creating_a_configuration_through_a_directory_symlink_recovers_watch() {
+fn creating_a_configuration_through_a_directory_symlink_recovers_watch() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write("app/tsconfig.json", &json!({ "extends": "../shared/deep/base.json" }).to_string());
@@ -349,7 +349,7 @@ fn an_unwatchable_configuration_warns_once_and_retries_after_source_changes() {
 }
 
 #[test]
-fn proposal_0001_a_loaded_entry_beneath_a_node_modules_ancestor_is_watched() {
+fn a_loaded_entry_beneath_a_node_modules_ancestor_is_watched() {
     let temp = TempProject::new(json!({}));
     let project = temp.path("node_modules/application");
     temp.write("node_modules/application/package.json", &json!({ "type": "module" }).to_string());
@@ -409,7 +409,7 @@ fn watch_external_script(temp: &TempProject, entry: &str) -> Background {
 }
 
 #[test]
-fn proposal_0001_failed_commonjs_resolutions_recover_when_external_candidates_are_created() {
+fn failed_commonjs_resolutions_recover_when_external_candidates_are_created() {
     for (entry, source) in [
         ("main.cjs", "console.log(require('../shared/deep/missing').message);"),
         (
@@ -428,7 +428,7 @@ fn proposal_0001_failed_commonjs_resolutions_recover_when_external_candidates_ar
 }
 
 #[test]
-fn proposal_0001_dependency_wrappers_preserve_missing_require_recovery() {
+fn dependency_wrappers_preserve_missing_require_recovery() {
     for hook in ["Module.prototype.require", "Module._resolveFilename"] {
         let temp = TempProject::new(json!({}));
         temp.write("app/package.json", "{}");
@@ -474,7 +474,7 @@ fn workspace_manifest_reloads(
 }
 
 #[test]
-fn proposal_0001_workspace_import_maps_are_watched_for_both_module_systems() {
+fn workspace_import_maps_are_watched_for_both_module_systems() {
     workspace_manifest_reloads(
         "main.mjs",
         "import { message } from '../shared/value.js'; console.log(message);",
@@ -490,7 +490,7 @@ fn proposal_0001_workspace_import_maps_are_watched_for_both_module_systems() {
 }
 
 #[test]
-fn proposal_0001_workspace_self_reference_exports_are_watched() {
+fn workspace_self_reference_exports_are_watched() {
     workspace_manifest_reloads(
         "main.mjs",
         "import { message } from '../shared/value.js'; console.log(message);",
@@ -500,7 +500,7 @@ fn proposal_0001_workspace_self_reference_exports_are_watched() {
 }
 
 #[test]
-fn proposal_0001_creating_a_nearer_workspace_package_scope_restarts_resolution() {
+fn creating_a_nearer_workspace_package_scope_restarts_resolution() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write(
@@ -527,7 +527,7 @@ fn proposal_0001_creating_a_nearer_workspace_package_scope_restarts_resolution()
 }
 
 #[test]
-fn proposal_0001_creating_a_workspace_package_scope_recovers_a_failed_import_map() {
+fn creating_a_workspace_package_scope_recovers_a_failed_import_map() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write(
@@ -548,7 +548,7 @@ fn proposal_0001_creating_a_workspace_package_scope_recovers_a_failed_import_map
 }
 
 #[test]
-fn proposal_0001_workspace_package_type_is_watched() {
+fn workspace_package_type_is_watched() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write("app/main.mjs", "import '../shared/value.js';");
@@ -564,7 +564,7 @@ fn proposal_0001_workspace_package_type_is_watched() {
 }
 
 #[test]
-fn proposal_0001_successful_require_resolve_does_not_watch_workspace_sources() {
+fn successful_require_resolve_does_not_watch_workspace_sources() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", "{}");
     temp.write(
@@ -585,7 +585,7 @@ fn proposal_0001_successful_require_resolve_does_not_watch_workspace_sources() {
 }
 
 #[test]
-fn proposal_0001_missing_esm_package_map_targets_recover_in_watch() {
+fn missing_esm_package_map_targets_recover_in_watch() {
     for (entry, target, value) in [
         ("main.mjs", "target.mjs", "export { message } from '#message';"),
         ("main.mjs", "deep/target.mjs", "export { message } from '#message';"),
@@ -626,7 +626,7 @@ fn proposal_0001_missing_esm_package_map_targets_recover_in_watch() {
 }
 
 #[test]
-fn proposal_0001_successful_import_meta_resolve_does_not_watch_workspace_sources() {
+fn successful_import_meta_resolve_does_not_watch_workspace_sources() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", &json!({ "type": "module" }).to_string());
     temp.write(
@@ -648,7 +648,7 @@ fn proposal_0001_successful_import_meta_resolve_does_not_watch_workspace_sources
 }
 
 #[test]
-fn proposal_0001_successful_commonjs_directory_resolution_does_not_watch_sibling_probes() {
+fn successful_commonjs_directory_resolution_does_not_watch_sibling_probes() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", "{}");
     temp.write("app/main.cjs", "console.log(require('../shared').message);");
@@ -667,7 +667,7 @@ fn proposal_0001_successful_commonjs_directory_resolution_does_not_watch_sibling
 }
 
 #[test]
-fn proposal_0001_dependency_config_search_does_not_watch_the_project_parent() {
+fn dependency_config_search_does_not_watch_the_project_parent() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", "{}");
     temp.write("app/main.cjs", "console.log(require('config-loader')(__dirname));");
@@ -693,7 +693,7 @@ fn proposal_0001_dependency_config_search_does_not_watch_the_project_parent() {
 }
 
 #[test]
-fn proposal_0001_missing_custom_require_extensions_recover_when_created() {
+fn missing_custom_require_extensions_recover_when_created() {
     let temp = TempProject::new(json!({}));
     temp.write("app/package.json", "{}");
     temp.write(
@@ -709,7 +709,7 @@ fn proposal_0001_missing_custom_require_extensions_recover_when_created() {
 }
 
 #[test]
-fn proposal_0001_creating_missing_worker_scripts_recovers_watch() {
+fn creating_missing_worker_scripts_recovers_watch() {
     for node in [false, true] {
         for target in ["../shared/worker.mjs", "./dist/worker.mjs"] {
             let temp = TempProject::new(json!({}));

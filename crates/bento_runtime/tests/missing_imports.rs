@@ -54,7 +54,7 @@ fn watch_inputs(source: &str, commonjs: bool) -> (tempfile::TempDir, Vec<std::pa
 }
 
 #[test]
-fn proposal_0001_failed_commonjs_resolution_records_every_file_candidate() {
+fn failed_commonjs_resolution_records_every_file_candidate() {
     for (source, commonjs) in [
         ("require('../shared/deep/missing');", true),
         ("require('$ROOT/shared/deep/missing');", true),
@@ -70,7 +70,7 @@ fn proposal_0001_failed_commonjs_resolution_records_every_file_candidate() {
 }
 
 #[test]
-fn proposal_0001_failed_file_url_and_dynamic_imports_remain_watch_inputs() {
+fn failed_file_url_and_dynamic_imports_remain_watch_inputs() {
     for (source, commonjs) in [
         ("import 'file://$ROOT/shared/deep/missing.mjs';", false),
         ("await import('../shared/deep/missing.mjs');", false),
@@ -83,7 +83,7 @@ fn proposal_0001_failed_file_url_and_dynamic_imports_remain_watch_inputs() {
 }
 
 #[test]
-fn proposal_0001_external_package_scopes_and_missing_nearer_scopes_are_watch_inputs() {
+fn external_package_scopes_and_missing_nearer_scopes_are_watch_inputs() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -108,7 +108,7 @@ fn proposal_0001_external_package_scopes_and_missing_nearer_scopes_are_watch_inp
 }
 
 #[test]
-fn proposal_0001_successful_require_resolve_does_not_add_sources_or_package_scopes() {
+fn successful_require_resolve_does_not_add_sources_or_package_scopes() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -133,7 +133,7 @@ fn proposal_0001_successful_require_resolve_does_not_add_sources_or_package_scop
 }
 
 #[test]
-fn proposal_0001_explicit_sources_beside_the_project_are_not_ancestor_scope_searches() {
+fn explicit_sources_beside_the_project_are_not_ancestor_scope_searches() {
     for (source, commonjs) in
         [("import '../missing.mjs';", false), ("require('../missing.cjs');", true)]
     {

@@ -14,7 +14,7 @@ fn inputs(app: &Path, entry: &str) -> (RunOutcome, Vec<PathBuf>) {
 }
 
 #[test]
-fn proposal_0001_esm_package_map_targets_remain_watch_inputs_when_missing() {
+fn esm_package_map_targets_remain_watch_inputs_when_missing() {
     for (entry, target, value) in [
         ("main.mjs", "target.mjs", "export { message } from '#message';"),
         ("main.mjs", "deep/target.mjs", "export { message } from '#message';"),
@@ -58,7 +58,7 @@ fn proposal_0001_esm_package_map_targets_remain_watch_inputs_when_missing() {
 }
 
 #[test]
-fn proposal_0001_successful_import_meta_resolve_does_not_add_watch_inputs() {
+fn successful_import_meta_resolve_does_not_add_watch_inputs() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -74,7 +74,7 @@ fn proposal_0001_successful_import_meta_resolve_does_not_add_watch_inputs() {
 }
 
 #[test]
-fn proposal_0001_external_scope_creation_is_limited_to_the_source_directory() {
+fn external_scope_creation_is_limited_to_the_source_directory() {
     let app_root = project();
     std::fs::write(app_root.path().join("package.json"), r#"{"type":"module"}"#).unwrap();
     let workspace = project();
@@ -100,7 +100,7 @@ fn proposal_0001_external_scope_creation_is_limited_to_the_source_directory() {
 }
 
 #[test]
-fn proposal_0001_external_existing_scope_does_not_add_missing_intermediate_scopes() {
+fn external_existing_scope_does_not_add_missing_intermediate_scopes() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -122,7 +122,7 @@ fn proposal_0001_external_existing_scope_does_not_add_missing_intermediate_scope
 }
 
 #[test]
-fn proposal_0001_successful_commonjs_directory_resolution_discards_missing_probes() {
+fn successful_commonjs_directory_resolution_discards_missing_probes() {
     let root = project();
     let app = root.path().join("app");
     std::fs::create_dir(&app).unwrap();
@@ -140,7 +140,7 @@ fn proposal_0001_successful_commonjs_directory_resolution_discards_missing_probe
 }
 
 #[test]
-fn proposal_0001_dependency_resolution_probes_are_not_watch_inputs() {
+fn dependency_resolution_probes_are_not_watch_inputs() {
     for (entry, dependency, source) in [
         (
             "main.cjs",
@@ -180,7 +180,7 @@ fn proposal_0001_dependency_resolution_probes_are_not_watch_inputs() {
 }
 
 #[test]
-fn proposal_0001_commonjs_package_map_failures_retain_non_dependency_targets() {
+fn commonjs_package_map_failures_retain_non_dependency_targets() {
     for request in ["#message", "workspace/message"] {
         let root = project();
         let app = root.path().join("app");
@@ -210,7 +210,7 @@ fn proposal_0001_commonjs_package_map_failures_retain_non_dependency_targets() {
 }
 
 #[test]
-fn proposal_0001_commonjs_reexports_loaded_by_esm_keep_failed_targets() {
+fn commonjs_reexports_loaded_by_esm_keep_failed_targets() {
     for (request, target) in [
         ("./missing.cjs", "missing.cjs"),
         ("./missing", "missing.js"),

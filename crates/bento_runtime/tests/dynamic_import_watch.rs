@@ -49,7 +49,7 @@ fn dependency_walk_inputs(entry: &str, dependency_source: &str) {
 }
 
 #[test]
-fn proposal_0001_dependency_esm_dynamic_file_url_walk_records_no_ancestor_inputs() {
+fn dependency_esm_dynamic_file_url_walk_records_no_ancestor_inputs() {
     dependency_walk_inputs(
         "main.mjs",
         "import { dirname, join } from 'node:path'; import { pathToFileURL } from 'node:url'; export async function find(start) { for (let dir = start; ; dir = dirname(dir)) { try { return await import(pathToFileURL(join(dir, 'probe.config.mjs')).href); } catch {} if (dir === dirname(dir)) return 'NO CONFIG'; } }",
@@ -57,7 +57,7 @@ fn proposal_0001_dependency_esm_dynamic_file_url_walk_records_no_ancestor_inputs
 }
 
 #[test]
-fn proposal_0001_dependency_cjs_dynamic_file_url_walk_records_no_ancestor_inputs() {
+fn dependency_cjs_dynamic_file_url_walk_records_no_ancestor_inputs() {
     dependency_walk_inputs(
         "main.cjs",
         "const { dirname, join } = require('node:path'); const { pathToFileURL } = require('node:url'); module.exports = async (start) => { for (let dir = start; ; dir = dirname(dir)) { try { return await import(pathToFileURL(join(dir, 'probe.config.mjs')).href); } catch {} if (dir === dirname(dir)) return 'NO CONFIG'; } };",
@@ -65,7 +65,7 @@ fn proposal_0001_dependency_cjs_dynamic_file_url_walk_records_no_ancestor_inputs
 }
 
 #[test]
-fn proposal_0001_dependency_dynamic_import_of_application_supplied_url_records_nothing() {
+fn dependency_dynamic_import_of_application_supplied_url_records_nothing() {
     let root = project();
     let app = root.path().join("app");
     let dependency = app.join("node_modules/plugin-host");
@@ -93,7 +93,7 @@ fn proposal_0001_dependency_dynamic_import_of_application_supplied_url_records_n
 }
 
 #[test]
-fn proposal_0001_application_dynamic_file_url_failure_retains_target_and_recovers() {
+fn application_dynamic_file_url_failure_retains_target_and_recovers() {
     for entry in ["main.mjs", "main.cjs"] {
         let root = project();
         let app = root.path().join("app");
@@ -122,7 +122,7 @@ fn proposal_0001_application_dynamic_file_url_failure_retains_target_and_recover
 }
 
 #[test]
-fn proposal_0001_dependency_import_of_application_resolved_url_retains_failed_target() {
+fn dependency_import_of_application_resolved_url_retains_failed_target() {
     let root = project();
     let app = root.path().join("app");
     let dependency = app.join("node_modules/plugin-host");

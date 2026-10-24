@@ -47,7 +47,7 @@ assert.deepEqual([direct, computed, defined, object, shorthand, babel, typescrip
 }
 
 #[test]
-fn proposal_0001_commonjs_json_reexports_keep_the_default_value_without_named_exports() {
+fn commonjs_json_reexports_keep_the_default_value_without_named_exports() {
     for request in ["./data.json", "./data"] {
         let root = tempdir().unwrap();
         std::fs::write(
