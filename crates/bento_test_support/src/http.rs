@@ -96,11 +96,10 @@ fn parse(bytes: &[u8]) -> Option<Response> {
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
     let payload = &bytes[boundary + 4..];
-    let body = if headers.get("transfer-encoding").is_some_and(|coding| coding == "chunked") {
-        decode_chunks(payload)?
-    } else {
-        payload.to_vec()
-    };
+    let chunked = headers
+        .get("transfer-encoding")
+        .is_some_and(|coding| coding.eq_ignore_ascii_case("chunked"));
+    let body = if chunked { decode_chunks(payload)? } else { payload.to_vec() };
     Some(Response { status, headers, body: String::from_utf8(body).ok()? })
 }
 
@@ -132,4 +131,20 @@ fn form_encode(text: &str) -> String {
         }
     }
     encoded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn a_chunked_body_is_decoded_whatever_the_case_of_its_coding() {
+        for coding in ["chunked", "Chunked"] {
+            let raw = format!(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: {coding}\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+            );
+            let response = parse(raw.as_bytes()).expect("a well-formed response");
+            assert_eq!(response.body, "hello", "Transfer-Encoding: {coding}");
+        }
+    }
 }
