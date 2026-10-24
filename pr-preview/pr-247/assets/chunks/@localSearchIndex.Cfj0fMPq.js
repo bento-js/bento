@@ -1,0 +1,1 @@
+import{t as e}from"./framework.BauFgPYS.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.DEgiqu-D.js`),[])};export{t as default};
