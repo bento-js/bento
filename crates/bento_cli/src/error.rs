@@ -6,7 +6,6 @@ use std::process::{ExitCode, ExitStatus};
 use thiserror::Error;
 
 use crate::diagnostic::{self, Diagnostic};
-use crate::ending::process_exit_code;
 use crate::grant_flags::GrantError;
 use crate::runtime_report;
 use bento_package::InstallError;
@@ -90,6 +89,12 @@ impl CliError {
 pub(crate) fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
     code.map_or(ExitCode::FAILURE, process_exit_code)
+}
+
+/// The status the operating system reports for exit code `code`: its low eight bits, as for
+/// any process.
+pub(crate) fn process_exit_code(code: i32) -> ExitCode {
+    ExitCode::from(code.to_le_bytes()[0])
 }
 
 fn manifest_diagnostic(error: &ManifestError) -> Option<Diagnostic<'_>> {

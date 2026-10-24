@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use bento_runtime::{RunOutcome, ShutdownOutcome, ShutdownReport, Signal};
 
-use crate::error::CliError;
+use crate::error::{CliError, process_exit_code};
 use crate::instance::Instance;
 use crate::signals;
 
@@ -67,10 +67,4 @@ pub(crate) fn finished(outcome: RunOutcome) -> Result<ExitCode, CliError> {
         RunOutcome::Failed(error) => Err(CliError::Script(error)),
         RunOutcome::Shutdown(_) => unreachable!("bento shuts a script down only after a signal"),
     }
-}
-
-/// The status the operating system reports for exit code `code`: its low eight bits, as for
-/// any process.
-pub(crate) fn process_exit_code(code: i32) -> ExitCode {
-    ExitCode::from(code.to_le_bytes()[0])
 }
