@@ -577,10 +577,28 @@ deno_core::extension!(bento_prompt_deno,
         op_bento_prompt_release,
     ],
     esm_entry_point = "ext:bento_prompt_deno/prompt.mjs",
-    esm = [dir "src/deno", "input.mjs", "constraint.mjs", "prompt.mjs"],
     options = { access: Access, cleanup: Cleanup },
     state = |state, options| {
         state.put(options.access);
         state.put(options.cleanup);
+    },
+    // `esm = [dir ...]` would read these files from the build machine at run time, so a binary
+    // moved to another machine could not start. Embedding them keeps the executable relocatable.
+    customizer = |extension: &mut deno_core::Extension| {
+        const SOURCES: &[deno_core::ExtensionFileSource] = &[
+            deno_core::ExtensionFileSource::new(
+                "ext:bento_prompt_deno/input.mjs",
+                deno_core::ascii_str_include!("input.mjs"),
+            ),
+            deno_core::ExtensionFileSource::new(
+                "ext:bento_prompt_deno/constraint.mjs",
+                deno_core::ascii_str_include!("constraint.mjs"),
+            ),
+            deno_core::ExtensionFileSource::new(
+                "ext:bento_prompt_deno/prompt.mjs",
+                deno_core::ascii_str_include!("prompt.mjs"),
+            ),
+        ];
+        extension.esm_files = std::borrow::Cow::Borrowed(SOURCES);
     },
 );

@@ -139,8 +139,17 @@ fn bento_listen_tls<'s>(
     Ok(invoke(scope, original, &[address, arguments.into(), keys]))
 }
 
-deno_core::extension!(bento_feature_ops,
+deno_core::extension!(
+    bento_feature_ops,
     ops = [op_bento_register_feature_ops],
     esm_entry_point = "ext:bento_feature_ops/feature_ops.mjs",
-    esm = [dir "src", "feature_ops.mjs"],
+    // Embedded rather than `esm = [dir ...]`, which reads the file from the build machine at
+    // run time and leaves a moved executable unable to start.
+    customizer = |extension: &mut deno_core::Extension| {
+        const SOURCES: &[deno_core::ExtensionFileSource] = &[deno_core::ExtensionFileSource::new(
+            "ext:bento_feature_ops/feature_ops.mjs",
+            deno_core::ascii_str_include!("feature_ops.mjs"),
+        )];
+        extension.esm_files = std::borrow::Cow::Borrowed(SOURCES);
+    },
 );
