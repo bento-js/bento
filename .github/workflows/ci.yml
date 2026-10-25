@@ -16,6 +16,8 @@ jobs:
               with:
                   cache: true
             - run: vp run check
+            - name: Check Prompt API example types
+              run: vp exec tsc --project examples/prompt-api/tsconfig.json
             - name: Validate pull request commit messages
               if: github.event_name == 'pull_request'
               env:
@@ -31,7 +33,7 @@ jobs:
 
     rust:
         # Bento supports only macOS on Apple silicon for now.
-        runs-on: macos-latest
+        runs-on: xcode-27
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v7
@@ -39,4 +41,60 @@ jobs:
               with:
                   cache: true
             - uses: Swatinem/rust-cache@v2
+            - name: Record native platform and SDK
+              run: |
+                  sw_vers
+                  xcrun --sdk macosx --show-sdk-version
+                  xcrun swift --version
             - run: vp run rust
+            - name: Check standalone core without native or engine dependencies
+              run: cargo check --locked -p bento_prompt --no-default-features --lib
+            - name: Check standalone native core and Rust example
+              env:
+                  MACOSX_DEPLOYMENT_TARGET: "27.0"
+              run: |
+                  cargo test --locked -p bento_prompt --features foundation-models --lib
+                  cargo build --locked -p bento_prompt --features foundation-models --example prompt_session
+            - name: Build native CLI preview
+              run: |
+                  cargo build --locked -p bento_cli
+                  xcrun vtool -show-build target/debug/bento
+                  tar -czf bento-macos27-arm64-prompt.tar.gz -C target/debug bento
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: bento-macos27-arm64-prompt
+                  path: bento-macos27-arm64-prompt.tar.gz
+                  if-no-files-found: error
+
+    rust-backend-free:
+        runs-on: macos-26
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@v7
+            - uses: voidzero-dev/setup-vp@v1.21.1
+              with:
+                  cache: true
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  key: backend-free
+            - name: Record backend-free platform and SDK
+              run: |
+                  sw_vers
+                  xcrun --sdk macosx --show-sdk-version
+            - name: Check backend-free workspace
+              run: |
+                  cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+                  RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-default-features --no-deps
+                  cargo test --workspace --no-default-features --no-fail-fast
+            - name: Check standalone backend-free core
+              run: cargo test --locked -p bento_prompt --no-default-features --lib
+            - name: Build backend-free CLI preview
+              run: |
+                  cargo build --locked -p bento_cli --no-default-features
+                  xcrun vtool -show-build target/debug/bento
+                  tar -czf bento-macos26-arm64-backend-free.tar.gz -C target/debug bento
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: bento-macos26-arm64-backend-free
+                  path: bento-macos26-arm64-backend-free.tar.gz
+                  if-no-files-found: error
