@@ -43,11 +43,28 @@ pub fn extension(access: Access, cleanup: Cleanup) -> Extension {
 struct Failure {
     error: &'static str,
     message: String,
+    /// What a context-exhaustion failure needed and what it had, which the draft reports as
+    /// a `QuotaExceededError`'s own members.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    requested: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    quota: Option<f64>,
 }
 
 impl Failure {
     fn of(error: &Error) -> Self {
-        Self { error: web_error(error.kind()), message: error.message().to_owned() }
+        let exhausted = error.quota();
+        Self {
+            error: web_error(error.kind()),
+            message: error.message().to_owned(),
+            requested: exhausted.map(|quota| quota.requested as f64),
+            quota: exhausted.map(|quota| quota.quota as f64),
+        }
+    }
+
+    /// A refusal this side decides on its own, which never carries quota numbers.
+    fn named(error: &'static str, message: &str) -> Self {
+        Self { error, message: message.to_owned(), requested: None, quota: None }
     }
 }
 
@@ -69,21 +86,18 @@ impl<T> Outcome<T> {
     }
 
     fn denied() -> Self {
-        Self::Failed(Failure {
-            error: "NotAllowedError",
-            message: "The host has not granted language-model access".into(),
-        })
+        Self::Failed(Failure::named(
+            "NotAllowedError",
+            "The host has not granted language-model access",
+        ))
     }
 
     fn destroyed() -> Self {
-        Self::Failed(Failure {
-            error: "AbortError",
-            message: "The session has been destroyed".into(),
-        })
+        Self::Failed(Failure::named("AbortError", "The session has been destroyed"))
     }
 
     fn invalid(message: String) -> Self {
-        Self::Failed(Failure { error: "TypeError", message })
+        Self::Failed(Failure::named("TypeError", &message))
     }
 }
 
@@ -252,8 +266,9 @@ fn op_bento_prompt_allowed(state: &mut OpState) -> bool {
 }
 
 /// Decides a response constraint by the translation a generation would use, so the subset
-/// has one definition and one answer for a schema it cannot accept. It converts the value as
-/// `PromptInput` does, so the call-time answer and the queued generation see the same schema.
+/// has one definition and one answer for a schema it cannot accept. The value is the plain
+/// snapshot JavaScript took of the guest's object, which is also what the queued generation
+/// carries, so the call-time answer and that generation see one schema.
 #[op2]
 #[serde]
 fn op_bento_prompt_constraint(#[serde] constraint: serde_json::Value) -> Option<Failure> {

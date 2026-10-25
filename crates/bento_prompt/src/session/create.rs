@@ -99,13 +99,17 @@ fn own_creation(
         Err(error) => return settled_pending(Err(error)),
     };
 
+    // The session has a lifetime of its own, under the caller's signal: cancelling that
+    // signal still destroys the session, while destroying the session, or abandoning this
+    // creation, leaves whatever else the caller gave that signal to alone.
+    let lifetime = cancellation.child();
     let shared = Arc::new(Shared::default());
     let (commands, receiver) = mpsc::unbounded_channel();
     let (reply, result) = oneshot::channel();
     runtime.spawn(create_and_own(Creation {
         engine,
         options,
-        cancellation: cancellation.clone(),
+        cancellation: lifetime.clone(),
         shared: Arc::clone(&shared),
         commands,
         receiver,
@@ -114,7 +118,7 @@ fn own_creation(
     Pending {
         #[cfg(any(feature = "deno", test))]
         shared,
-        cancellation,
+        cancellation: lifetime,
         result,
         cancel_on_drop: true,
     }
@@ -212,9 +216,10 @@ async fn initialize(
     let history: Vec<Entry> = options.initial_prompts.into_iter().map(Entry::plain).collect();
     let committed_tokens = engine.count(&history).await?;
     if committed_tokens > model_window {
-        return Err(Error::new(
-            ErrorKind::QuotaExceeded,
+        return Err(Error::exhausted(
             "the initial conversation exceeds the model's context window",
+            committed_tokens.saturating_sub(overhead),
+            model_window.saturating_sub(overhead),
         ));
     }
     if cancellation.is_cancelled() {

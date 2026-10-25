@@ -46,7 +46,7 @@ pub mod deno;
 use std::sync::Arc;
 
 pub use cancel::Cancellation;
-pub use error::{Error, ErrorKind};
+pub use error::{Error, ErrorKind, Quota};
 pub use message::{Availability, CreateOptions, Expected, Message, PromptOptions, Role};
 #[cfg(test)]
 pub(crate) use session::pending_create_with;

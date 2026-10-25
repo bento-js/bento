@@ -67,6 +67,32 @@ async fn measurement_reports_the_addition_without_mutating_the_session() {
     assert!(engine.requests().is_empty(), "measurement does not generate");
 }
 
+/// The draft's measurement validates its input as a conversation of its own, with no
+/// appended input, so a system message is measurable on a session that already has history.
+#[tokio::test]
+async fn measurement_accepts_a_system_message_on_a_session_with_history() {
+    let (_engine, session) = scripted_session().await;
+    session.append(vec![user("one two")], Cancellation::new()).await.expect("append");
+    let usage = session.context_usage();
+
+    let measured = session
+        .measure_context_usage(
+            vec![crate::tests::system("be brief")],
+            PromptOptions::default(),
+            Cancellation::new(),
+        )
+        .await
+        .expect("measuring a system message is not a conversation change");
+
+    assert!(measured > 0);
+    assert_eq!(session.context_usage(), usage, "measurement does not mutate state");
+    let error = session
+        .append(vec![crate::tests::system("be brief")], Cancellation::new())
+        .await
+        .expect_err("committing one still follows the conversation rule");
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
+}
+
 #[tokio::test]
 async fn measurement_accounts_for_the_constraint_input_choice() {
     let (_engine, session) = scripted_session().await;

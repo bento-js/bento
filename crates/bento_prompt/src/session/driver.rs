@@ -180,9 +180,10 @@ impl Actor {
         // Cancellation during counting must not commit anything.
         self.guard(cancellation)?;
         if total > self.model_window {
-            return Err(Error::new(
-                ErrorKind::QuotaExceeded,
+            return Err(Error::exhausted(
                 "the messages do not fit in the remaining context window",
+                total.saturating_sub(self.overhead),
+                self.model_window.saturating_sub(self.overhead),
             ));
         }
 
@@ -198,7 +199,10 @@ impl Actor {
         cancellation: &Cancellation,
     ) -> Result<usize, Error> {
         self.guard(cancellation)?;
-        validate_additions(&Entry::messages(&self.history), &messages)?;
+        // Measurement validates its input as a conversation of its own, so a system message
+        // is measurable on a session that already has history; committing one still follows
+        // the conversation rule.
+        validate_additions(&[], &messages)?;
         let constraint = constraint_of(options)?;
         if options.omit_response_constraint_input && constraint.is_none() {
             return Err(Error::new(
@@ -241,9 +245,10 @@ impl Actor {
         // Cancellation during preflight must not commit input or generate.
         self.guard(cancellation)?;
         if accepted_tokens > self.model_window {
-            return Err(Error::new(
-                ErrorKind::QuotaExceeded,
+            return Err(Error::exhausted(
                 "the request does not fit in the model's context window",
+                accepted_tokens.saturating_sub(self.overhead),
+                self.model_window.saturating_sub(self.overhead),
             ));
         }
 
@@ -402,9 +407,10 @@ impl Actor {
             return Err(aborted("the generation was cancelled"));
         }
         if total > self.model_window {
-            return Err(Error::new(
-                ErrorKind::QuotaExceeded,
+            return Err(Error::exhausted(
                 "the generated response exceeds the model's context window",
+                total.saturating_sub(self.overhead),
+                self.model_window.saturating_sub(self.overhead),
             ));
         }
 

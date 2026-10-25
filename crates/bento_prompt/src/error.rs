@@ -45,16 +45,35 @@ impl fmt::Display for ErrorKind {
     }
 }
 
+/// What a context-exhaustion failure needed, in the accounting its caller sees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    /// Tokens the conversation would have occupied, this operation's input included.
+    pub requested: usize,
+    /// Tokens the session can hold in total.
+    pub quota: usize,
+}
+
 /// A failure of a prompt-session operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
     kind: ErrorKind,
     message: String,
+    quota: Option<Quota>,
 }
 
 impl Error {
     pub(crate) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self { kind, message: message.into(), quota: None }
+    }
+
+    /// A conversation that does not fit, with the numbers it did not fit into.
+    pub(crate) fn exhausted(message: impl Into<String>, requested: usize, quota: usize) -> Self {
+        Self {
+            kind: ErrorKind::QuotaExceeded,
+            message: message.into(),
+            quota: Some(Quota { requested, quota }),
+        }
     }
 
     pub(crate) fn for_initialization(mut self) -> Self {
@@ -74,6 +93,12 @@ impl Error {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// What this failure needed and what it had, for a context-exhaustion failure.
+    #[must_use]
+    pub const fn quota(&self) -> Option<Quota> {
+        self.quota
     }
 }
 

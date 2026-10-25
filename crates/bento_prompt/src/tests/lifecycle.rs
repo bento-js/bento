@@ -530,6 +530,91 @@ async fn a_build_without_a_backend_refuses_invalid_options_before_reporting_no_b
     assert_eq!(error.kind(), ErrorKind::InvalidInput);
 }
 
+/// A caller's signal may cover more than one piece of work. Abandoning one operation stops
+/// that operation; the signal keeps working for everything else it was given to.
+#[tokio::test]
+async fn abandoning_one_operation_leaves_the_callers_signal_usable() {
+    let (engine, session) = scripted_session().await;
+    let token = Cancellation::new();
+
+    drop(session.fork(token.clone()));
+
+    assert!(!token.is_cancelled(), "a dropped operation does not cancel its caller's signal");
+    session
+        .append(vec![user("still accepted")], token.clone())
+        .await
+        .expect("the caller's signal still covers its other work");
+    engine.script(Script::text(["still answering"]));
+    let answer = session
+        .prompt(vec![user("talk")], PromptOptions::default(), token.clone())
+        .await
+        .expect("and still covers later operations");
+    assert_eq!(answer, "still answering");
+}
+
+/// A clone whose caller gave up while the model was still opening it stops the cloning, not
+/// the session it was cloning.
+#[tokio::test]
+async fn abandoning_a_clone_leaves_the_session_it_cloned_alive() {
+    let engine = ScriptedEngine::new();
+    let lifetime = Cancellation::new();
+    let session = Session::create_with(engine.engine(), CreateOptions::default(), lifetime.clone())
+        .await
+        .expect("session");
+    let hold = engine.hold_open();
+
+    let abandoned =
+        tokio::time::timeout(Duration::from_millis(50), session.fork(lifetime.clone())).await;
+
+    assert!(abandoned.is_err(), "the clone is still inside the model's open");
+    hold.release();
+    engine.script(Script::text(["still here"]));
+    let answer = session
+        .prompt(vec![user("are you there")], PromptOptions::default(), Cancellation::new())
+        .await
+        .expect("the session survives a clone its caller gave up on");
+    assert_eq!(answer, "still here");
+}
+
+/// Sessions created on one signal have lifetimes of their own: dropping one leaves the
+/// others running, and cancelling the signal they share still destroys them all.
+#[tokio::test]
+async fn sessions_sharing_a_signal_have_lifetimes_of_their_own() {
+    let engine = ScriptedEngine::new();
+    let scope = Cancellation::new();
+    let first = Session::create_with(engine.engine(), CreateOptions::default(), scope.clone())
+        .await
+        .expect("first session");
+    let second = Session::create_with(engine.engine(), CreateOptions::default(), scope.clone())
+        .await
+        .expect("second session");
+
+    drop(second);
+
+    engine.script(Script::text(["alive"]));
+    let answer = first
+        .prompt(vec![user("talk")], PromptOptions::default(), Cancellation::new())
+        .await
+        .expect("one session ending does not end another");
+    assert_eq!(answer, "alive");
+
+    scope.cancel();
+    let error = first
+        .prompt(vec![user("talk")], PromptOptions::default(), Cancellation::new())
+        .await
+        .expect_err("the signal they were created on still destroys them");
+    assert_eq!(error.kind(), ErrorKind::Aborted);
+    // Each session's own driver wakes on the signal it was created under, and releases.
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        engine.wait_for(|log| {
+            log.iter().filter(|event| matches!(event, Event::Released)).count() == 2
+        }),
+    )
+    .await
+    .expect("both sessions release once the signal that created them is cancelled");
+}
+
 fn expecting(tag: &str) -> CreateOptions {
     CreateOptions {
         expected_inputs: vec![Expected {

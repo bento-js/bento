@@ -201,6 +201,7 @@ impl Session {
         messages: Vec<Message>,
         cancellation: Cancellation,
     ) -> impl Future<Output = Result<(), Error>> + Send + 'static + use<> {
+        let cancellation = cancellation.child();
         self.enqueue(|reply| Command::Append { messages, cancellation, reply })
     }
 
@@ -219,6 +220,7 @@ impl Session {
         options: PromptOptions,
         cancellation: Cancellation,
     ) -> impl Future<Output = Result<String, Error>> + Send + 'static + use<> {
+        let cancellation = cancellation.child();
         self.enqueue(|reply| Command::Prompt { messages, options, cancellation, reply })
     }
 
@@ -237,6 +239,7 @@ impl Session {
         options: PromptOptions,
         cancellation: Cancellation,
     ) -> impl Future<Output = Result<Generation, Error>> + Send + 'static + use<> {
+        let cancellation = cancellation.child();
         self.enqueue(|reply| Command::Stream { messages, options, cancellation, reply })
     }
 
@@ -254,6 +257,7 @@ impl Session {
         options: PromptOptions,
         cancellation: Cancellation,
     ) -> impl Future<Output = Result<usize, Error>> + Send + 'static + use<> {
+        let cancellation = cancellation.child();
         self.enqueue(|reply| Command::Measure { messages, options, cancellation, reply })
     }
 
@@ -273,6 +277,9 @@ impl Session {
     /// Clone this conversation, owning the clone's native work from the moment
     /// the operation is queued.
     pub(crate) fn pending_fork(&self, cancellation: Cancellation) -> Pending<Self> {
+        // Cloning has a signal of its own, under the caller's: abandoning the clone stops
+        // the cloning and nothing else the caller is using that signal for.
+        let cloning = cancellation.child();
         let shared = Arc::new(Shared::default());
         let (commands, receiver) = mpsc::unbounded_channel();
         let (reply, result) = oneshot::channel();
@@ -284,7 +291,7 @@ impl Session {
         };
 
         if let Err(returned) =
-            self.commands.send(Command::Fork { cancellation: cancellation.clone(), seed, reply })
+            self.commands.send(Command::Fork { cancellation: cloning.clone(), seed, reply })
         {
             returned.0.abort();
         }
@@ -292,7 +299,7 @@ impl Session {
         Pending {
             #[cfg(any(feature = "deno", test))]
             shared,
-            cancellation,
+            cancellation: cloning,
             result,
             cancel_on_drop: true,
         }

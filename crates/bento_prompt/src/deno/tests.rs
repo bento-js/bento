@@ -43,6 +43,9 @@ Object.assign(globalThis, {
 globalThis.failure = error => ({
     name: error?.name ?? String(error),
     domException: error instanceof DOMException,
+    quotaExceeded: error instanceof QuotaExceededError,
+    requested: error?.requested ?? null,
+    quota: error?.quota ?? null,
     typeError: error instanceof TypeError,
     rangeError: error instanceof RangeError,
     message: typeof error?.message === "string" ? error.message : "",
@@ -1230,6 +1233,38 @@ async fn measuring_context_usage_changes_nothing() {
     assert_eq!(harness.engine.requests().len(), 0, "measurement commits nothing");
 }
 
+/// Measuring validates its input as a conversation of its own: the draft's measurement
+/// steps pass `hasAppendedInput` as false, so a system message is measurable even once the
+/// session has history. Committing one still follows the conversation rule.
+#[tokio::test]
+async fn measuring_a_system_message_is_allowed_on_a_session_with_history() {
+    let mut harness = Harness::granted();
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        await session.append('remember this');
+        const usage = session.contextUsage;
+        const measured = await session.measureContextUsage([
+            { role: 'system', content: 'be brief' },
+        ]);
+        return {
+            measured,
+            unchanged: session.contextUsage === usage,
+            appended: await caught(session.append([{ role: 'system', content: 'be brief' }])),
+        };
+        "#,
+        )
+        .await;
+    assert!(result["measured"].as_u64().expect("a measurement") > 0);
+    assert_eq!(result["unchanged"], true, "measuring changes nothing");
+    assert_eq!(
+        name(&result["appended"]),
+        "TypeError",
+        "committing a system message after history is still refused"
+    );
+}
+
 #[tokio::test]
 async fn operations_run_in_invocation_order() {
     let mut harness = Harness::granted();
@@ -1269,6 +1304,79 @@ async fn operations_run_in_invocation_order() {
         .map(|entry| entry.content.as_str())
         .collect();
     assert_eq!(committed, ["alpha one", "beta two", "first", "gamma three"]);
+}
+
+/// Every kind of session operation, dozens of them invoked back to back, hands its result
+/// over in the order it was invoked, whatever order the isolate's op driver finishes them
+/// in. Without the order the session keeps, this test fails only some of the time; the gate
+/// it relies on is pinned directly below.
+#[tokio::test]
+async fn many_interleaved_operations_settle_in_invocation_order() {
+    let mut harness = Harness::granted();
+    for answer in ["a", "b", "c", "d", "e", "f", "g", "h"] {
+        harness.engine.script(Script::text([answer]));
+    }
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        const order = [];
+        const operations = [];
+        const record = label => () => order.push(label);
+        for (let round = 0; round < 8; round += 1) {
+            operations.push(session.append(`append ${round}`).then(record(`append-${round}`)));
+            operations.push(
+                session.measureContextUsage(`measure ${round}`).then(record(`measure-${round}`)),
+            );
+            operations.push(session.prompt(`prompt ${round}`).then(record(`prompt-${round}`)));
+            operations.push(
+                session.clone().then(clone => {
+                    clone.destroy();
+                    order.push(`clone-${round}`);
+                }),
+            );
+        }
+        await Promise.all(operations);
+        session.destroy();
+        return { order };
+        "#,
+        )
+        .await;
+
+    let expected: Vec<String> = (0..8)
+        .flat_map(|round| {
+            ["append", "measure", "prompt", "clone"].map(|operation| format!("{operation}-{round}"))
+        })
+        .collect();
+    assert_eq!(result["order"], json!(expected));
+}
+
+/// What keeps that order: an operation's turn to hand its result over does not arrive until
+/// the operation invoked before it has settled, or been abandoned with its isolate.
+#[test]
+fn an_operations_turn_waits_for_the_one_invoked_before_it() {
+    use std::future::Future;
+
+    let order = super::state::Order::default();
+    let first = order.ticket();
+    let second = order.ticket();
+    let third = order.ticket();
+    let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+
+    {
+        let mut waiting = std::pin::pin!(second.turn());
+        assert!(
+            waiting.as_mut().poll(&mut context).is_pending(),
+            "the second operation waits for the first"
+        );
+        drop(first);
+        assert!(waiting.as_mut().poll(&mut context).is_ready(), "and goes once the first has");
+    }
+
+    let mut last = std::pin::pin!(third.turn());
+    assert!(last.as_mut().poll(&mut context).is_pending(), "the third waits for the second");
+    drop(second);
+    assert!(last.as_mut().poll(&mut context).is_ready(), "and goes once the second has");
 }
 
 #[tokio::test]
@@ -1337,6 +1445,158 @@ async fn a_clone_signal_cancels_only_the_cloning_operation() {
         .await;
     assert_eq!(name(&result["cloning"]), "Error");
     assert_eq!(result["answer"], "source still works", "the source is unaffected");
+}
+
+/// Cloning that its signal abandons leaves no session behind, however late the abort lands.
+///
+/// The arrangement is deterministic: the clone's result is finished and queued first, then
+/// another session's bare operation is finished and queued, so the isolate delivers the
+/// clone first and the abort runs from the second result's reaction one step later. That is
+/// the moment between a clone arriving and this operation deciding what to do with it.
+#[tokio::test]
+async fn a_clone_abandoned_as_it_arrives_leaves_no_session_behind() {
+    let mut harness = Harness::granted();
+    harness
+        .run(
+            r#"
+        globalThis.source = await LanguageModel.create();
+        globalThis.cancellation = ops.op_bento_prompt_cancellation();
+        globalThis.other = (await ops.op_bento_prompt_create({}, cancellation)).value;
+        return null;
+        "#,
+        )
+        .await;
+    // Started without running the event loop, so nothing is delivered until both are done.
+    harness.sync(
+        r#"
+        globalThis.controller = new AbortController();
+        globalThis.reason = { stop: 'cloning' };
+        globalThis.cloning = caught(source.clone({ signal: controller.signal }));
+        return null;
+        "#,
+    );
+    let counted =
+        |log: &[Event]| log.iter().filter(|event| matches!(event, Event::Counted(_))).count();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        harness.engine.wait_for(|log| {
+            log.iter().filter(|event| matches!(event, Event::Opened(_))).count() == 3
+        }),
+    )
+    .await
+    .expect("the clone reached the model");
+    let counts = counted(&harness.engine.log());
+    harness.sync(
+        r#"
+        globalThis.noise = ops
+            .op_bento_prompt_append(other, [{ role: 'user', content: 'noise' }], cancellation)
+            .then(() => controller.abort(reason));
+        return null;
+        "#,
+    );
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        harness.engine.wait_for(move |log| counted(log) > counts),
+    )
+    .await
+    .expect("the other session's operation finished too");
+    let result = harness
+        .run(
+            r#"
+        await Promise.all([cloning, noise]);
+        const arrived = (await cloning).settled;
+        // A clone this operation did receive is this test's to dispose of.
+        if (arrived !== undefined) {
+            arrived.destroy();
+        }
+        source.destroy();
+        ops.op_bento_prompt_destroy(other);
+        return {
+            abandoned: arrived === undefined,
+            rejected: (await cloning).failed !== undefined,
+            identical: globalThis.lastError === reason,
+        };
+        "#,
+        )
+        .await;
+    // What the clone's arrival still owes the isolate is settled before it goes quiet.
+    assert!(harness.drains_within(Duration::from_secs(5)).await, "the event loop finishes");
+    tokio::time::timeout(Duration::from_secs(5), harness.cleanup.settle())
+        .await
+        .expect("every session this isolate opened is disposable");
+
+    assert_eq!(
+        result["abandoned"], result["rejected"],
+        "a cloning either hands out its clone or rejects, and rejecting hands out nothing: {result}"
+    );
+    if result["rejected"] == true {
+        assert_eq!(result["identical"], true, "it rejects with its own abort reason");
+    }
+    let log = harness.engine.log();
+    let opened = log.iter().filter(|event| matches!(event, Event::Opened(_))).count();
+    let released = log.iter().filter(|event| matches!(event, Event::Released)).count();
+    assert_eq!(opened, 3, "both sessions and the clone reached the model");
+    assert_eq!(released, opened, "a clone nobody received is released, not left running");
+}
+
+/// Guest code can make handing a result over fail, by tampering with what the interfaces it
+/// is given are built from. The clone that arrived is destroyed and the caller hears what
+/// went wrong, rather than waiting on a promise nothing will ever settle.
+#[tokio::test]
+async fn a_clone_that_cannot_be_handed_over_is_destroyed_and_reported() {
+    let mut harness = Harness::granted();
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        const brand = Object.getOwnPropertySymbols(session).find(
+            symbol => session[symbol] === symbol,
+        );
+        globalThis.explosion = new Error('adoption exploded');
+        Object.defineProperty(LanguageModel.prototype, brand, {
+            set() { throw explosion; },
+            configurable: true,
+        });
+        const cloning = await caught(session.clone());
+        session.destroy();
+        return { cloning, identical: globalThis.lastError === explosion };
+        "#,
+        )
+        .await;
+    assert!(result["cloning"]["failed"].is_object(), "the cloning rejects: {result}");
+    assert_eq!(result["identical"], true, "with what the guest's own code threw");
+    assert!(harness.drains_within(Duration::from_secs(5)).await, "the event loop finishes");
+    tokio::time::timeout(Duration::from_secs(5), harness.cleanup.settle())
+        .await
+        .expect("every session this isolate opened is disposable");
+    let log = harness.engine.log();
+    let opened = log.iter().filter(|event| matches!(event, Event::Opened(_))).count();
+    let released = log.iter().filter(|event| matches!(event, Event::Released)).count();
+    assert_eq!(opened, 2, "the session and the clone it made both reached the model");
+    assert_eq!(released, opened, "a clone nobody could receive is released");
+}
+
+/// A clone is one of its session's ordered operations, so it hands its result over before
+/// the operations invoked after it.
+#[tokio::test]
+async fn a_clone_settles_before_the_operations_invoked_after_it() {
+    let mut harness = Harness::granted();
+    harness.run("globalThis.session = await LanguageModel.create(); return null;").await;
+    harness.sync(
+        r#"
+        globalThis.order = [];
+        globalThis.operations = [
+            session.clone().then(clone => { order.push('clone'); clone.destroy(); }),
+            session.append('later').then(() => order.push('append')),
+            session.measureContextUsage('x').then(() => order.push('measure')),
+        ];
+        return null;
+        "#,
+    );
+    let result =
+        harness.run("await Promise.all(operations); session.destroy(); return { order };").await;
+
+    assert_eq!(result["order"], json!(["clone", "append", "measure"]));
 }
 
 // Streaming.
@@ -1559,6 +1819,52 @@ async fn an_already_aborted_signal_throws_synchronously_only_for_streaming() {
     assert_eq!(result["rejected"], true, "promise-returning operations reject instead");
     assert_eq!(result["identical"], true);
     assert_eq!(harness.generations(), 0);
+}
+
+/// Accepting a response constraint reads guest code, which can abort the operation or
+/// destroy the session before anything has been asked of the model. Either way the stream
+/// never starts, exactly as for a signal that was already aborted.
+#[tokio::test]
+async fn a_stream_answers_an_abort_that_lands_while_its_constraint_is_read() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::structured([r#""kelp""#]));
+    harness.engine.script(Script::structured([r#""kelp""#]));
+    let result = harness
+        .run(
+            r#"
+        const aborting = await LanguageModel.create();
+        const destroying = await LanguageModel.create();
+        const controller = new AbortController();
+        const reason = { stopped: 'inside the getter' };
+        const run = (session, constraint, options = {}) => {
+            try {
+                session.promptStreaming('hi', { ...options, responseConstraint: constraint });
+                return { threw: null };
+            } catch (error) {
+                return { threw: failure(error), identical: error === reason };
+            }
+        };
+        return {
+            aborted: run(
+                aborting,
+                { get type() { controller.abort(reason); return 'string'; } },
+                { signal: controller.signal },
+            ),
+            destroyed: run(destroying, {
+                get type() { destroying.destroy(); return 'string'; },
+            }),
+            usage: aborting.contextUsage,
+        };
+        "#,
+        )
+        .await;
+    assert_eq!(result["aborted"]["identical"], true, "the abort reason itself is thrown");
+    assert_eq!(
+        result["destroyed"]["threw"]["name"], "AbortError",
+        "a session destroyed in the getter answers with its destruction reason"
+    );
+    assert_eq!(result["usage"], 0, "an abandoned operation commits nothing");
+    assert_eq!(harness.generations(), 0, "and asks the model for nothing");
 }
 
 /// The draft's aggregated result checks the operation's abort before the operation prefills,
@@ -1876,6 +2182,56 @@ async fn oversized_initial_prompts_reject_creation_without_an_event() {
     assert_eq!(name(&result), "QuotaExceededError");
 }
 
+/// Context exhaustion is the WebIDL `QuotaExceededError` the draft names, and it says what
+/// the operation needed and what the session can hold, for creation, prefilling and
+/// generation alike.
+#[tokio::test]
+async fn context_exhaustion_reports_what_it_needed_and_what_the_window_holds() {
+    let mut harness = Harness::granted();
+    harness.engine.set_context_window(10);
+    // Six words of answer on top of a two-word turn do not fit in ten tokens.
+    harness.engine.script(Script::text(["one two three four five six"]));
+    let result = harness
+        .run(
+            r#"
+        const creation = await caught(LanguageModel.create({
+            initialPrompts: [
+                { role: 'user', content: 'one two three four five six seven eight nine' },
+            ],
+        }));
+        const session = await LanguageModel.create();
+        const window = session.contextWindow;
+        const prefill = await caught(
+            session.prompt('one two three four five six seven eight nine'),
+        );
+        const generation = await caught(session.prompt('say plenty'));
+        return { creation, prefill, generation, window, usage: session.contextUsage };
+        "#,
+        )
+        .await;
+    let window = result["window"].as_u64().expect("a usable window");
+    for operation in ["creation", "prefill", "generation"] {
+        let failed = &result[operation]["failed"];
+        assert_eq!(failed["name"], "QuotaExceededError", "{operation}: {failed}");
+        assert_eq!(
+            failed["quotaExceeded"], true,
+            "{operation} reports the quota interface, not a bare DOMException: {failed}"
+        );
+        assert_eq!(failed["quota"].as_u64(), Some(window), "{operation} reports the window");
+        let requested = failed["requested"].as_u64().expect("the operation reports what it needed");
+        assert!(
+            requested > window,
+            "{operation} needed more than the window holds: {requested} of {window}"
+        );
+    }
+    // The generation's own turn was committed before the response overflowed.
+    assert_eq!(
+        result["generation"]["failed"]["requested"].as_u64(),
+        Some(window + 1),
+        "the response needed one token more than the window holds"
+    );
+}
+
 #[tokio::test]
 async fn generation_that_exhausts_the_window_errors_the_stream_after_its_chunks() {
     let mut harness = Harness::granted();
@@ -1959,6 +2315,70 @@ async fn a_supported_schema_constrains_generation_and_returns_json_text() {
     let request = harness.engine.requests().last().unwrap().clone();
     assert!(request.schema.is_some(), "the constraint reached the model as a schema");
     assert!(request.include_schema_in_prompt, "the schema's input is included by default");
+}
+
+/// Reading a response constraint runs guest code, and guest code may use the runtime while
+/// it runs. The constraint is snapshotted in JavaScript before any native call sees it, so a
+/// getter that calls into the runtime is ordinary guest code, not a call re-entering an
+/// operation that is still converting its arguments.
+#[tokio::test]
+async fn a_constraint_getter_may_use_the_runtime_while_it_is_read() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::structured([r#"{"animal":"crab"}"#]));
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        let reads = 0;
+        const responseConstraint = {
+            type: 'object',
+            properties: { animal: { type: 'string' } },
+            required: ['animal'],
+            get additionalProperties() {
+                reads += 1;
+                ops.op_bento_prompt_release(ops.op_bento_prompt_cancellation());
+                return false;
+            },
+        };
+        const answer = await session.prompt('choose an animal', { responseConstraint });
+        return { answer, reads };
+        "#,
+        )
+        .await;
+    assert_eq!(result["answer"], r#"{"animal":"crab"}"#);
+    assert_eq!(result["reads"], 1, "the constraint is read once, outside every native call");
+}
+
+/// A constraint that answers differently each time it is read is read once: what the call
+/// accepted is what the model is asked for.
+#[tokio::test]
+async fn a_constraint_that_changes_between_reads_is_read_once() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::structured([r#""kelp""#]));
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        let reads = 0;
+        const responseConstraint = {
+            get type() {
+                reads += 1;
+                return reads === 1 ? 'string' : 'integer';
+            },
+        };
+        const answer = await session.prompt('name the algae', { responseConstraint });
+        return { answer, reads };
+        "#,
+        )
+        .await;
+    assert_eq!(result["reads"], 1);
+    assert_eq!(result["answer"], r#""kelp""#);
+    let request = harness.engine.requests().last().expect("one generation").clone();
+    assert_eq!(
+        request.schema,
+        Some(json!({ "type": "string" })),
+        "the model is asked for the schema the call accepted"
+    );
 }
 
 /// Every keyword of the subset decides whether an answer is acceptable, rather than being

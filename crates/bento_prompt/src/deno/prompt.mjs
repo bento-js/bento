@@ -66,8 +66,13 @@ function operationSignal(session, signal) {
 /**
  * The draft's aggregated result: one promise, rejected with the operation's own abort reason
  * the moment its signal aborts, whatever the native side is still finishing.
+ *
+ * `map` turns what the operation produced into what the caller receives, and `abandon`
+ * disposes of what arrived for an operation whose signal had already aborted. Both run in
+ * the handler that decides the operation's outcome: an abort that lands between the result
+ * arriving and that decision must not leave anything behind.
  */
-function aggregated(session, signal, start) {
+function aggregated(session, signal, start, { map = value => value, abandon = null } = {}) {
     if (signal.aborted) {
         return Promise.reject(signal.reason);
     }
@@ -88,14 +93,31 @@ function aggregated(session, signal, start) {
         start(cancellation).then(
             result => {
                 settle();
-                if (aborted) {
-                    return;
-                }
                 if (result.status === "failed") {
-                    reject(failureOf(session, result));
+                    if (!aborted) {
+                        reject(failureOf(session, result));
+                    }
                     return;
                 }
-                resolve(result.value);
+                if (aborted) {
+                    if (abandon !== null) {
+                        abandon(result.value);
+                    }
+                    return;
+                }
+                let mapped;
+                try {
+                    mapped = map(result.value);
+                } catch (error) {
+                    // Guest code can make handing the result over fail. Nothing it produced
+                    // may stay behind, and the caller hears why rather than waiting forever.
+                    if (abandon !== null) {
+                        abandon(result.value);
+                    }
+                    reject(error);
+                    return;
+                }
+                resolve(mapped);
             },
             error => {
                 settle();
@@ -265,6 +287,12 @@ class LanguageModel extends EventTarget {
         } catch (error) {
             invalid = error;
         }
+        // Accepting input reads guest code, such as getters and iterables, which may abort
+        // this operation or destroy the session. An operation abandoned there starts
+        // nothing, and says so the way an already-aborted signal does.
+        if (signal.aborted) {
+            throw signal.reason;
+        }
         return streamOf(this, signal, messages, request, invalid);
     }
 
@@ -308,7 +336,9 @@ class LanguageModel extends EventTarget {
                     "omitResponseConstraintInput requires a responseConstraint to omit",
                 );
             }
-            messages = messagesFor(this, input);
+            // The draft's measurement steps canonicalize with no appended input, so what a
+            // conversation could still accept first is measurable whatever it already holds.
+            messages = canonicalizePrompt(input, false);
             request = promptRequest(options);
         } catch (error) {
             return Promise.reject(error);
@@ -328,15 +358,16 @@ class LanguageModel extends EventTarget {
             return Promise.reject(error);
         }
         let signal = operationSignal(this, options.signal);
-        return aggregated(this, signal, cancellation =>
-            op_bento_prompt_fork(this[state].rid, cancellation).then(result => {
+        return aggregated(
+            this,
+            signal,
+            cancellation => op_bento_prompt_fork(this[state].rid, cancellation),
+            {
+                map: rid => adopt(rid),
                 // A clone that arrives after its signal aborted is nobody's session.
-                if (signal.aborted && result.status === "done") {
-                    op_bento_prompt_destroy(result.value);
-                }
-                return result;
-            }),
-        ).then(rid => adopt(rid));
+                abandon: rid => op_bento_prompt_destroy(rid),
+            },
+        );
     }
 
     destroy() {

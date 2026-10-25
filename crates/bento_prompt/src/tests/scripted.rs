@@ -289,6 +289,7 @@ impl ScriptedEngine {
 
     /// Keep every generation's native settlement in flight until the returned
     /// hold is released, so disposal is observably unfinished after a cancel.
+    #[cfg(feature = "deno")]
     pub(crate) fn hold_settlement(&self) -> Hold {
         let gate = Arc::new(Gate::default());
         *self.state.settle_gate.lock().expect("settle gate") = Some(Arc::clone(&gate));

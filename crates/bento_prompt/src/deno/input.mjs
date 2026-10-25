@@ -5,7 +5,7 @@
 import { core, primordials } from "ext:core/mod.js";
 
 let webidl = core.loadExtScript("ext:deno_webidl/00_webidl.js");
-let { DOMException } = core.loadExtScript("ext:deno_web/01_dom_exception.js");
+let { DOMException, QuotaExceededError } = core.loadExtScript("ext:deno_web/01_dom_exception.js");
 let { AbortSignal } = core.loadExtScript("ext:deno_web/03_abort_signal.js");
 let { isBlob } = core.loadExtScript("ext:deno_web/09_file.js");
 let { ArrayBufferIsView, ObjectPrototypeIsPrototypeOf, ReflectApply, SymbolIterator } = primordials;
@@ -29,6 +29,19 @@ export function notSupported(message) {
 export function webError(failure) {
     if (failure.error === "TypeError") {
         return new TypeError(failure.message);
+    }
+    if (failure.error === "QuotaExceededError") {
+        // The draft reports context exhaustion as the WebIDL interface, which says what the
+        // operation needed and what the session holds. Numbers the failure did not know stay
+        // absent rather than arriving as NaN.
+        let options = {};
+        if (failure.requested !== undefined) {
+            options.requested = failure.requested;
+        }
+        if (failure.quota !== undefined) {
+            options.quota = failure.quota;
+        }
+        return new QuotaExceededError(failure.message, options);
     }
     return domError(failure.error, failure.message);
 }
