@@ -65,7 +65,7 @@ Expected text languages use canonical BCP 47 tags and the native model's locale 
 
 `LanguageModel` cannot be constructed with `new`. Sessions are `EventTarget` instances. A `monitor` callback passed to `create()` receives an `EventTarget` on which `downloadprogress` reports the specified initialization endpoints: loaded zero, then one, with total one and `lengthComputable` true. Those events do not describe an OS download. Throwing from the callback rejects creation without retaining a session.
 
-For an available model, the notifications run in separate tasks before native initialization. Creation can still fail after both notifications. Unavailable or failed readiness produces neither. Aborting creation rejects with the signal's reason and prevents later progress notifications, including when the abort is queued as a microtask by a progress listener.
+For an available model, the notifications run in separate tasks before native initialization. Creation can still fail after both notifications. Unavailable or failed readiness produces neither. Aborting creation rejects with the signal's reason and prevents later progress notifications, including when the abort is queued as a microtask by a progress listener. Native initialization already under way stays owned until it settles; the immediate rejection does not abandon it.
 
 ## Messages and context
 
@@ -103,7 +103,7 @@ for await (const chunk of stream) {
 }
 ```
 
-`promptStreaming()` returns a `ReadableStream` immediately. Ordinary text streams deliver incremental strings whose concatenation is the response. Bento errors the stream if the native model rewrites a prefix that was already delivered. It does not append a replacement as if it were a new suffix.
+`promptStreaming()` returns a `ReadableStream` immediately. Ordinary text streams deliver incremental strings whose concatenation is the response. Bento errors the stream if the native model rewrites a prefix that was already delivered. It does not append a replacement as if it were a new suffix. A non-streaming `prompt()` has delivered nothing to its caller, so the same rewrite is not a failure there: the promise resolves with the model's final text.
 
 An operation's `signal` cancels only that operation. JavaScript abort reasons are preserved, including non-Error values. An already-aborted `promptStreaming()` call throws synchronously; promise-returning operations reject. Cancelling a reader stops native generation without inventing an error for the cancelled stream. Backpressure keeps transport buffering bounded, and cancellation still works when the consumer stops reading.
 
@@ -153,7 +153,7 @@ The response is JSON text. Bento translates the accepted schema into native guid
 | `enum` | String-valued choices |
 | `title`, `description` | Schema annotations |
 
-Each schema node requires an explicit supported `type`; an array also requires its homogeneous `items` schema. Names in `required` must be unique and declared in `properties`. An integer is a number with no fractional part, so `1.0` is valid both as an integer result and as an array length bound. Empty enums, repeated required names, negative or fractional array bounds, inverted bounds, and incorrectly typed annotations are malformed. Tuple `items`, non-string enum values, and `additionalProperties: true` are outside the supported subset.
+Each schema node requires an explicit supported `type`; an array also requires its homogeneous `items` schema. Names in `required` must be unique and declared in `properties`. An integer is a number with no fractional part, so `1.0` is valid both as an integer result and as an array length bound. A fractional `minimum` or `maximum` on an integer schema narrows inward to the integers it permits: `minimum: 1.2` permits 2 and above, and `maximum: 4.7` permits 4 and below. Bounds that leave no permitted integer, such as `minimum: 1.2` with `maximum: 1.8`, reject with `TypeError`. Empty enums, repeated required names, negative or fractional array bounds, inverted bounds, and incorrectly typed annotations are malformed. Tuple `items`, non-string enum values, and `additionalProperties: true` are outside the supported subset.
 
 The native backend uses signed 64-bit integers and binary64 floating-point numbers. Integer bounds and array length bounds outside the signed 64-bit range reject with `NotSupportedError` rather than being rounded or dropped. For `type: "number"`, a Rust caller's exact integer bound that binary64 cannot represent also rejects instead of silently changing the constraint; use `type: "integer"` for exact signed 64-bit integer bounds. Supported keywords used outside their listed type, such as `enum` on an integer schema, are also outside the supported subset.
 
@@ -167,11 +167,11 @@ Constrained `promptStreaming()` buffers native structured snapshots and emits on
 
 The `bento_prompt` crate works independently of Bento's runtime. Its default feature set depends on neither Deno/V8 nor Swift. Enable `foundation-models` for native inference; enable the separate `deno` feature only when embedding the web adapter. The crate is a workspace, path, or Git dependency; no registry publication is required.
 
-For a native-enabled embedding executable, set `MACOSX_DEPLOYMENT_TARGET=27.0` when building so the final Mach-O declares its requirement. A library cannot set its consumer's final deployment target. Bento's CLI sets that target in its own linker configuration; backend-free consumers retain their existing deployment requirements.
+For a native-enabled embedding executable, set `MACOSX_DEPLOYMENT_TARGET=27.0` when building so the final Mach-O declares its requirement. A library cannot set its consumer's final deployment target. Bento's CLI sets that target in its own linker configuration; backend-free consumers retain their existing deployment requirements. `bento_prompt::MACOS_DEPLOYMENT_FLOOR` is the lowest macOS release the native backend supports, `"27.0"`. `bento_prompt::NATIVE_SDK_VERSION` is `Some` with the macOS SDK version this build's backend was compiled against, and `None` when no backend is compiled in, so a host can report both instead of repeating them.
 
 The public Rust API uses `Session`, typed text `Message` values, `CreateOptions`, `PromptOptions`, and `Cancellation`. It provides availability, creation, append, generation, streaming, measurement, independent forks, destruction, and awaited disposal. Direct Rust callers own model authority; the JavaScript adapter is where host grants are enforced. Await disposal when the caller needs proof that native inference and callbacks have settled.
 
-`bento_prompt::TYPESCRIPT_DECLARATIONS` contains the ambient declarations from `crates/bento_prompt/types/prompt.d.ts`. Embedders can write that text into a guest project's type inputs. The declarations describe the exposed API; they do not imply support for every content type the web draft names.
+`bento_prompt::TYPESCRIPT_DECLARATIONS` contains the ambient declarations from `crates/bento_prompt/types/prompt.d.ts`. Embedders can write that text into a guest project's type inputs. The declarations describe the implemented surface rather than the whole draft: message and expected content types are narrowed to `"text"`, and members Bento does not implement are absent instead of declared. Those absent members are image, audio, tool-call and tool-response content, tool declarations, `samplingMode`, `topK`, `temperature`, `params()`, `inputUsage`, and `inputQuota`.
 
 ## Exercise the preview
 
@@ -184,12 +184,20 @@ bento run --allow-read=. --allow-language-model examples/prompt-api/shutdown.ts
 bento run --allow-read=. --allow-language-model examples/prompt-api/idle.ts
 ```
 
-The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally.
+The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Model work still unsettled at the shutdown deadline is reported as incomplete disposal instead, and `bento` exits with status 1.
+
+On a backend-free build, the same preview exercises genuine unavailability:
+
+```sh
+bento run --allow-read=. --allow-language-model examples/prompt-api/main.ts
+```
+
+It prints `Availability unavailable`, then fails with an uncaught `Error`: `LanguageModel is unavailable. Check the --allow-language-model grant, that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready.` The process exits with status 1.
 
 The Rust example uses the reusable crate directly:
 
 ```sh
-MACOSX_DEPLOYMENT_TARGET=27.0 cargo run -p bento_prompt --features foundation-models --example prompt_session
+MACOSX_DEPLOYMENT_TARGET=27.0 cargo run --locked -p bento_prompt --features foundation-models --example prompt_session
 ```
 
 These native previews fail explicitly if the model is unavailable. They are separate from deterministic CI tests and must be run on an eligible Mac with Apple Intelligence ready. CI provides native `bento-macos27-arm64-prompt` and backend-free `bento-macos26-arm64-backend-free` archive artifacts; extracting the archive preserves the executable's permissions.
@@ -207,6 +215,6 @@ These native previews fail explicitly if the model is unavailable. They are sepa
 | Cancellation | The applicable abort reason; explicit destruction uses `AbortError` |
 | Failure to determine model readiness | `UnknownError` |
 | Other native initialization failure during creation or cloning | `OperationError` |
-| Other generation failure, including a rewritten emitted prefix | `UnknownError` |
+| Other generation failure, including a rewritten prefix already delivered by a stream | `UnknownError` |
 
 Apple's default safety settings remain enabled. Model output is probabilistic and can be incorrect even when it satisfies a schema. The typed error categories come from the native framework; Bento does not infer them from localized messages. Session history stays in memory and is not automatically persisted, exported, or logged.

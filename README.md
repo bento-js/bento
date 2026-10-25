@@ -79,7 +79,7 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 | `crates/bento_package` | Installation through pnpm |
 | `examples/guestbook-host` | A Rust host embedding the guest book |
 | `examples/direct-source` | A TypeScript and TSX example |
-| `examples/prompt-api` | Native CLI, permission-denial, worker-cancellation, and shutdown previews |
+| `examples/prompt-api` | Native CLI, permission-denial, worker-cancellation, shutdown, and idle-session previews |
 | `fixtures/remix-guest-book` | The Remix 3 application used for acceptance and benchmarks |
 | `bench` | The benchmark harness and recorded results |
 | `guides`, `proposals`, `policies`, `decisions` | Documentation and the project's design record |

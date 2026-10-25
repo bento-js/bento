@@ -111,6 +111,8 @@ An addon runs as native code in the `bento` process, so it sees the environment 
 
 Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. It shows the error's message and where it happened, as [Read error reports](#read-error-reports) describes, and `bento` exits with status 1.
 
+A script that ends while work it started is still running, such as a language model response, does not finish the run yet. Bento cancels that work and waits five seconds for it to settle. When it has not settled by then, `bento` reports that the run's disposal did not finish and exits with status 1, whatever the script's own exit code was.
+
 ### Read error reports
 
 When an error points at a place in a file Bento can read, Bento shows that place: the file with its line and column, the source lines around it, and a marker under the position saying what is wrong there. A `package.json` that is not valid JSON, for example, is reported like this:
@@ -175,6 +177,8 @@ A module the script actually loads from one of those places, such as an entrypoi
 
 Edits within about a tenth of a second of each other cause one restart. Bento says on standard error which file changed each time it restarts. The new instance starts only after the old one has shut down, as it would for a termination signal, and released its port. When loading fails, Bento reports the error, says it is waiting for changes, and keeps watching, so fixing the file or creating the missing one recovers; it never keeps serving the old code as though the reload had worked. A script that ends by itself, by finishing its work or calling `process.exit`, does not end the watch either: Bento reports how it ended and runs it again after the next change.
 
+When a run ends with language model work still unsettled at the shutdown deadline, Bento says its disposal is incomplete and keeps watching, instead of ending with status 1 as a plain `bento run` does. A restart whose shutdown leaves that work unfinished is reported the same way.
+
 Watching does not reload `.env` files and does not rerun the tasks that started it. When the guest book's `dev` task starts `bento run --watch server.ts`, migrations run once, before the watcher starts. `--watch` selects the `development` mode for the environment files and `NODE_ENV` unless your environment or `.env` sets `NODE_ENV`.
 
 Stopping the command stops both the application and the watching. Ctrl-C or a termination signal stops the running script as [Stop a run](#stop-a-run) describes, and then `bento` exits instead of waiting for changes. When no script is running, because loading failed or the script ended by itself, `bento` exits at once with `130` or `143`. A nested `bento run --watch` that a task started stops the same way when you stop the outer `bento`.
@@ -208,7 +212,7 @@ A second Ctrl-C or termination signal does not wait: `bento` exits immediately w
 | pnpm's code | `pnpm install` failed. |
 | `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
 | `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
-| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, or threw an uncaught exception. |
+| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
 
 ## Worked example
 
