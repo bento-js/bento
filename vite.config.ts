@@ -79,8 +79,12 @@ export default defineConfig({
     run: {
         tasks: {
             rust: {
-                command:
-                    "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps && cargo test --workspace --no-fail-fast",
+                command: [
+                    "cargo fmt --all --check",
+                    "MACOSX_DEPLOYMENT_TARGET=27.0 cargo clippy --workspace --all-targets -- -D warnings",
+                    "MACOSX_DEPLOYMENT_TARGET=27.0 RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps",
+                    "MACOSX_DEPLOYMENT_TARGET=27.0 cargo test --workspace --no-fail-fast",
+                ],
                 cache: false,
             },
             check: {

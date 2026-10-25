@@ -39,12 +39,15 @@ deno_semver = "=0.10.1"
 deno_snapshots = "=0.74.0"
 deno_signals = "=0.50.0"
 deno_tls = "=0.246.0"
+deno_web = "=0.290.0"
+deno_webidl = "=0.259.0"
 node_resolver = "=0.97.0"
 sys_traits = "0.1.28"
 
 bento_compiler = { path = "crates/bento_compiler" }
 bento_host = { path = "crates/bento_host" }
 bento_package = { path = "crates/bento_package" }
+bento_prompt = { path = "crates/bento_prompt" }
 bento_runtime = { path = "crates/bento_runtime" }
 bento_task = { path = "crates/bento_task" }
 bento_test_support = { path = "crates/bento_test_support" }

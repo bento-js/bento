@@ -19,6 +19,8 @@ use deno_runtime::{BootstrapOptions, WorkerExecutionMode};
 use deno_tls::RootCertStoreProvider;
 use sys_traits::impls::RealSys;
 
+use bento_prompt::deno::{Access, Cleanup};
+
 use crate::lifecycle::Control;
 use crate::loader::LoaderFactory;
 use crate::ops::{InstanceEnvironment, bento_instance};
@@ -27,6 +29,8 @@ pub(crate) struct WorkerFactory {
     loader: LoaderFactory,
     environment: InstanceEnvironment,
     argv: Vec<String>,
+    model: Access,
+    sessions: Cleanup,
     pub roots: LibWorkerFactoryRoots,
     pub blobs: Arc<BlobStore>,
     pub certificates: Arc<dyn RootCertStoreProvider>,
@@ -38,11 +42,15 @@ impl WorkerFactory {
         environment: InstanceEnvironment,
         argv: Vec<String>,
         certificates: Arc<dyn RootCertStoreProvider>,
+        model: Access,
+        sessions: Cleanup,
     ) -> Self {
         Self {
             loader,
             environment,
             argv,
+            model,
+            sessions,
             roots: Default::default(),
             blobs: Default::default(),
             certificates,
@@ -84,6 +92,10 @@ impl WorkerFactory {
                     self.loader.node.inputs.clone(),
                 ),
                 crate::feature_ops::extension(self.callback()),
+                // The same adapter and the same immutable grant, over this isolate's own
+                // sessions: identifiers never cross isolates, and the instance's cleanup is
+                // shared so shutdown can account for work a worker started.
+                bento_prompt::deno::extension(self.model, self.sessions.clone()),
             ],
             startup_snapshot: deno_snapshots::CLI_SNAPSHOT,
             residual_lazy_js_sources: deno_snapshots::RESIDUAL_LAZY_JS,

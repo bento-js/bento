@@ -16,6 +16,8 @@ use deno_tls::{RootCertStoreProvider, rustls::RootCertStore};
 use sys_traits::impls::RealSys;
 use tokio::sync::mpsc;
 
+use bento_prompt::deno::{Access, Cleanup};
+
 use crate::host::HostModules;
 use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
@@ -33,8 +35,16 @@ pub(crate) async fn run(
     control: Arc<Control>,
     mut commands: mpsc::UnboundedReceiver<Command>,
 ) -> RunOutcome {
-    let mut worker = match create_worker(config, &entry, modules, sources.clone(), control.clone())
-    {
+    let disposal_deadline = config.shutdown_deadline;
+    let sessions = Cleanup::new();
+    let mut worker = match create_worker(
+        config,
+        &entry,
+        modules,
+        sources.clone(),
+        control.clone(),
+        sessions.clone(),
+    ) {
         Ok(worker) => worker,
         Err(error) => {
             let outcome = RunOutcome::Failed(RuntimeError::startup(format!(
@@ -53,6 +63,11 @@ pub(crate) async fn run(
     close_resources(&mut worker);
     drop(worker);
     control.close_workers();
+    // Closing a session cancels its model work; the native side still has to finish. Until
+    // it has, this instance's disposal is not complete, whatever the isolates look like.
+    if tokio::time::timeout(disposal_deadline, sessions.settle()).await.is_err() {
+        control.incomplete_disposal();
+    }
     match control.complete(&outcome) {
         Some(report) if !matches!(report.outcome, crate::ShutdownOutcome::Failed(_)) => {
             RunOutcome::Shutdown(report)
@@ -126,10 +141,12 @@ fn create_worker(
     modules: HostModules,
     sources: Arc<Sources>,
     control: Arc<Control>,
+    sessions: Cleanup,
 ) -> anyhow::Result<LibMainWorker> {
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
     let node =
         NodeServices::new(&config.project_root, permissions.clone(), sources.clone(), &control);
+    let model = Access::new(config.grants.language_model);
     let environment = instance_environment(&mut config);
     let loader = LoaderFactory {
         node: node.clone(),
@@ -143,11 +160,14 @@ fn create_worker(
         environment.clone(),
         config.argv.clone(),
         Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
+        model,
+        sessions.clone(),
     ));
     let factory = main_worker_factory(config, loader, &node, &workers, &control);
     let extensions = vec![
         bento_instance::init(environment, modules, control.clone(), node.inputs),
         crate::feature_ops::extension(workers.callback()),
+        bento_prompt::deno::extension(model, sessions),
     ];
     let mut worker = main_worker(&factory, entry, permissions, extensions)?;
     load_require_watch(&mut worker)?;

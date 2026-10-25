@@ -1,0 +1,42 @@
+[package]
+name = "bento_prompt"
+description = "Web Prompt API sessions backed by an on-device language model"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+foundation-models = ["dep:foundation-models"]
+deno = ["dep:deno_core", "dep:deno_error"]
+
+[dependencies]
+deno_core = { workspace = true, optional = true }
+deno_error = { workspace = true, optional = true }
+oxilangtag = "0.1.6"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+deno_core.workspace = true
+deno_web.workspace = true
+deno_webidl.workspace = true
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+foundation-models = { git = "https://github.com/bento-js/foundation-models-rs", rev = "b282f76432664d64df1914bcd8bb4680e2c81273", features = [
+    "async",
+    "macos_26_0",
+    "macos_27_0",
+], optional = true }
+
+[[example]]
+name = "prompt_session"
+required-features = ["foundation-models"]

@@ -27,6 +27,15 @@ pub(crate) fn run(config: RuntimeConfig, name: &str, source: &str) -> RunOutcome
     start(config, &entry).unwrap().wait()
 }
 
+/// Like [`config`], with the language-model capability granted. Grants nothing else beyond
+/// the project root's read and write scopes.
+#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
+pub(crate) fn model_access(root: &Path) -> RuntimeConfig {
+    let mut settings = config(root);
+    settings.grants.language_model = true;
+    settings
+}
+
 #[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
 pub(crate) fn completed(outcome: RunOutcome) {
     assert!(matches!(outcome, RunOutcome::Completed), "{outcome:?}");
