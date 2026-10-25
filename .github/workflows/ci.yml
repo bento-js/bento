@@ -58,7 +58,12 @@ jobs:
             - name: Build native CLI preview
               run: |
                   cargo build --locked -p bento_cli
-                  xcrun vtool -show-build target/debug/bento
+                  build_version="$(xcrun vtool -show-build target/debug/bento)"
+                  printf '%s\n' "$build_version"
+                  case "$build_version" in
+                      *"minos 27.0"*) ;;
+                      *) echo "The native CLI must declare minos 27.0"; exit 1 ;;
+                  esac
                   tar -czf bento-macos27-arm64-prompt.tar.gz -C target/debug bento
             - uses: actions/upload-artifact@v7
               with:
