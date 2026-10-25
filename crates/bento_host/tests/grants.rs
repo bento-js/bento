@@ -13,6 +13,16 @@ fn nets(items: &[&str]) -> Scope<NetTarget> {
     Scope::only(items.iter().map(|item| item.parse::<NetTarget>().unwrap()))
 }
 
+/// A ceiling encoded before the language-model capability existed.
+const CEILING_BEFORE_LANGUAGE_MODEL: &str = concat!(
+    r#"{"read":{"scope":"only","items":["/project"]},"write":{"scope":"none"},"#,
+    r#""net":{"scope":"all"},"env":{"scope":"none"},"addons":{"scope":"none"}}"#
+);
+
+fn encoded_ceiling(grants: &Grants) -> serde_json::Value {
+    serde_json::from_str(&grants.to_ceiling_value().unwrap()).unwrap()
+}
+
 #[test]
 fn top_level_request_without_options_grants_nothing() {
     let grants = GrantRequest::default().resolve(None).unwrap();
@@ -208,6 +218,68 @@ fn nested_request_wider_than_the_ceiling_fails() {
 }
 
 #[test]
+fn language_model_access_requires_an_explicit_request() {
+    assert!(!GrantRequest::default().resolve(None).unwrap().language_model);
+
+    let granted = GrantRequest { language_model: Some(true), ..GrantRequest::default() }
+        .resolve(None)
+        .unwrap();
+
+    assert!(granted.language_model);
+}
+
+#[test]
+fn nested_language_model_grant_inherits_or_narrows_but_cannot_widen() {
+    let ceiling = GrantRequest {
+        read: Some(paths(&["/project"])),
+        language_model: Some(true),
+        ..GrantRequest::default()
+    }
+    .resolve(None)
+    .unwrap();
+
+    assert!(GrantRequest::default().resolve(Some(&ceiling)).unwrap().language_model);
+
+    let narrowed = GrantRequest { language_model: Some(false), ..GrantRequest::default() }
+        .resolve(Some(&ceiling))
+        .unwrap();
+    assert!(!narrowed.language_model);
+    assert_eq!(narrowed.read, paths(&["/project"]));
+
+    let error = GrantRequest { language_model: Some(true), ..GrantRequest::default() }
+        .resolve(Some(&narrowed))
+        .unwrap_err();
+    assert_eq!(error.kind, GrantKind::LanguageModel);
+    assert!(error.to_string().contains("language-model"), "{error}");
+}
+
+#[test]
+fn a_ceiling_encoded_without_the_language_model_grant_denies_it() {
+    let ceiling = Grants::from_ceiling_value(CEILING_BEFORE_LANGUAGE_MODEL).unwrap();
+
+    assert!(!ceiling.language_model);
+    let inherited = GrantRequest::default().resolve(Some(&ceiling)).unwrap();
+    assert!(!inherited.language_model);
+    assert_eq!(inherited.read, paths(&["/project"]));
+    let error = GrantRequest { language_model: Some(true), ..GrantRequest::default() }
+        .resolve(Some(&ceiling))
+        .unwrap_err();
+    assert_eq!(error.kind, GrantKind::LanguageModel);
+}
+
+#[test]
+fn the_ceiling_encoding_denies_the_language_model_capability_by_default() {
+    let denied = serde_json::Value::Bool(false);
+
+    let granting_nothing = encoded_ceiling(&Grants::none());
+    assert_eq!(granting_nothing["language_model"], denied, "{granting_nothing}");
+
+    let older =
+        encoded_ceiling(&Grants::from_ceiling_value(CEILING_BEFORE_LANGUAGE_MODEL).unwrap());
+    assert_eq!(older["language_model"], denied, "{older}");
+}
+
+#[test]
 fn ceiling_round_trips_through_its_serialized_form() {
     let ceiling = Grants {
         read: paths(&["/project"]),
@@ -215,6 +287,7 @@ fn ceiling_round_trips_through_its_serialized_form() {
         net: Scope::All,
         env: Scope::only(["PORT".to_string(), "NODE_ENV".to_string()]),
         addons: paths(&["/project/node_modules"]),
+        language_model: true,
     };
     let encoded = ceiling.to_ceiling_value().unwrap();
     assert_eq!(Grants::from_ceiling_value(&encoded).unwrap(), ceiling);
@@ -239,6 +312,7 @@ fn raw_empty_scopes_remain_empty_through_ceiling_inheritance_and_host_checks() {
         net: Scope::Only(BTreeSet::new()),
         env: Scope::Only(BTreeSet::new()),
         addons: Scope::Only(BTreeSet::new()),
+        language_model: false,
     };
     let decoded = Grants::from_ceiling_value(&empty.to_ceiling_value().unwrap()).unwrap();
     assert_eq!(decoded, empty);
@@ -248,6 +322,7 @@ fn raw_empty_scopes_remain_empty_through_ceiling_inheritance_and_host_checks() {
     assert!(!inherited.net.allows(&"localhost:3000".parse().unwrap()));
     assert!(!inherited.env.allows("PORT"));
     assert!(!inherited.addons.allows(Path::new("/project/addon.node")));
+    assert!(!inherited.language_model);
     let requests = [
         (GrantKind::Read, GrantRequest { read: Some(Scope::All), ..Default::default() }),
         (GrantKind::Write, GrantRequest { write: Some(Scope::All), ..Default::default() }),
@@ -267,6 +342,10 @@ fn raw_empty_scopes_remain_empty_through_ceiling_inheritance_and_host_checks() {
         (
             GrantKind::Addons,
             GrantRequest { addons: Some(paths(&["/project"])), ..Default::default() },
+        ),
+        (
+            GrantKind::LanguageModel,
+            GrantRequest { language_model: Some(true), ..Default::default() },
         ),
     ];
     for (kind, request) in requests {

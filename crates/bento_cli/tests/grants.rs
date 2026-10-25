@@ -17,6 +17,8 @@ fn project() -> TempProject {
         "narrowed": "bento run --allow-read=data/inner --allow-net=localhost:3000 ceiling",
         "widened": "bento run --allow-read=. ceiling",
         "respelled": "bento run '--allow-net=[0:0:0:0:0:0:0:1]:18540' ceiling",
+        "model-narrowed": "bento run --allow-language-model=false ceiling",
+        "model-widened": "bento run --allow-language-model ceiling",
     }));
     temp.write("data/inner/entry.txt", "");
     temp.write("db/.keep", "");
@@ -57,6 +59,7 @@ fn the_guest_book_grant_set_resolves_to_canonical_scopes() {
         net: Scope::All,
         env: names(&["PORT", "DATABASE_URL", "NODE_ENV"]),
         addons: paths(&[temp.path("node_modules")]),
+        language_model: false,
     };
     assert_eq!(recorded_grants(&temp), expected);
 }
@@ -148,6 +151,50 @@ fn a_nested_launch_may_spell_an_inherited_endpoint_differently() {
     assert!(output.status.success(), "{}", stderr(&output));
     let endpoint = "[::1]:18540".parse::<NetTarget>().unwrap();
     assert_eq!(recorded_grants(&temp).net, Scope::only([endpoint]));
+}
+
+#[test]
+fn the_language_model_flag_grants_model_access_and_nothing_else() {
+    let temp = project();
+
+    let granted = temp.bento(&["run", "--allow-language-model", "ceiling"]).output().unwrap();
+
+    assert!(granted.status.success(), "{}", stderr(&granted));
+    assert_eq!(recorded_grants(&temp), Grants { language_model: true, ..Grants::none() });
+
+    let denied = temp.bento(&["run", "--allow-language-model=false", "ceiling"]).output().unwrap();
+
+    assert!(denied.status.success(), "{}", stderr(&denied));
+    assert_eq!(recorded_grants(&temp), Grants::none());
+}
+
+#[test]
+fn a_nested_launch_inherits_or_denies_the_outer_language_model_grant() {
+    let temp = project();
+
+    let inherited = temp.bento(&["run", "--allow-language-model", "nested"]).output().unwrap();
+
+    assert!(inherited.status.success(), "{}", stderr(&inherited));
+    assert!(recorded_grants(&temp).language_model);
+
+    let narrowed =
+        temp.bento(&["run", "--allow-language-model", "model-narrowed"]).output().unwrap();
+
+    assert!(narrowed.status.success(), "{}", stderr(&narrowed));
+    assert!(!recorded_grants(&temp).language_model);
+}
+
+#[test]
+fn a_nested_language_model_request_beyond_the_inherited_grant_fails_before_its_task_runs() {
+    let temp = project();
+
+    let output = temp.bento(&["run", "model-widened"]).output().unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    let message = stderr(&output);
+    assert!(message.contains("--allow-language-model"), "{message}");
+    assert!(message.contains("inherited language-model grant: none"), "{message}");
+    assert!(!temp.exists("ceiling.json"));
 }
 
 #[test]

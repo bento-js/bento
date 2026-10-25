@@ -123,6 +123,7 @@ impl Launch {
             net: Scope::All,
             env: Scope::Only(GRANTED_ENV.map(str::to_owned).into()),
             addons: Scope::Only(BTreeSet::from([self.node_modules.clone()])),
+            language_model: false,
         };
         config.env = BTreeMap::from([
             ("PORT".to_owned(), self.port.to_string()),

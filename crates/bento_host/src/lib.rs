@@ -1,9 +1,10 @@
 //! Host authority granted to Bento runtime instances.
 //!
 //! A host decides, before any guest code runs, which files, endpoints, environment
-//! variables, and native addons one runtime instance may use. These types carry that
-//! decision; the runtime enforces it at its native operation boundaries. Nested Bento
-//! launches receive the invoking launch's policy as a ceiling they may only narrow.
+//! variables, native addons, and local model access one runtime instance may use. These
+//! types carry that decision; the runtime enforces it at its native operation boundaries.
+//! Nested Bento launches receive the invoking launch's policy as a ceiling they may only
+//! narrow.
 
 #![warn(missing_docs)]
 

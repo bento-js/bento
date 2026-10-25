@@ -26,6 +26,10 @@ pub struct Grants {
     /// Paths from which native Node-API addons may be loaded. An enabled addon runs
     /// native code in the host process, outside every other scope's containment.
     pub addons: Scope<PathBuf>,
+    /// Whether the guest may use the host's local language model; the capability is the whole
+    /// grant and names no model.
+    #[serde(default)]
+    pub language_model: bool,
 }
 
 /// Grant options a host requested for one launch. `None` for a kind means the
@@ -42,6 +46,8 @@ pub struct GrantRequest {
     pub env: Option<Scope<String>>,
     /// Requested [`Grants::addons`] scope.
     pub addons: Option<Scope<PathBuf>>,
+    /// Requested [`Grants::language_model`] capability.
+    pub language_model: Option<bool>,
 }
 
 /// One kind of authority, named as grant diagnostics and CLI flags spell it.
@@ -57,6 +63,8 @@ pub enum GrantKind {
     Env,
     /// Loading native Node-API addons.
     Addons,
+    /// Using the local language model.
+    LanguageModel,
 }
 
 /// A requested grant exceeded the policy inherited from the invoking host.
@@ -121,6 +129,7 @@ impl GrantRequest {
                 net: self.net.unwrap_or_default(),
                 env: self.env.unwrap_or_default(),
                 addons: self.addons.unwrap_or_default(),
+                language_model: self.language_model.unwrap_or_default(),
             });
         };
         Ok(Grants {
@@ -129,6 +138,11 @@ impl GrantRequest {
             net: narrow(GrantKind::Net, self.net, &ceiling.net)?,
             env: narrow(GrantKind::Env, self.env, &ceiling.env)?,
             addons: narrow(GrantKind::Addons, self.addons, &ceiling.addons)?,
+            language_model: capability(
+                GrantKind::LanguageModel,
+                self.language_model,
+                ceiling.language_model,
+            )?,
         })
     }
 }
@@ -154,6 +168,16 @@ where
     }
 }
 
+/// Like [`narrow`] for a capability a launch either holds or does not: requesting it where the
+/// ceiling denies it is the boolean form of asking for `<all>`.
+fn capability(kind: GrantKind, requested: Option<bool>, ceiling: bool) -> Result<bool, WiderGrant> {
+    match requested {
+        None => Ok(ceiling),
+        Some(true) if !ceiling => Err(WiderGrant { kind, requested: "<all>".to_owned() }),
+        Some(requested) => Ok(requested),
+    }
+}
+
 impl fmt::Display for GrantKind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -162,6 +186,7 @@ impl fmt::Display for GrantKind {
             GrantKind::Net => "net",
             GrantKind::Env => "env",
             GrantKind::Addons => "addons",
+            GrantKind::LanguageModel => "language-model",
         })
     }
 }
