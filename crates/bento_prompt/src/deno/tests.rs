@@ -1449,61 +1449,74 @@ async fn a_clone_signal_cancels_only_the_cloning_operation() {
 
 /// Cloning that its signal abandons leaves no session behind, however late the abort lands.
 ///
-/// The arrangement is deterministic: the clone's result is finished and queued first, then
-/// another session's bare operation is finished and queued, so the isolate delivers the
-/// clone first and the abort runs from the second result's reaction one step later. That is
-/// the moment between a clone arriving and this operation deciding what to do with it.
+/// Each operation is followed by another command on the same session, and a session answers
+/// its commands in order, so the follower's native count proves the operation before it had
+/// already replied and is only waiting to be delivered. With the cloning's reply waiting
+/// first and the other session's bare operation second, the isolate usually delivers them
+/// together and the abort runs from the second reply's reaction one step after the clone
+/// arrives: the moment between a clone arriving and this operation deciding what to do with
+/// it. Whether the isolate delivers them together is not ours to decide, so the scenario is
+/// repeated: however the deliveries fall, no attempt may leave a session behind.
 #[tokio::test]
 async fn a_clone_abandoned_as_it_arrives_leaves_no_session_behind() {
+    const ATTEMPTS: usize = 20;
+
     let mut harness = Harness::granted();
-    harness
-        .run(
-            r#"
+    let counted =
+        |log: &[Event]| log.iter().filter(|event| matches!(event, Event::Counted(_))).count();
+    for attempt in 0..ATTEMPTS {
+        harness
+            .run(
+                r#"
         globalThis.source = await LanguageModel.create();
         globalThis.cancellation = ops.op_bento_prompt_cancellation();
         globalThis.other = (await ops.op_bento_prompt_create({}, cancellation)).value;
         return null;
         "#,
-        )
-        .await;
-    // Started without running the event loop, so nothing is delivered until both are done.
-    harness.sync(
-        r#"
+            )
+            .await;
+        let before_cloning = counted(&harness.engine.log());
+        // Started without running the event loop, so nothing is delivered until every reply
+        // is waiting.
+        harness.sync(
+            r#"
         globalThis.controller = new AbortController();
         globalThis.reason = { stop: 'cloning' };
         globalThis.cloning = caught(source.clone({ signal: controller.signal }));
+        globalThis.afterCloning = caught(source.append('after the cloning'));
         return null;
         "#,
-    );
-    let counted =
-        |log: &[Event]| log.iter().filter(|event| matches!(event, Event::Counted(_))).count();
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        harness.engine.wait_for(|log| {
-            log.iter().filter(|event| matches!(event, Event::Opened(_))).count() == 3
-        }),
-    )
-    .await
-    .expect("the clone reached the model");
-    let counts = counted(&harness.engine.log());
-    harness.sync(
-        r#"
+        );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            harness.engine.wait_for(move |log| counted(log) > before_cloning),
+        )
+        .await
+        .expect("the command after the cloning counted, so the cloning had already replied");
+        let before_noise = counted(&harness.engine.log());
+        harness.sync(
+            r#"
         globalThis.noise = ops
             .op_bento_prompt_append(other, [{ role: 'user', content: 'noise' }], cancellation)
             .then(() => controller.abort(reason));
+        globalThis.afterNoise = ops.op_bento_prompt_append(
+            other,
+            [{ role: 'user', content: 'after the noise' }],
+            cancellation,
+        );
         return null;
         "#,
-    );
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        harness.engine.wait_for(move |log| counted(log) > counts),
-    )
-    .await
-    .expect("the other session's operation finished too");
-    let result = harness
-        .run(
-            r#"
-        await Promise.all([cloning, noise]);
+        );
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            harness.engine.wait_for(move |log| counted(log) > before_noise + 1),
+        )
+        .await
+        .expect("the command after the other session's operation counted, so that one replied");
+        let result = harness
+            .run(
+                r#"
+        await Promise.all([cloning, afterCloning, noise, afterNoise]);
         const arrived = (await cloning).settled;
         // A clone this operation did receive is this test's to dispose of.
         if (arrived !== undefined) {
@@ -1517,26 +1530,91 @@ async fn a_clone_abandoned_as_it_arrives_leaves_no_session_behind() {
             identical: globalThis.lastError === reason,
         };
         "#,
+            )
+            .await;
+        // What the clone's arrival still owes the isolate is settled before the next attempt.
+        assert!(
+            harness.drains_within(Duration::from_secs(5)).await,
+            "attempt {attempt}: the event loop finishes"
+        );
+        tokio::time::timeout(Duration::from_secs(5), harness.cleanup.settle())
+            .await
+            .unwrap_or_else(|_| {
+                panic!("attempt {attempt}: every session this isolate opened is disposable")
+            });
+
+        assert_eq!(
+            result["abandoned"], result["rejected"],
+            "attempt {attempt}: a cloning either hands out its clone or rejects, and rejecting hands out nothing: {result}"
+        );
+        if result["rejected"] == true {
+            assert_eq!(
+                result["identical"], true,
+                "attempt {attempt}: it rejects with its own abort reason"
+            );
+        }
+        let log = harness.engine.log();
+        let opened = log.iter().filter(|event| matches!(event, Event::Opened(_))).count();
+        let released = log.iter().filter(|event| matches!(event, Event::Released)).count();
+        assert_eq!(opened, 3 * (attempt + 1), "attempt {attempt}: two sessions and a clone");
+        assert_eq!(
+            released, opened,
+            "attempt {attempt}: a clone nobody received is released, not left running"
+        );
+    }
+}
+
+/// The same abandonment, with the abort landing while the clone's result waits to be
+/// delivered: the cloning hands out nothing and the clone it was given is destroyed.
+#[tokio::test]
+async fn a_clone_whose_signal_aborted_before_delivery_is_destroyed() {
+    let mut harness = Harness::granted();
+    harness.run("globalThis.source = await LanguageModel.create(); return null;").await;
+    let counted =
+        |log: &[Event]| log.iter().filter(|event| matches!(event, Event::Counted(_))).count();
+    let before_cloning = counted(&harness.engine.log());
+    harness.sync(
+        r#"
+        globalThis.controller = new AbortController();
+        globalThis.reason = { stop: 'cloning' };
+        globalThis.cloning = caught(source.clone({ signal: controller.signal }));
+        globalThis.afterCloning = caught(source.append('after the cloning'));
+        return null;
+        "#,
+    );
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        harness.engine.wait_for(move |log| counted(log) > before_cloning),
+    )
+    .await
+    .expect("the command after the cloning counted, so the cloning had already replied");
+    // The event loop has not run since, so the clone's result is still waiting.
+    harness.sync("controller.abort(reason); return null;");
+
+    let result = harness
+        .run(
+            r#"
+        await Promise.all([cloning, afterCloning]);
+        source.destroy();
+        return {
+            handedOut: (await cloning).settled !== undefined,
+            identical: globalThis.lastError === reason,
+        };
+        "#,
         )
         .await;
-    // What the clone's arrival still owes the isolate is settled before it goes quiet.
+
     assert!(harness.drains_within(Duration::from_secs(5)).await, "the event loop finishes");
     tokio::time::timeout(Duration::from_secs(5), harness.cleanup.settle())
         .await
         .expect("every session this isolate opened is disposable");
-
-    assert_eq!(
-        result["abandoned"], result["rejected"],
-        "a cloning either hands out its clone or rejects, and rejecting hands out nothing: {result}"
-    );
-    if result["rejected"] == true {
-        assert_eq!(result["identical"], true, "it rejects with its own abort reason");
-    }
+    assert_eq!(result["handedOut"], false, "an abandoned cloning hands out nothing");
+    assert_eq!(result["identical"], true, "it rejects with its own abort reason");
     let log = harness.engine.log();
     let opened = log.iter().filter(|event| matches!(event, Event::Opened(_))).count();
     let released = log.iter().filter(|event| matches!(event, Event::Released)).count();
-    assert_eq!(opened, 3, "both sessions and the clone reached the model");
-    assert_eq!(released, opened, "a clone nobody received is released, not left running");
+    assert_eq!(opened, 2, "the session and the clone it made both reached the model");
+    assert_eq!(released, opened, "the clone nobody received is released");
 }
 
 /// Guest code can make handing a result over fail, by tampering with what the interfaces it
