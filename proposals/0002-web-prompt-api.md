@@ -2,7 +2,7 @@
 id: proposal.0002
 title: Web Prompt API with macOS Foundation Models
 authors: [Mark]
-status: awaiting-implementation
+status: active-review
 pull-request: https://github.com/bento-js/bento/pull/249
 issues: []
 supersedes: []
