@@ -1,6 +1,6 @@
 ---
 title: A Vision for Bento
-updated: 2026-10-12
+updated: 2026-10-25
 ---
 
 # A Vision for Bento
@@ -94,3 +94,4 @@ Directions worth considering once the core is proven:
 
 - **2026-10-10** — Initial vision.
 - **2026-10-12** — [Proposal 0001](proposals/0001-embeddable-typescript-runtime.md) delivered the first runtime. One Rust library and its CLI run a real Remix 3 application from TypeScript, with its npm dependencies, native asset pipeline, and SQLite, on macOS arm64. They also install dependencies through pnpm and provide top-level tasks, environment files, watch restarts, host modules, explicit grants, and lifecycle control. Integrated type checking, formatting, linting, bundling, a test runner, and feature-selected builds remain ahead.
+- **2026-10-25** — [Proposal 0002](proposals/0002-web-prompt-api.md) added the Web Prompt API's text sessions and constrained JSON, backed by Apple's on-device Foundation Models on macOS 27. The engine-independent `bento_prompt` crate serves Rust callers without V8; the CLI enables its native backend by default, library embeddings opt in, and guests need the explicit language-model grant. Other operating systems' model backends remain ahead.
