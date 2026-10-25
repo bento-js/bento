@@ -30,7 +30,7 @@ mod tests;
 
 pub use state::{Access, Cleanup};
 
-use state::{CancellationEntry, GenerationEntry, SessionEntry};
+use state::{CancellationEntry, GenerationEntry, SessionEntry, Ticket};
 
 /// Builds the extension that installs the Prompt API into one isolate.
 pub fn extension(access: Access, cleanup: Cleanup) -> Extension {
@@ -215,6 +215,7 @@ struct Call {
     messages: Vec<Message>,
     options: PromptOptions,
     cancellation: Cancellation,
+    ticket: Ticket,
 }
 
 fn prepare<T>(
@@ -231,7 +232,15 @@ fn prepare<T>(
         return Err(Outcome::destroyed());
     };
     let messages = messages(inputs).map_err(Outcome::invalid)?;
-    Ok(Call { session, messages, options: options.into_options(), cancellation })
+    let ticket = session.order.ticket();
+    Ok(Call { session, messages, options: options.into_options(), cancellation, ticket })
+}
+
+/// Hand one operation's outcome to JavaScript in its session's order: an operation that only
+/// ran because an earlier one finished must not settle before that earlier one does.
+async fn settle<T>(ticket: Ticket, outcome: Outcome<T>) -> Outcome<T> {
+    ticket.turn().await;
+    outcome
 }
 
 /// The instance's authority, so creation can refuse before running a monitor callback, in
@@ -342,10 +351,10 @@ fn op_bento_prompt_append(
     #[smi] cancel: ResourceId,
 ) -> Result<impl Future<Output = Outcome<()>>, JsErrorBox> {
     let started = prepare(&state, rid, cancel, inputs, PromptInput::default())
-        .map(|call| call.session.session.append(call.messages, call.cancellation));
+        .map(|call| (call.ticket, call.session.session.append(call.messages, call.cancellation)));
     Ok(async move {
         match started {
-            Ok(pending) => pending.await.into(),
+            Ok((ticket, pending)) => settle(ticket, pending.await.into()).await,
             Err(outcome) => outcome,
         }
     })
@@ -360,11 +369,12 @@ fn op_bento_prompt_prompt(
     #[serde] options: PromptInput,
     #[smi] cancel: ResourceId,
 ) -> Result<impl Future<Output = Outcome<String>>, JsErrorBox> {
-    let started = prepare(&state, rid, cancel, inputs, options)
-        .map(|call| call.session.session.prompt(call.messages, call.options, call.cancellation));
+    let started = prepare(&state, rid, cancel, inputs, options).map(|call| {
+        (call.ticket, call.session.session.prompt(call.messages, call.options, call.cancellation))
+    });
     Ok(async move {
         match started {
-            Ok(pending) => pending.await.into(),
+            Ok((ticket, pending)) => settle(ticket, pending.await.into()).await,
             Err(outcome) => outcome,
         }
     })
@@ -380,11 +390,20 @@ fn op_bento_prompt_measure(
     #[smi] cancel: ResourceId,
 ) -> Result<impl Future<Output = Outcome<f64>>, JsErrorBox> {
     let started = prepare(&state, rid, cancel, inputs, options).map(|call| {
-        call.session.session.measure_context_usage(call.messages, call.options, call.cancellation)
+        (
+            call.ticket,
+            call.session.session.measure_context_usage(
+                call.messages,
+                call.options,
+                call.cancellation,
+            ),
+        )
     });
     Ok(async move {
         match started {
-            Ok(pending) => pending.await.map(|tokens| tokens as f64).into(),
+            Ok((ticket, pending)) => {
+                settle(ticket, pending.await.map(|tokens| tokens as f64).into()).await
+            }
             Err(outcome) => outcome,
         }
     })
@@ -402,22 +421,23 @@ fn op_bento_prompt_fork(
     // results owns its own lifetime and outlives both the source and this handle.
     let started = match (session(&state, rid), cancellation(&state, cancel)) {
         (Some(entry), Some(cancellation)) => {
-            Ok(own(&state, entry.session.pending_fork(cancellation)))
+            Ok((entry.order.ticket(), own(&state, entry.session.pending_fork(cancellation))))
         }
         _ => Err(Outcome::destroyed()),
     };
     Ok(async move {
-        let pending = match started {
-            Ok(pending) => pending,
+        let (ticket, pending) = match started {
+            Ok(started) => started,
             Err(outcome) => return outcome,
         };
-        match pending.await {
+        let outcome = match pending.await {
             Ok(session) => {
                 let entry = SessionEntry::new(session, cleanup);
                 Outcome::done(state.borrow_mut().resource_table.add(entry))
             }
             Err(error) => Outcome::failed(&error),
-        }
+        };
+        settle(ticket, outcome).await
     })
 }
 
@@ -430,20 +450,22 @@ fn op_bento_prompt_stream(
     #[serde] options: PromptInput,
     #[smi] cancel: ResourceId,
 ) -> Result<impl Future<Output = Outcome<ResourceId>>, JsErrorBox> {
-    let started = prepare(&state, rid, cancel, inputs, options)
-        .map(|call| call.session.session.stream(call.messages, call.options, call.cancellation));
+    let started = prepare(&state, rid, cancel, inputs, options).map(|call| {
+        (call.ticket, call.session.session.stream(call.messages, call.options, call.cancellation))
+    });
     Ok(async move {
-        let pending = match started {
-            Ok(pending) => pending,
+        let (ticket, pending) = match started {
+            Ok(started) => started,
             Err(outcome) => return outcome,
         };
-        match pending.await {
+        let outcome = match pending.await {
             Ok(generation) => {
                 let entry = GenerationEntry { generation: AsyncRefCell::new(generation) };
                 Outcome::done(state.borrow_mut().resource_table.add(entry))
             }
             Err(error) => Outcome::failed(&error),
-        }
+        };
+        settle(ticket, outcome).await
     })
 }
 

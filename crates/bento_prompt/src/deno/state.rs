@@ -2,12 +2,13 @@
 //! owes, and the resources behind the identifiers JavaScript holds.
 
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use deno_core::{AsyncRefCell, Resource};
 
+use crate::latch::Latch;
 use crate::{Cancellation, Disposal, Generation, Session};
 
 /// Whether this instance's guest code may use the operating system's language model.
@@ -88,16 +89,61 @@ impl Cleanup {
     }
 }
 
+/// The order one session's operations hand their results to JavaScript.
+///
+/// A session applies its operations in the order they were invoked, but the isolate's op
+/// driver polls finished operations in whatever order its own queues hold them, so a later
+/// operation's result can otherwise reach guest code first. Each operation takes its place
+/// here as it is invoked and hands its result over only once the operations invoked before
+/// it have handed theirs over or been abandoned.
+#[derive(Default)]
+pub(super) struct Order {
+    last: RefCell<Option<Arc<Latch>>>,
+}
+
+impl Order {
+    pub(super) fn ticket(&self) -> Ticket {
+        let own = Arc::new(Latch::default());
+        let previous = self.last.borrow_mut().replace(Arc::clone(&own));
+        Ticket { previous, own }
+    }
+}
+
+/// One operation's place in its session's settlement order.
+pub(super) struct Ticket {
+    previous: Option<Arc<Latch>>,
+    own: Arc<Latch>,
+}
+
+impl Ticket {
+    /// Resolves once every operation invoked earlier on this session has settled.
+    pub(super) async fn turn(&self) {
+        if let Some(previous) = &self.previous {
+            previous.raised().await;
+        }
+    }
+}
+
+impl Drop for Ticket {
+    // Dropping the ticket is this operation settling, or being abandoned with its isolate:
+    // either way the operations behind it are no longer waiting for it.
+    fn drop(&mut self) {
+        self.own.raise();
+    }
+}
+
 // One conversation, owned by the isolate that created it.
 pub(super) struct SessionEntry {
     pub(super) session: Session,
+    /// The order this session's operations settle in.
+    pub(super) order: Order,
     cleanup: Cleanup,
     released: Cell<bool>,
 }
 
 impl SessionEntry {
     pub(super) fn new(session: Session, cleanup: Cleanup) -> Self {
-        Self { session, cleanup, released: Cell::new(false) }
+        Self { session, order: Order::default(), cleanup, released: Cell::new(false) }
     }
 
     // Cancels the session's work and records the native settlement the instance still owes.
