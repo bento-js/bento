@@ -1,7 +1,7 @@
 ---
 id: guide.running-with-bento
 title: Running with Bento
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0002]
 ---
 
 # Running with Bento
@@ -21,13 +21,15 @@ Bento options go before the target. Everything after the target belongs to the s
 
 ### Get Bento
 
-Bento is built from this repository for macOS on Apple silicon. Building needs the Rust toolchain pinned in `rust-toolchain.toml`, which `rustup` selects automatically. From the repository root:
+Bento is built from this repository for macOS on Apple silicon. The default CLI build includes the local Prompt API backend and requires macOS 27.0 or newer and Xcode with SDK 27 or newer. Building also needs the Rust toolchain pinned in `rust-toolchain.toml`, which `rustup` selects automatically. From the repository root:
 
 ```sh
 cargo install --locked --path crates/bento_cli
 ```
 
 This installs the `bento` executable into Cargo's bin directory (`~/.cargo/bin` by default). Running an installed project needs nothing else. Installing dependencies needs pnpm and Node, because `bento install` delegates to the project's declared pnpm, and the package tools a task runs, such as `oxfmt`, `tsc`, or `remix db migrate`, start through their own executables, which may be Node scripts.
+
+Use `cargo install --locked --path crates/bento_cli --no-default-features` for a backend-free build without the new Foundation Models SDK requirement. The JavaScript `LanguageModel` API remains present but unavailable. See [Using the Prompt API](prompt-api.md) for model readiness, grants, and Rust reuse.
 
 ### Choose what to run
 
@@ -48,7 +50,7 @@ Arguments for a task go after `--`, and Bento appends them, shell-quoted, to the
 
 ### Grant capabilities
 
-Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, or load native addons. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
+Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, load native addons, or access the local language model. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
 
 | Flag | Grants | Items |
 | --- | --- | --- |
@@ -57,8 +59,11 @@ Guest code can use only what the launch grants it. Without any grant flag, a scr
 | `--allow-net[=HOST[:PORT],...]` | Connecting and listening | A hostname, an IPv4 address, or an IPv6 address in brackets, as in `[::1]:8080`; a host without a port covers all its ports |
 | `--allow-env[=NAME,...]` | Seeing and setting environment variables | Exact variable names |
 | `--allow-addons[=PATH,...]` | Loading native Node-API addons | Paths; each covers everything beneath it |
+| `--allow-language-model[=true\|false]` | Accessing the local language model | Boolean capability; no model identifiers |
 
-A flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
+For the scoped flags above, a flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
+
+`--allow-language-model` requests the boolean capability. `--allow-language-model=false` explicitly denies it, including when a nested launch inherits access. Without the grant, model availability reports `unavailable` and creation fails with `NotAllowedError` before inspecting native readiness.
 
 A network target names an endpoint, not a spelling. Hostnames match regardless of case, and IP addresses match by value: `[0:0:0:0:0:0:0:1]:8080` is the same endpoint as `[::1]:8080`, and the IPv4-mapped `[::ffff:127.0.0.1]` is the same as `127.0.0.1`. Bento never looks hostnames up, so `localhost` and `127.0.0.1` stay different targets.
 
