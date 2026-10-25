@@ -66,8 +66,8 @@ pub(crate) fn finished(outcome: RunOutcome) -> Result<ExitCode, CliError> {
         RunOutcome::Exited(code) => Ok(process_exit_code(code)),
         RunOutcome::Failed(error) => Err(CliError::Script(error)),
         // A script that ended by itself reports a shutdown only when its disposal did not
-        // finish: model work it started outlived the deadline, so nothing can say the run
-        // is over and done with.
+        // finish: work it started outlived the deadline, so nothing can say the run is over
+        // and done with.
         RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::TimedOut }) => {
             Err(CliError::IncompleteDisposal)
         }
@@ -85,9 +85,9 @@ mod tests {
 
     use super::finished;
 
-    /// A script can end on its own while the model work it started is still running. The
-    /// runtime reports that as incomplete disposal, and `bento` says so and fails rather
-    /// than claiming the script finished cleanly.
+    /// A script can end on its own while work it started is still running. The runtime
+    /// reports that as incomplete disposal, and `bento` says so and fails rather than
+    /// claiming the script finished cleanly.
     #[test]
     fn a_script_whose_disposal_did_not_finish_is_reported_as_an_error() {
         let outcome = RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::TimedOut });

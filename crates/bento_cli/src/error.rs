@@ -48,7 +48,7 @@ pub(crate) enum CliError {
     #[error("{}: {}", runtime_report::describe(.0.kind), runtime_report::plain_text(&.0.message))]
     Script(RuntimeError),
     #[error(
-        "the script ended, but its language model work did not finish within the shutdown deadline; disposal is incomplete"
+        "work the script started did not finish within the shutdown deadline; disposal is incomplete"
     )]
     IncompleteDisposal,
     #[error("cannot watch {} for changes: {source}", .path.display())]
