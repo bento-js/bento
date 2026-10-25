@@ -215,9 +215,10 @@ impl RunningRuntime {
         self.thread.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
-    /// Blocks until the guest has ended and the instance has been disposed, then reports how
-    /// it ended. A panic on the runtime thread is reported as [`RunOutcome::Failed`] instead
-    /// of being resumed here.
+    /// Blocks until the guest has ended and the instance has been disposed of, then reports
+    /// how it ended. Disposal that did not finish within the deadline is reported as
+    /// [`RunOutcome::Shutdown`] with [`ShutdownOutcome::TimedOut`]. A panic on the runtime
+    /// thread is reported as [`RunOutcome::Failed`] instead of being resumed here.
     ///
     /// # Panics
     ///

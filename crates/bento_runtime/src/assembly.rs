@@ -65,7 +65,15 @@ pub(crate) async fn run(
     control.close_workers();
     // Closing a session cancels its model work; the native side still has to finish. Until
     // it has, this instance's disposal is not complete, whatever the isolates look like.
-    if tokio::time::timeout(disposal_deadline, sessions.settle()).await.is_err() {
+    let settled = tokio::time::timeout(disposal_deadline, sessions.settle()).await.is_ok();
+    finish(&control, outcome, settled)
+}
+
+/// What this run reports. Owned native work that outlived the disposal deadline leaves the
+/// instance's disposal incomplete, so the bounded shutdown's report is the honest answer
+/// even for a run that ended on its own terms.
+fn finish(control: &Control, outcome: RunOutcome, settled: bool) -> RunOutcome {
+    if !settled {
         control.incomplete_disposal();
     }
     match control.complete(&outcome) {
@@ -302,5 +310,47 @@ struct Certificates(LazyLock<RootCertStore>);
 impl RootCertStoreProvider for Certificates {
     fn get_or_try_init(&self) -> Result<&RootCertStore, JsErrorBox> {
         Ok(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::finish;
+    use crate::lifecycle::Control;
+    use crate::{RunOutcome, RuntimeError, RuntimeHandle, ShutdownOutcome};
+
+    fn control() -> std::sync::Arc<Control> {
+        Control::new(Duration::from_millis(50)).expect("control starts").0
+    }
+
+    #[test]
+    fn a_run_whose_disposal_did_not_finish_is_reported_as_incomplete() {
+        for ending in [
+            RunOutcome::Completed,
+            RunOutcome::Exited(3),
+            RunOutcome::Failed(RuntimeError::startup("guest failed")),
+        ] {
+            let control = control();
+
+            let reported = finish(&control, ending, false);
+
+            let RunOutcome::Shutdown(report) = reported else {
+                panic!("a run with unsettled native work reported {reported:?} as its ending");
+            };
+            assert_eq!(report.outcome, ShutdownOutcome::TimedOut);
+            let handle = RuntimeHandle { control: std::sync::Arc::clone(&control) };
+            assert_eq!(handle.shutdown(), report, "a later shutdown call returns the same report");
+        }
+    }
+
+    #[test]
+    fn a_run_that_disposed_of_everything_reports_its_own_ending() {
+        let control = control();
+
+        let reported = finish(&control, RunOutcome::Exited(2), true);
+
+        assert!(matches!(reported, RunOutcome::Exited(2)), "{reported:?}");
     }
 }

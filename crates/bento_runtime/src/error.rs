@@ -60,7 +60,8 @@ pub enum RunOutcome {
     Exited(i32),
     /// The instance failed before or during execution.
     Failed(RuntimeError),
-    /// A host-requested shutdown ended the run; the report says how far it got.
+    /// A host-requested shutdown ended the run, or the run ended on its own but its disposal
+    /// did not finish; the report says how far it got.
     Shutdown(crate::ShutdownReport),
 }
 
