@@ -224,6 +224,7 @@ struct State {
     open_failure: Mutex<Option<ErrorKind>>,
     open_gate: Mutex<Option<Arc<Gate>>>,
     count_hold: Mutex<Option<Arc<CountHold>>>,
+    settle_gate: Mutex<Option<Arc<Gate>>>,
     scripts: Mutex<VecDeque<Script>>,
     log: Mutex<Vec<Event>>,
     requests: Mutex<Vec<RecordedRequest>>,
@@ -255,6 +256,7 @@ impl ScriptedEngine {
                 open_failure: Mutex::new(None),
                 open_gate: Mutex::new(None),
                 count_hold: Mutex::new(None),
+                settle_gate: Mutex::new(None),
                 scripts: Mutex::new(VecDeque::new()),
                 log: Mutex::new(Vec::new()),
                 requests: Mutex::new(Vec::new()),
@@ -282,6 +284,14 @@ impl ScriptedEngine {
     pub(crate) fn hold_open(&self) -> Hold {
         let gate = Arc::new(Gate::default());
         *self.state.open_gate.lock().expect("open gate") = Some(Arc::clone(&gate));
+        Hold { gate }
+    }
+
+    /// Keep every generation's native settlement in flight until the returned
+    /// hold is released, so disposal is observably unfinished after a cancel.
+    pub(crate) fn hold_settlement(&self) -> Hold {
+        let gate = Arc::new(Gate::default());
+        *self.state.settle_gate.lock().expect("settle gate") = Some(Arc::clone(&gate));
         Hold { gate }
     }
 
@@ -526,6 +536,10 @@ impl ScriptedGeneration {
             self.finished = true;
             if let Some(milliseconds) = self.settle_delay_ms {
                 tokio::time::sleep(Duration::from_millis(milliseconds)).await;
+            }
+            let gate = self.state.settle_gate.lock().expect("settle gate").clone();
+            if let Some(gate) = gate {
+                gate.wait().await;
             }
             self.settled.store(true, Ordering::SeqCst);
             self.state.record(Event::Settled(self.id));

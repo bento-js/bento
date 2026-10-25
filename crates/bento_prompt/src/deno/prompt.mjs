@@ -215,19 +215,30 @@ class LanguageModel extends EventTarget {
 
     prompt(input, options = {}) {
         let prefix = "Failed to execute 'prompt' on 'LanguageModel'";
-        let messages;
-        let request;
+        let signal;
         try {
             webidl.assertBranded(this, LanguageModel.prototype);
             webidl.requiredArguments(arguments.length, 1, prefix);
             input = promptConverter(input, prefix, "Argument 1");
             options = promptOptionsConverter(options, prefix, "Argument 2");
+            signal = operationSignal(this, options.signal);
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        // The draft's aggregated result checks the abort before the operation prefills, and
+        // prefilling is what validates the input: an abandoned operation answers with its
+        // own reason rather than with what its input would have been refused for.
+        if (signal.aborted) {
+            return Promise.reject(signal.reason);
+        }
+        let messages;
+        let request;
+        try {
             messages = messagesFor(this, input);
             request = promptRequest(options);
         } catch (error) {
             return Promise.reject(error);
         }
-        let signal = operationSignal(this, options.signal);
         return aggregated(this, signal, cancellation =>
             op_bento_prompt_prompt(this[state].rid, messages, request, cancellation),
         );
@@ -259,17 +270,25 @@ class LanguageModel extends EventTarget {
 
     append(input, options = {}) {
         let prefix = "Failed to execute 'append' on 'LanguageModel'";
-        let messages;
+        let signal;
         try {
             webidl.assertBranded(this, LanguageModel.prototype);
             webidl.requiredArguments(arguments.length, 1, prefix);
             input = promptConverter(input, prefix, "Argument 1");
             options = signalOptionsConverter(options, prefix, "Argument 2");
+            signal = operationSignal(this, options.signal);
+        } catch (error) {
+            return Promise.reject(error);
+        }
+        if (signal.aborted) {
+            return Promise.reject(signal.reason);
+        }
+        let messages;
+        try {
             messages = messagesFor(this, input);
         } catch (error) {
             return Promise.reject(error);
         }
-        let signal = operationSignal(this, options.signal);
         return aggregated(this, signal, cancellation =>
             op_bento_prompt_append(this[state].rid, messages, cancellation),
         );

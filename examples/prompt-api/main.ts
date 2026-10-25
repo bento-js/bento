@@ -20,14 +20,20 @@ if (process.argv.includes("--denied")) {
     await assert.rejects(LanguageModel.create(), { name: "NotAllowedError" });
     console.log("Denied before model access");
 } else {
-    assert.equal(
-        await LanguageModel.availability(),
-        "available",
-        "Enable Apple Intelligence first",
-    );
+    let availability = await LanguageModel.availability();
+    console.log("Availability", availability);
+    if (availability !== "available") {
+        throw new Error(
+            "LanguageModel is unavailable. Check the --allow-language-model grant, that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready.",
+        );
+    }
     let progress: number[] = [];
     let session = await LanguageModel.create({
-        initialPrompts: [{ role: "system", content: "Answer briefly and plainly." }],
+        initialPrompts: [
+            { role: "system", content: "Answer briefly and plainly." },
+            { role: "user", content: "Remember the code word: kelp." },
+            { role: "assistant", content: "The code word is kelp." },
+        ],
         monitor(monitor) {
             monitor.addEventListener("downloadprogress", event => {
                 assert.equal(event.total, 1);
@@ -39,8 +45,8 @@ if (process.argv.includes("--denied")) {
     try {
         assert.deepEqual(progress, [0, 1]);
         await session.append([
-            { role: "user", content: "Remember the code word: kelp." },
-            { role: "assistant", content: "The code word is kelp." },
+            { role: "user", content: "The tide is high at noon." },
+            { role: "assistant", content: "Noted: high tide at noon." },
         ]);
         let usage = session.contextUsage;
         let measured = await session.measureContextUsage("What is the code word?");

@@ -281,3 +281,78 @@ assert.deepEqual(await probe(), { exposed: 'function', availability: 'unavailabl
 "#,
     ));
 }
+
+/// Workers of a granted instance inherit the grant, so creation in a worker is refused for
+/// what the model can do, never for authority. Without a compiled backend the honest answer
+/// is the missing backend.
+#[test]
+fn workers_of_a_granted_instance_reach_the_model_rather_than_a_denial() {
+    let root = project();
+    std::fs::write(
+        root.path().join("granted-probe.mjs"),
+        r#"
+export async function probe() {
+    const result = { availability: await LanguageModel.availability(), creation: null };
+    try {
+        const session = await LanguageModel.create();
+        session.destroy();
+        result.creation = 'created';
+    } catch (error) {
+        result.creation = error.name;
+    }
+    return result;
+}
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("granted-web-worker.mjs"),
+        r#"
+import { probe } from './granted-probe.mjs';
+postMessage(await probe());
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.path().join("granted-node-worker.mjs"),
+        r#"
+import { parentPort } from 'node:worker_threads';
+import { probe } from './granted-probe.mjs';
+parentPort.postMessage(await probe());
+"#,
+    )
+    .unwrap();
+    let backend_free = !cfg!(feature = "prompt-foundation-models");
+    completed(run(
+        model_access(root.path()),
+        "granted-workers.mjs",
+        &format!(
+            r#"
+import assert from 'node:assert/strict';
+import {{ Worker as NodeWorker }} from 'node:worker_threads';
+
+const web = await new Promise((resolve, reject) => {{
+    const worker = new Worker(new URL('./granted-web-worker.mjs', import.meta.url), {{ type: 'module' }});
+    worker.onmessage = event => {{ worker.terminate(); resolve(event.data); }};
+    worker.onerror = reject;
+}});
+const node = await new Promise((resolve, reject) => {{
+    const worker = new NodeWorker(new URL('./granted-node-worker.mjs', import.meta.url));
+    worker.once('message', async answer => {{ await worker.terminate(); resolve(answer); }});
+    worker.once('error', reject);
+}});
+
+for (const [isolate, result] of [['web worker', web], ['node worker', node]]) {{
+    assert.notEqual(result.creation, 'NotAllowedError',
+        `${{isolate}} inherits the grant instead of being denied`);
+    if ({backend_free}) {{
+        assert.equal(result.availability, 'unavailable',
+            `${{isolate}} has no model backend to serve it`);
+        assert.equal(result.creation, 'NotSupportedError',
+            `${{isolate}} is refused for the missing backend, not for authority`);
+    }}
+}}
+"#
+        ),
+    ));
+}

@@ -295,6 +295,25 @@ fn validation_accepts_conforming_output_and_rejects_violations() {
     }
 }
 
+/// The subset's defaults: an object with no `required` has only optional properties, and an
+/// object that does not mention `additionalProperties` is closed all the same.
+#[test]
+fn omitted_required_and_additional_properties_keep_the_subsets_defaults() {
+    let schema = translate(json!({
+        "type": "object",
+        "properties": { "habitat": { "type": "string" } }
+    }))
+    .expect("a schema may omit both keywords");
+
+    schema.validate(&json!({})).expect("a property no `required` names may be absent");
+    schema.validate(&json!({ "habitat": "rock pool" })).expect("the declared property fits");
+
+    let error = schema
+        .validate(&json!({ "habitat": "rock pool", "depth": 2 }))
+        .expect_err("an undeclared key is refused by an object that declared no openness");
+    assert_eq!(error.kind(), ErrorKind::Unknown);
+}
+
 struct Rng(u64);
 
 impl Rng {

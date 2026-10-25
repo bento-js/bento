@@ -119,6 +119,32 @@ async fn prompt_returns_the_whole_response() {
     assert_eq!(answer, "Hello there");
 }
 
+/// A rewrite only loses text a consumer already received. A collected answer delivers
+/// nothing until the generation ends, so the model's final text is the answer.
+#[tokio::test]
+async fn prompt_returns_the_final_text_when_the_model_rewrites_what_it_had_produced() {
+    let (engine, session) = scripted_session().await;
+    engine.script(Script::text(["Hello", "Goodbye"]));
+
+    let answer = session
+        .prompt(vec![user("greet me")], PromptOptions::default(), Cancellation::new())
+        .await
+        .expect("a rewrite nobody received is not a failure");
+
+    assert_eq!(answer, "Goodbye");
+
+    engine.script(Script::text(["next"]));
+    session
+        .prompt(vec![user("again")], PromptOptions::default(), Cancellation::new())
+        .await
+        .expect("second turn");
+    assert_eq!(
+        engine.requests()[1].committed,
+        vec![user("greet me"), assistant("Goodbye")],
+        "the committed turn is the text the model ended with"
+    );
+}
+
 #[tokio::test]
 async fn cancelled_generation_retains_input_and_settles_before_the_next_operation() {
     let (engine, session) = scripted_session().await;

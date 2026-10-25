@@ -4,7 +4,7 @@
 //! Run it on an eligible Mac:
 //!
 //! ```sh
-//! MACOSX_DEPLOYMENT_TARGET=27.0 cargo run -p bento_prompt --features foundation-models --example prompt_session
+//! MACOSX_DEPLOYMENT_TARGET=27.0 cargo run --locked -p bento_prompt --features foundation-models --example prompt_session
 //! ```
 //!
 //! It asserts the behavior the proposal promises and exits non-zero on the
@@ -108,12 +108,16 @@ async fn empty_session_accounting() -> Result<(), String> {
     Ok(())
 }
 
-/// Multi-turn recall, append without inference, measurement, and genuine
-/// incremental streaming.
+/// Multi-turn recall over history loaded at creation, append without
+/// inference, measurement, and genuine incremental streaming.
 async fn conversation_and_streaming() -> Result<(), String> {
     let session = Session::create(
         CreateOptions {
-            initial_prompts: vec![system("Answer in one short sentence.")],
+            initial_prompts: vec![
+                system("Answer in one short sentence."),
+                user("Remember the code word: kelp."),
+                assistant("The code word is kelp."),
+            ],
             ..CreateOptions::default()
         },
         Cancellation::new(),
@@ -124,7 +128,7 @@ async fn conversation_and_streaming() -> Result<(), String> {
     let before_append = session.context_usage();
     session
         .append(
-            vec![user("Remember the code word: kelp."), assistant("The code word is kelp.")],
+            vec![user("The tide is high at noon."), assistant("Noted: high tide at noon.")],
             Cancellation::new(),
         )
         .await
@@ -154,7 +158,7 @@ async fn conversation_and_streaming() -> Result<(), String> {
         .await
         .map_err(|error| format!("generation failed: {error}"))?;
     if !answer.to_lowercase().contains("kelp") {
-        return Err(format!("the model did not recall the appended turn: {answer:?}"));
+        return Err(format!("the model did not recall its initial history: {answer:?}"));
     }
     if session.context_usage() <= after_append {
         return Err("the generated turn was not accounted for".to_owned());

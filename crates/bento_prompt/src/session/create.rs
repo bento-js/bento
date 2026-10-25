@@ -67,9 +67,13 @@ pub(crate) fn pending_create(
     cancellation: Cancellation,
 ) -> Pending<Session> {
     let Some(engine) = crate::engine::compiled() else {
-        // The same precedence as a creation that reaches the engine: an
-        // absent backend is reported before anything else is inspected.
-        return settled_pending(Err(unavailable()));
+        // The same precedence as a creation that reaches the engine: options this crate can
+        // decide on its own are decided before the model's absence is reported.
+        return settled_pending(
+            validate_languages(&options)
+                .and_then(|()| validate_additions(&[], &options.initial_prompts))
+                .and_then(|()| Err(unavailable())),
+        );
     };
     own_creation(engine, options, cancellation)
 }

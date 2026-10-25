@@ -510,6 +510,26 @@ async fn an_operation_without_a_backend_owns_no_native_work() {
     assert_eq!(error.kind(), ErrorKind::NotSupported);
 }
 
+/// Without a backend the answer is still "unsupported", but options this crate can refuse on
+/// its own are refused first, as they are on the path that reaches a model.
+#[cfg(not(native_backend))]
+#[tokio::test]
+async fn a_build_without_a_backend_refuses_invalid_options_before_reporting_no_backend() {
+    let malformed_tag = crate::session::pending_create(expecting("en--US"), Cancellation::new())
+        .await
+        .expect_err("a malformed language tag cannot create a session");
+    assert_eq!(malformed_tag.kind(), ErrorKind::InvalidInput);
+
+    let misplaced_system = CreateOptions {
+        initial_prompts: vec![user("Hello"), system("Answer concisely.")],
+        ..CreateOptions::default()
+    };
+    let error = crate::session::pending_create(misplaced_system, Cancellation::new())
+        .await
+        .expect_err("a misplaced system message cannot create a session");
+    assert_eq!(error.kind(), ErrorKind::InvalidInput);
+}
+
 fn expecting(tag: &str) -> CreateOptions {
     CreateOptions {
         expected_inputs: vec![Expected {

@@ -31,8 +31,10 @@ interface LanguageModelMessage {
     content: string | LanguageModelMessageContent[];
     /**
      * Whether an assistant message is an unfinished turn the model should continue. Bento's
-     * backend cannot continue a partial assistant turn, so `true` rejects with a
-     * `NotSupportedError` `DOMException`.
+     * backend cannot continue a partial assistant turn, so `true` is refused with a
+     * `NotSupportedError` `DOMException`: `prompt()`, `append()` and
+     * `measureContextUsage()` reject with it, and `promptStreaming()` errors its stream
+     * with it.
      */
     prefix?: boolean;
 }
@@ -43,7 +45,7 @@ type LanguageModelPrompt = string | LanguageModelMessage[];
 /** A content type a session expects to receive or produce. */
 interface LanguageModelExpected {
     type: LanguageModelMessageType;
-    /** BCP 47 language tags. Invalid tags throw a `RangeError`. */
+    /** BCP 47 language tags. A tag that is not one rejects with a `RangeError`. */
     languages?: string[];
 }
 

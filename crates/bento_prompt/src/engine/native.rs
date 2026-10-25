@@ -360,12 +360,44 @@ fn map_error(error: FMError) -> Error {
 mod tests {
     use super::map_error;
     use crate::ErrorKind;
-    use foundation_models::FMError;
+    use foundation_models::{FMError, Unavailability};
 
     #[test]
     fn decoding_failure_is_not_an_initialization_error() {
         let error = map_error(FMError::DecodingFailure("invalid generated JSON".into()));
 
         assert_eq!(error.kind(), ErrorKind::Unknown);
+    }
+
+    /// Each category comes from the model's own typed failure, never from its message text.
+    #[test]
+    fn native_failures_keep_their_category() {
+        let cases = [
+            (FMError::GuardrailViolation("blocked".into()), ErrorKind::NotReadable),
+            (FMError::Refusal("declined".into()), ErrorKind::NotReadable),
+            (FMError::UnsupportedLanguage("no locale".into()), ErrorKind::NotSupported),
+            (FMError::UnsupportedGuide("no guide".into()), ErrorKind::NotSupported),
+            (FMError::UnsupportedCapability("no vision".into()), ErrorKind::NotSupported),
+            (FMError::UnsupportedTranscriptContent("no image".into()), ErrorKind::NotSupported),
+            (
+                FMError::ModelUnavailable {
+                    reason: Unavailability::AppleIntelligenceNotEnabled,
+                    message: "disabled".into(),
+                },
+                ErrorKind::NotSupported,
+            ),
+            (FMError::AssetsUnavailable("downloading".into()), ErrorKind::NotSupported),
+            (FMError::ContextWindowExceeded("too long".into()), ErrorKind::QuotaExceeded),
+            // Throttling is not context exhaustion: reporting it as one would fabricate a
+            // context-overflow event for a session that still fits.
+            (FMError::RateLimited("slow down".into()), ErrorKind::Unknown),
+            (FMError::Cancelled, ErrorKind::Aborted),
+        ];
+
+        for (native, expected) in cases {
+            let error = map_error(native);
+
+            assert_eq!(error.kind(), expected, "{}", error.message());
+        }
     }
 }

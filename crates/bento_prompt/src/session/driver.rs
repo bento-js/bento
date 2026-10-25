@@ -527,7 +527,12 @@ async fn collect(
                     }
                 }
             }
-            Some(Ok(Update::Replace(_))) => break Ended::Rewritten,
+            Some(Ok(Update::Replace(replacement))) => match sink {
+                // Nothing has reached a caller that waits for the whole answer, so a model
+                // that rewrites its own text simply ends with different text.
+                Sink::Collected => produced.text = replacement,
+                Sink::Channel(_) => break Ended::Rewritten,
+            },
             Some(Ok(Update::Snapshot { content_json, is_complete })) => {
                 if is_complete {
                     produced.complete = Some(content_json);

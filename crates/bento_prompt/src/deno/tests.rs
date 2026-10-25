@@ -6,7 +6,7 @@
 //! transitions the engine recorded. No model, host, or CLI is involved.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ::deno_web::{BlobStore, InMemoryBroadcastChannel, deno_web};
 use ::deno_webidl::deno_webidl;
@@ -55,6 +55,9 @@ globalThis.caught = async promise => {
         return { failed: failure(error) };
     }
 };
+// Resource identifiers are all JavaScript holds, and these ops are what anyone holding one
+// would reach with it.
+globalThis.ops = core.ops;
 globalThis.collect = async stream => {
     const chunks = [];
     const reader = stream.getReader();
@@ -153,6 +156,14 @@ impl Harness {
         )
         .await;
         assert!(waited.is_ok(), "the engine never reached this step: {:?}", self.engine.log());
+    }
+
+    /// Drives this isolate's event loop until it has nothing left to do, and reports whether
+    /// it finished within `within` rather than hanging the test when something holds it open.
+    async fn drains_within(&mut self, within: Duration) -> bool {
+        tokio::time::timeout(within, self.runtime.run_event_loop(PollEventLoopOptions::default()))
+            .await
+            .is_ok_and(|drained| drained.is_ok())
     }
 }
 
@@ -904,10 +915,8 @@ async fn the_creation_signal_controls_the_session_lifetime() {
         )
         .await;
     assert_eq!(result["identical"], true, "the session adopts the creation signal's reason");
-    assert!(
-        harness.engine.log().iter().any(|event| matches!(event, Event::Released)),
-        "aborting the creation signal releases the session"
-    );
+    // Release happens on the driver after the abort settles the promise.
+    harness.reached(|event| matches!(event, Event::Released)).await;
 }
 
 // Input validation and canonicalization.
@@ -1552,6 +1561,53 @@ async fn an_already_aborted_signal_throws_synchronously_only_for_streaming() {
     assert_eq!(harness.generations(), 0);
 }
 
+/// The draft's aggregated result checks the operation's abort before the operation prefills,
+/// and prefilling is what validates and canonicalizes the prompt. A destroyed session and an
+/// already-aborted signal therefore answer with their own reason, whatever the input is.
+#[tokio::test]
+async fn an_aborted_operation_answers_with_its_reason_before_validating_input() {
+    let mut harness = Harness::granted();
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        globalThis.reason = { stopped: 'before validation' };
+        const unsupported = [{ role: 'user', content: [{ type: 'image', value: 'x' }] }];
+        const aborted = () => ({ signal: AbortSignal.abort(reason) });
+        const answers = {};
+        answers.prompt = await caught(session.prompt(unsupported, aborted()));
+        answers.promptIdentical = lastError === reason;
+        answers.constraint = await caught(
+            session.prompt('ok', { ...aborted(), responseConstraint: { type: 'unknown' } }),
+        );
+        answers.constraintIdentical = lastError === reason;
+        answers.append = await caught(session.append(unsupported, aborted()));
+        answers.appendIdentical = lastError === reason;
+        session.destroy();
+        answers.destroyedPrompt = await caught(session.prompt(unsupported));
+        answers.destroyedAppend = await caught(session.append(unsupported));
+        return answers;
+        "#,
+        )
+        .await;
+    for operation in ["prompt", "constraint", "append"] {
+        assert!(
+            result[operation]["failed"].is_object(),
+            "an aborted operation rejects: {}",
+            result[operation]
+        );
+        assert_eq!(
+            result[format!("{operation}Identical").as_str()],
+            true,
+            "{operation} rejects with the abort reason itself, not with an input failure: {}",
+            result[operation]
+        );
+    }
+    assert_eq!(name(&result["destroyedPrompt"]), "AbortError");
+    assert_eq!(name(&result["destroyedAppend"]), "AbortError");
+    assert_eq!(harness.generations(), 0);
+}
+
 #[tokio::test]
 async fn an_operation_signal_cancels_only_that_operation() {
     let mut harness = Harness::granted();
@@ -1657,7 +1713,8 @@ async fn destroy_is_idempotent_and_cancels_pending_work() {
 #[tokio::test]
 async fn disposal_waits_for_native_settlement_after_destruction() {
     let mut harness = Harness::granted();
-    harness.engine.script(Script::hang().settle_after_cancel_ms(25));
+    harness.engine.script(Script::hang());
+    let settlement = harness.engine.hold_settlement();
     harness
         .run(
             r#"
@@ -1677,9 +1734,8 @@ async fn disposal_waits_for_native_settlement_after_destruction() {
         )
         .await;
     assert!(!harness.cleanup.is_idle(), "destruction alone does not prove native settlement");
-    let started = Instant::now();
+    settlement.release();
     harness.cleanup.settle().await;
-    assert!(started.elapsed() >= Duration::from_millis(20), "disposal awaited the native work");
     assert!(harness.cleanup.is_idle());
     assert!(harness.engine.log().iter().any(|event| matches!(event, Event::Settled(_))));
     assert!(harness.engine.log().iter().any(|event| matches!(event, Event::Released)));
@@ -1849,6 +1905,30 @@ async fn generation_that_exhausts_the_window_errors_the_stream_after_its_chunks(
     assert_eq!(result["chunks"], json!(["He"]), "delivered chunks are not retracted");
     assert_eq!(result["failed"]["name"], "QuotaExceededError");
     assert_eq!(result["events"], json!(["contextoverflow"]));
+}
+
+/// A model that declines to answer — a refusal or a safety guardrail — is the draft's
+/// NotReadableError, and the conversation survives it.
+#[tokio::test]
+async fn a_model_that_refuses_to_answer_is_a_not_readable_error() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::failing(ErrorKind::NotReadable));
+    harness.engine.script(Script::failing(ErrorKind::NotReadable));
+    harness.engine.script(Script::text(["allowed"]));
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create();
+        const prompted = await caught(session.prompt('describe the fight'));
+        const streamed = await caught(collect(session.promptStreaming('describe the fight')));
+        return { prompted, streamed, recovered: await session.prompt('describe the kelp') };
+        "#,
+        )
+        .await;
+    assert_eq!(name(&result["prompted"]), "NotReadableError");
+    assert!(result["prompted"]["failed"]["domException"].as_bool().unwrap());
+    assert_eq!(name(&result["streamed"]), "NotReadableError");
+    assert_eq!(result["recovered"], "allowed", "a refusal leaves the session usable");
 }
 
 // Constrained output.
@@ -2425,5 +2505,194 @@ fn sessions_belong_to_the_isolate_that_created_them() {
     assert!(
         second_committed.iter().all(|content| content != "first history"),
         "one isolate's history never reaches another: {second_committed:?}"
+    );
+}
+
+/// Resource identifiers are issued by, and only mean anything to, the isolate that holds
+/// them. One isolate's live session identifier, handed to another isolate's ops, reaches no
+/// session there and leaves the conversation it names untouched.
+#[test]
+fn a_session_identifier_from_another_isolate_reaches_nothing() {
+    let (announce, announced) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel();
+    let owner = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async move {
+            let mut harness = Harness::granted();
+            harness.engine.script(Script::text(["owner answer"]));
+            let session = harness
+                .run(
+                    r#"
+                globalThis.cancellation = ops.op_bento_prompt_cancellation();
+                const created = await ops.op_bento_prompt_create({}, cancellation);
+                globalThis.rid = created.value;
+                await ops.op_bento_prompt_append(
+                    rid,
+                    [{ role: 'user', content: 'owner history' }],
+                    cancellation,
+                );
+                return { rid, usage: ops.op_bento_prompt_usage(rid) };
+                "#,
+                )
+                .await;
+            announce.send(session["rid"].as_u64().expect("the owner holds a session")).unwrap();
+            released.recv().expect("the other isolate finished with the identifier");
+
+            harness
+                .run(
+                    r#"
+                return await ops.op_bento_prompt_prompt(
+                    rid, [{ role: 'user', content: 'who am i' }], {}, cancellation);
+                "#,
+                )
+                .await;
+            harness
+                .engine
+                .requests()
+                .last()
+                .expect("the owner prompted")
+                .committed
+                .iter()
+                .map(|message| message.content.clone())
+                .collect::<Vec<String>>()
+        })
+    });
+
+    let rid = announced.recv().expect("the owner announced its session");
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (reached, opened) = runtime.block_on(async move {
+        let mut harness = Harness::granted();
+        let reached = harness
+            .run(&format!(
+                r#"
+            const cancellation = ops.op_bento_prompt_cancellation();
+            const appended = await ops.op_bento_prompt_append(
+                {rid}, [{{ role: 'user', content: 'intruder history' }}], cancellation);
+            const prompted = await ops.op_bento_prompt_prompt(
+                {rid}, [{{ role: 'user', content: 'who am i' }}], {{}}, cancellation);
+            ops.op_bento_prompt_destroy({rid});
+            return {{
+                usage: String(ops.op_bento_prompt_usage({rid})),
+                appended: appended.status,
+                prompted: prompted.status,
+            }};
+            "#
+            ))
+            .await;
+        (reached, harness.engine.requests().len())
+    });
+    release.send(()).expect("the owner isolate is waiting for the identifier");
+    let committed = owner.join().expect("the owner isolate finished");
+
+    assert_eq!(reached["usage"], "NaN", "another isolate's identifier names no session here");
+    assert_eq!(reached["appended"], "failed");
+    assert_eq!(reached["prompted"], "failed");
+    assert_eq!(opened, 0, "the model is never asked anything through a foreign identifier");
+    assert_eq!(
+        committed,
+        vec!["owner history".to_owned()],
+        "the owner's conversation is only what the owner put in it"
+    );
+}
+
+/// A session nobody destroyed is not work: it holds no operation, so the instance's event
+/// loop drains and the guest ends. The control is the same isolate with a generation under
+/// way, which does keep it running.
+#[tokio::test]
+async fn an_idle_session_lets_the_event_loop_finish() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::text(["still here"]));
+    harness.run("globalThis.session = await LanguageModel.create(); return null;").await;
+
+    assert!(
+        harness.drains_within(Duration::from_secs(5)).await,
+        "an idle session kept the event loop running"
+    );
+    assert_eq!(
+        harness.run("return await session.prompt('anyone there?');").await,
+        "still here",
+        "the session was neither destroyed nor released by draining the loop"
+    );
+
+    let mut busy = Harness::granted();
+    busy.engine.script(Script::hang());
+    busy.run(
+        r#"
+        globalThis.session = await LanguageModel.create();
+        globalThis.pending = caught(session.prompt('hangs'));
+        return null;
+        "#,
+    )
+    .await;
+    busy.reached(|event| matches!(event, Event::Generated(_))).await;
+    assert!(
+        !busy.drains_within(Duration::from_millis(250)).await,
+        "a generation in flight is work, and work keeps the event loop running"
+    );
+}
+
+/// Members the draft deprecates or Bento does not implement are absent, not present and
+/// unsupported, and WebIDL ignores dictionary members it does not know.
+#[tokio::test]
+async fn deprecated_members_are_absent_and_unknown_dictionary_members_are_ignored() {
+    let mut harness = Harness::granted();
+    harness.engine.script(Script::text(["answered"]));
+    let result = harness
+        .run(
+            r#"
+        const session = await LanguageModel.create({
+            topK: 3,
+            temperature: 0.5,
+            tools: [{ name: 'lookup' }],
+            thisMemberDoesNotExist: true,
+        });
+        return {
+            params: typeof LanguageModel.params,
+            inputUsage: 'inputUsage' in session,
+            inputQuota: 'inputQuota' in session,
+            measureInputUsage: 'measureInputUsage' in session,
+            contextUsage: 'contextUsage' in session,
+            answer: await session.prompt('anything', { thisOptionDoesNotExist: true }),
+        };
+        "#,
+        )
+        .await;
+    assert_eq!(result["params"], "undefined", "`params()` is not implemented, so it is absent");
+    assert_eq!(result["inputUsage"], false, "the deprecated accounting name is absent");
+    assert_eq!(result["inputQuota"], false, "the deprecated accounting name is absent");
+    assert_eq!(result["measureInputUsage"], false, "the deprecated measurement name is absent");
+    assert_eq!(result["contextUsage"], true, "the accounting the crate does implement is there");
+    assert_eq!(result["answer"], "answered", "unknown dictionary members change nothing");
+}
+
+/// Tool calls and tool responses are content types this backend cannot serve: a
+/// configuration expecting them is unavailable, and creating it is an unsupported capability.
+#[tokio::test]
+async fn tool_content_types_are_unavailable_and_reject_creation() {
+    let mut harness = Harness::granted();
+    let result = harness
+        .run(
+            r#"
+        const results = {};
+        for (const type of ['tool-call', 'tool-response']) {
+            results[type] = {
+                input: await LanguageModel.availability({ expectedInputs: [{ type }] }),
+                output: await LanguageModel.availability({ expectedOutputs: [{ type }] }),
+                creation: await caught(LanguageModel.create({ expectedInputs: [{ type }] })),
+            };
+        }
+        return results;
+        "#,
+        )
+        .await;
+    for kind in ["tool-call", "tool-response"] {
+        assert_eq!(result[kind]["input"], "unavailable", "{kind} input");
+        assert_eq!(result[kind]["output"], "unavailable", "{kind} output");
+        assert_eq!(name(&result[kind]["creation"]), "NotSupportedError", "{kind} creation");
+    }
+    assert!(
+        harness.engine.log().is_empty(),
+        "a content type this backend cannot serve is decided before the model: {:?}",
+        harness.engine.log()
     );
 }
