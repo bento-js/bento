@@ -2,7 +2,7 @@
 id: proposal.0002
 title: Web Prompt API with macOS Foundation Models
 authors: [Mark]
-status: active-review
+status: implemented
 pull-request: https://github.com/bento-js/bento/pull/249
 issues: []
 supersedes: []
@@ -21,6 +21,8 @@ On 2026-10-24, Mark requested the Web Prompt API, macOS Foundation Models as the
 On 2026-10-24, Mark approved this design for implementation, with macOS 27.0 as the native-backend minimum. He approved the text-session/constrained-JSON scope, engine-independent crate with optional Deno adapter, default-enabled CLI backend, opt-in library backend, and backend-free builds. He also authorized creating and using a fork containing the narrowly scoped binding changes, with eventual upstreaming if the author is amenable. His instruction was “This design is approved to go to implementation”; the [approval record](https://github.com/bento-js/bento/pull/249#issuecomment-6388198021) preserves these decisions. This authorizes implementation and feature/dependency branch publication, not acceptance, merging, package release, or production deployment. The earlier runtime mandate is not used.
 
 The feature branch was stacked on `sesh/rust-style-guide-alignment` at `791c5f76a354efc9f70a41f7b0593fe0522cb8e9`. During proposal preparation, PR #247 merged into `main` as `60ca248`, and deletion of its branch automatically closed PR #248. GitHub rejected reopening the closed PR or changing its base. [PR #249](https://github.com/bento-js/bento/pull/249) replaces it against `main`, which contains the prerequisite commits. The pushed feature history was not rewritten.
+
+On 2026-10-25, Mark accepted the implementation after reviewing the [readiness report](https://github.com/bento-js/bento/pull/249#issuecomment-6404964567). His instruction was “This all looks good to me. You're approved to merge this in, close the PR, and clean up afterwards.” That acceptance acknowledges the post-approval clarification in `6e999bf` and confirms the decisions the report lists: a self-ended run whose native work outlives the shutdown deadline reports `RunOutcome::Shutdown` with `TimedOut`, `prompt()` returns the model's final text after a native rewrite nobody received, an empty expected content type is unsupported, measurement accepts a system message on a session with history, input ending in an assistant or system message generates after an empty user turn, and the public Rust API gains `Quota`, `Error::quota()`, and `Cancellation::child()`. Delivery is merge-only: the crates remain `publish = false`, and no package release or deployment is required.
 
 ## Motivation
 
