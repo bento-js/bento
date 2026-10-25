@@ -69,7 +69,7 @@ For an available model, the notifications run in separate tasks before native in
 
 ## Messages and context
 
-A prompt can be a string or an array of messages. Message roles are `system`, `user`, and `assistant`; content is a string or an array of `{ type: "text", value: "..." }` items. Initial user and assistant messages restore conversation history without generating responses. A system message may occur only once, first in a previously empty conversation. Later system messages reject with `TypeError`.
+A prompt can be a string or an array of messages. Message roles are `system`, `user`, and `assistant`; content is a string or an array of `{ type: "text", value: "..." }` items. Initial user and assistant messages restore conversation history without generating responses. A system message may occur only once, first in a previously empty conversation. Later system messages reject with `TypeError`. That rule governs input a session commits, so `measureContextUsage()` still measures a system message on a session that already has history.
 
 Inputs follow WebIDL conversion. For example, a text-content `value` of `7` becomes `"7"`; `ArrayBuffer`, typed-array, `Blob`, and image values cannot be relabelled as text. Message and content sequences accept iterable objects, including callable objects. An iterator property of `null` selects the string branch instead.
 
@@ -83,11 +83,11 @@ console.log({ addedUsage, used: session.contextUsage, capacity: session.contextW
 console.log(await session.prompt("What is the code word?"));
 ```
 
-`append()` commits messages without generating a response. `measureContextUsage()` measures the supplied input and relevant constraint overhead without changing history. An empty prompt, including `prompt([])`, is an empty user message. Adjacent text content is canonicalized before processing.
+`append()` commits messages without generating a response. `measureContextUsage()` measures the supplied input and relevant constraint overhead without changing history. It validates that input as if the conversation were empty, so a system message is measurable even on a session that already has history; nothing is committed either way. An empty prompt, including `prompt([])`, is an empty user message. Adjacent text content is canonicalized before processing.
 
 Usage and capacity are measured with the native tokenizer for the representation sent to the model. The empty transcript's serialization overhead is reserved in the advertised capacity, so an empty session starts at zero public usage. Capacity is queried from the model; it is not a fixed token count. Usage updates before an operation settles and includes successful generated output. An included response constraint remains part of its prompt's context cost on later turns and in clones; it is not a one-time surcharge.
 
-An oversized initial conversation or prompt rejects with `QuotaExceededError` before committing its input. An existing session also dispatches one `contextoverflow` event for the failing operation; `oncontextoverflow` is available as an event-handler property. Generation can itself exhaust capacity. In that case the promise rejects or the stream errors, and chunks already delivered remain delivered. Bento never evicts history, summarizes it, or retries automatically.
+An oversized initial conversation or prompt rejects with `QuotaExceededError` before committing its input. That rejection is the WebIDL `QuotaExceededError`: `requested` is the public usage the whole conversation would have occupied, and `quota` is the public context window. Creation counts what the initial conversation needs against an empty session, a prefill counts current usage plus its input, and generation exhaustion counts usage plus input plus the generated response. When the model itself reports exhaustion instead of Bento's accounting, both fields are null, because Bento has no public figures for the model's own measurement. An existing session also dispatches one `contextoverflow` event for the failing operation; `oncontextoverflow` is available as an event-handler property. Generation can itself exhaust capacity. In that case the promise rejects or the stream errors, and chunks already delivered remain delivered. Bento never evicts history, summarizes it, or retries automatically.
 
 State-changing operations and clone snapshots on one session run in invocation order. Different sessions can progress independently. After input passes preflight, failed or cancelled generation retains that input but discards any partial assistant response. A queued cancellation and failed validation or preflight leave history unchanged.
 
@@ -105,7 +105,7 @@ for await (const chunk of stream) {
 
 `promptStreaming()` returns a `ReadableStream` immediately. Ordinary text streams deliver incremental strings whose concatenation is the response. Bento errors the stream if the native model rewrites a prefix that was already delivered. It does not append a replacement as if it were a new suffix. A non-streaming `prompt()` has delivered nothing to its caller, so the same rewrite is not a failure there: the promise resolves with the model's final text.
 
-An operation's `signal` cancels only that operation. JavaScript abort reasons are preserved, including non-Error values. An already-aborted `promptStreaming()` call throws synchronously; promise-returning operations reject. Cancelling a reader stops native generation without inventing an error for the cancelled stream. Backpressure keeps transport buffering bounded, and cancellation still works when the consumer stops reading.
+An operation's `signal` cancels only that operation. JavaScript abort reasons are preserved, including non-Error values. An already-aborted `promptStreaming()` call throws synchronously; promise-returning operations reject. Guest code that aborts the signal or destroys the session from inside a `responseConstraint` getter gets the same synchronous throw, with the abort or destruction reason. Cancelling a reader stops native generation without inventing an error for the cancelled stream. Backpressure keeps transport buffering bounded, and cancellation still works when the consumer stops reading. Bounded transport also means an unread stream holds its session: later operations on it wait until that stream is read, cancelled, or the session is destroyed.
 
 The signal passed to `create()` controls the session's lifetime. Aborting it destroys that session and cancels pending work. `destroy()` is synchronous and idempotent: the session becomes unusable immediately, pending work is cancelled, and native cleanup settles safely in the background. Later operations fail with the destruction reason. Runtime shutdown and worker termination cancel owned sessions even when guest code forgets to destroy them; an idle session does not keep the CLI running.
 
@@ -120,7 +120,7 @@ try {
 }
 ```
 
-A clone starts with the source's committed history, context usage, and capacity at its ordered snapshot point. Later changes and destruction are independent. A clone's signal cancels the cloning operation; it does not control a successfully completed clone. Cloning an already full conversation does not create extra capacity.
+A clone starts with the source's committed history, context usage, and capacity at its ordered snapshot point. Later changes and destruction are independent. A clone's signal cancels the cloning operation; it does not control a successfully completed clone. A cloning that its signal abandoned destroys the clone that arrives afterwards rather than leaving it live. Cloning an already full conversation does not create extra capacity.
 
 ## Constrain JSON output
 
@@ -184,7 +184,7 @@ bento run --allow-read=. --allow-language-model examples/prompt-api/shutdown.ts
 bento run --allow-read=. --allow-language-model examples/prompt-api/idle.ts
 ```
 
-The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Model work still unsettled at the shutdown deadline is reported as incomplete disposal instead, and `bento` exits with status 1.
+The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Work that has not settled by the shutdown deadline is reported as incomplete disposal instead, and `bento` exits with status 1.
 
 On a backend-free build, the same preview exercises genuine unavailability:
 
@@ -211,7 +211,7 @@ These native previews fail explicitly if the model is unavailable. They are sepa
 | Invalid message or supported schema shape | `TypeError`; invalid prefix role or position uses `SyntaxError` |
 | Valid assistant-prefix continuation request | `NotSupportedError` |
 | Native refusal or safety filtering | `NotReadableError` |
-| Context exhaustion | `QuotaExceededError`, plus an existing session's `contextoverflow` event |
+| Context exhaustion | `QuotaExceededError`; `requested` and `quota` carry Bento's measurement, or are null when the model reported the exhaustion; an existing session also gets a `contextoverflow` event |
 | Cancellation | The applicable abort reason; explicit destruction uses `AbortError` |
 | Failure to determine model readiness | `UnknownError` |
 | Other native initialization failure during creation or cloning | `OperationError` |
