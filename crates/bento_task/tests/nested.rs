@@ -91,6 +91,7 @@ fn task_children_receive_the_launch_grants_as_their_ceiling() {
     let grants = GrantRequest {
         read: Some(Scope::Only(BTreeSet::from([temp.root().to_path_buf()]))),
         env: Some(Scope::Only(BTreeSet::from(["DATABASE_URL".to_string()]))),
+        language_model: Some(true),
         ..GrantRequest::default()
     }
     .resolve(None)

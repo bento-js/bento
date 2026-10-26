@@ -16,6 +16,8 @@ use deno_tls::{RootCertStoreProvider, rustls::RootCertStore};
 use sys_traits::impls::RealSys;
 use tokio::sync::mpsc;
 
+use bento_prompt::deno::{Access, Cleanup};
+
 use crate::host::HostModules;
 use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
@@ -33,8 +35,16 @@ pub(crate) async fn run(
     control: Arc<Control>,
     mut commands: mpsc::UnboundedReceiver<Command>,
 ) -> RunOutcome {
-    let mut worker = match create_worker(config, &entry, modules, sources.clone(), control.clone())
-    {
+    let disposal_deadline = config.shutdown_deadline;
+    let sessions = Cleanup::new();
+    let mut worker = match create_worker(
+        config,
+        &entry,
+        modules,
+        sources.clone(),
+        control.clone(),
+        sessions.clone(),
+    ) {
         Ok(worker) => worker,
         Err(error) => {
             let outcome = RunOutcome::Failed(RuntimeError::startup(format!(
@@ -53,6 +63,19 @@ pub(crate) async fn run(
     close_resources(&mut worker);
     drop(worker);
     control.close_workers();
+    // Closing a session cancels its model work; the native side still has to finish. Until
+    // it has, this instance's disposal is not complete, whatever the isolates look like.
+    let settled = tokio::time::timeout(disposal_deadline, sessions.settle()).await.is_ok();
+    finish(&control, outcome, settled)
+}
+
+/// What this run reports. Owned native work that outlived the disposal deadline leaves the
+/// instance's disposal incomplete, so the bounded shutdown's report is the honest answer
+/// even for a run that ended on its own terms.
+fn finish(control: &Control, outcome: RunOutcome, settled: bool) -> RunOutcome {
+    if !settled {
+        control.incomplete_disposal();
+    }
     match control.complete(&outcome) {
         Some(report) if !matches!(report.outcome, crate::ShutdownOutcome::Failed(_)) => {
             RunOutcome::Shutdown(report)
@@ -126,10 +149,12 @@ fn create_worker(
     modules: HostModules,
     sources: Arc<Sources>,
     control: Arc<Control>,
+    sessions: Cleanup,
 ) -> anyhow::Result<LibMainWorker> {
     let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
     let node =
         NodeServices::new(&config.project_root, permissions.clone(), sources.clone(), &control);
+    let model = Access::new(config.grants.language_model);
     let environment = instance_environment(&mut config);
     let loader = LoaderFactory {
         node: node.clone(),
@@ -143,11 +168,14 @@ fn create_worker(
         environment.clone(),
         config.argv.clone(),
         Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
+        model,
+        sessions.clone(),
     ));
     let factory = main_worker_factory(config, loader, &node, &workers, &control);
     let extensions = vec![
         bento_instance::init(environment, modules, control.clone(), node.inputs),
         crate::feature_ops::extension(workers.callback()),
+        bento_prompt::deno::extension(model, sessions),
     ];
     let mut worker = main_worker(&factory, entry, permissions, extensions)?;
     load_require_watch(&mut worker)?;
@@ -282,5 +310,47 @@ struct Certificates(LazyLock<RootCertStore>);
 impl RootCertStoreProvider for Certificates {
     fn get_or_try_init(&self) -> Result<&RootCertStore, JsErrorBox> {
         Ok(&self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::finish;
+    use crate::lifecycle::Control;
+    use crate::{RunOutcome, RuntimeError, RuntimeHandle, ShutdownOutcome};
+
+    fn control() -> std::sync::Arc<Control> {
+        Control::new(Duration::from_millis(50)).expect("control starts").0
+    }
+
+    #[test]
+    fn a_run_whose_disposal_did_not_finish_is_reported_as_incomplete() {
+        for ending in [
+            RunOutcome::Completed,
+            RunOutcome::Exited(3),
+            RunOutcome::Failed(RuntimeError::startup("guest failed")),
+        ] {
+            let control = control();
+
+            let reported = finish(&control, ending, false);
+
+            let RunOutcome::Shutdown(report) = reported else {
+                panic!("a run with unsettled native work reported {reported:?} as its ending");
+            };
+            assert_eq!(report.outcome, ShutdownOutcome::TimedOut);
+            let handle = RuntimeHandle { control: std::sync::Arc::clone(&control) };
+            assert_eq!(handle.shutdown(), report, "a later shutdown call returns the same report");
+        }
+    }
+
+    #[test]
+    fn a_run_that_disposed_of_everything_reports_its_own_ending() {
+        let control = control();
+
+        let reported = finish(&control, RunOutcome::Exited(2), true);
+
+        assert!(matches!(reported, RunOutcome::Exited(2)), "{reported:?}");
     }
 }

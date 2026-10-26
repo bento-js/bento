@@ -60,7 +60,8 @@ pub enum RunOutcome {
     Exited(i32),
     /// The instance failed before or during execution.
     Failed(RuntimeError),
-    /// A host-requested shutdown ended the run; the report says how far it got.
+    /// A host-requested shutdown ended the run, or the run ended on its own but its disposal
+    /// did not finish; the report says how far it got.
     Shutdown(crate::ShutdownReport),
 }
 
@@ -175,8 +176,10 @@ fn classify(error: &CoreError) -> ErrorKind {
     ErrorKind::Uncaught
 }
 
+// `NotAllowedError` is the web Prompt API's name for a denied host grant; an uncaught one is
+// a permission failure like any other, not an ordinary guest exception.
 fn has_permission_cause(error: &JsError) -> bool {
-    matches!(error.name.as_deref(), Some("NotCapable" | "PermissionDenied"))
+    matches!(error.name.as_deref(), Some("NotCapable" | "PermissionDenied" | "NotAllowedError"))
         || error.cause.as_deref().is_some_and(has_permission_cause)
         || error.aggregated.as_ref().is_some_and(|errors| errors.iter().any(has_permission_cause))
 }

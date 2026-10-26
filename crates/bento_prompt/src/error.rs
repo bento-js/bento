@@ -1,0 +1,111 @@
+//! Typed failures reported by this crate.
+
+use std::fmt;
+
+/// Category of a [`Error`].
+///
+/// Categories come from validation and from the model's typed failures; they
+/// are never inferred from a localized message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorKind {
+    /// The requested capability, language, schema feature, or backend is not
+    /// supported by this build or by the on-device model.
+    NotSupported,
+    /// The supplied messages or options are invalid.
+    InvalidInput,
+    /// The conversation would exceed the model's context window.
+    QuotaExceeded,
+    /// The model refused the request or filtered its output.
+    NotReadable,
+    /// The operation or its session was cancelled.
+    Aborted,
+    /// Creating or cloning a session failed for infrastructure reasons.
+    Operation,
+    /// A generation failed without a more specific category.
+    Unknown,
+}
+
+impl ErrorKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotSupported => "not supported",
+            Self::InvalidInput => "invalid input",
+            Self::QuotaExceeded => "quota exceeded",
+            Self::NotReadable => "not readable",
+            Self::Aborted => "aborted",
+            Self::Operation => "operation",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+impl fmt::Display for ErrorKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+/// What a context-exhaustion failure needed, in the accounting its caller sees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    /// Tokens the conversation would have occupied, this operation's input included.
+    pub requested: usize,
+    /// Tokens the session can hold in total.
+    pub quota: usize,
+}
+
+/// A failure of a prompt-session operation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error {
+    kind: ErrorKind,
+    message: String,
+    quota: Option<Quota>,
+}
+
+impl Error {
+    pub(crate) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into(), quota: None }
+    }
+
+    /// A conversation that does not fit, with the numbers it did not fit into.
+    pub(crate) fn exhausted(message: impl Into<String>, requested: usize, quota: usize) -> Self {
+        Self {
+            kind: ErrorKind::QuotaExceeded,
+            message: message.into(),
+            quota: Some(Quota { requested, quota }),
+        }
+    }
+
+    pub(crate) fn for_initialization(mut self) -> Self {
+        if self.kind == ErrorKind::Unknown {
+            self.kind = ErrorKind::Operation;
+        }
+        self
+    }
+
+    /// The category of this failure.
+    #[must_use]
+    pub const fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    /// A diagnostic description of this failure.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// What this failure needed and what it had, for a context-exhaustion failure.
+    #[must_use]
+    pub const fn quota(&self) -> Option<Quota> {
+        self.quota
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.kind, self.message)
+    }
+}
+
+impl std::error::Error for Error {}

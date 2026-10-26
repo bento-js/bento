@@ -10,8 +10,9 @@ use bento_host::{
     NetTarget, Scope, WiderGrant, canonical_path,
 };
 
-/// The grant options of one launch. A flag without `=` grants its whole kind; with `=`, only
-/// the comma-separated items. Each flag may be given once.
+/// The grant options of one launch. A scoped flag without `=` grants its whole kind; with `=`,
+/// only the comma-separated items. `--allow-language-model` is a capability rather than a scope:
+/// bare it grants model access and `=false` denies it. Each flag may be given once.
 #[derive(Debug, Args)]
 #[command(next_help_heading = "Grants")]
 pub(crate) struct GrantFlags {
@@ -46,6 +47,12 @@ pub(crate) struct GrantFlags {
         require_equals = true, value_delimiter = ','
     )]
     allow_addons: Option<Vec<String>>,
+    /// Allow using the local language model, or deny it with `=false`
+    #[arg(
+        long, value_name = "BOOL", num_args = 0..=1, action = ArgAction::Set,
+        require_equals = true, default_missing_value = "true"
+    )]
+    allow_language_model: Option<bool>,
 }
 
 #[derive(Debug, Error)]
@@ -104,6 +111,7 @@ impl GrantFlags {
                 self.allow_addons.as_deref(),
                 path(GrantKind::Addons),
             )?,
+            language_model: self.allow_language_model,
         })
     }
 }
@@ -141,6 +149,8 @@ fn exceeded(wider: &WiderGrant, request: &GrantRequest, ceiling: &Grants) -> Gra
         GrantKind::Net => (is_all(request.net.as_ref()), describe(&ceiling.net)),
         GrantKind::Env => (is_all(request.env.as_ref()), describe(&ceiling.env)),
         GrantKind::Addons => (is_all(request.addons.as_ref()), describe(&ceiling.addons)),
+        // A denied capability is the only language-model ceiling a request can exceed.
+        GrantKind::LanguageModel => (true, "none".to_owned()),
     };
     let flag = if requested_all {
         format!("--allow-{}", wider.kind)

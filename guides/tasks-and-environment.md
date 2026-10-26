@@ -1,7 +1,7 @@
 ---
 id: guide.tasks-and-environment
 title: Tasks and Environment
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0002]
 ---
 
 # Tasks and Environment
@@ -60,6 +60,8 @@ A task command that runs `bento` again receives two variables from the launch th
 - `BENTO_ENV_FILE_KEYS` records which variables Bento loaded from `.env` files, with a fingerprint of each loaded value. The nested launch treats those variables as file values it may load again for its own mode, rather than as values you exported. A variable the task command assigns for the nested launch is left out, so it stays explicit even when it repeats the value from `.env`: `DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. A variable whose value no longer matches its fingerprint is explicit too.
 
 These variables describe the trusted host's policy; they are not authority that guest code can claim.
+
+The language-model capability follows the same ceiling: an omitted `--allow-language-model` inherits it, `--allow-language-model=false` narrows it, and `--allow-language-model` under a denying ceiling fails. Old ceilings without the field deny access. This applies to Bento guests; a trusted task's independent native programs retain the user's OS authority.
 
 Bento reads a command's own assignments from its text, following the shell's scoping rules:
 

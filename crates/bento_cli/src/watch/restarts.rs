@@ -192,12 +192,16 @@ impl Restarts {
     }
 }
 
-/// Reports `outcome` if the script failed; ending any other way is expected while restarting.
+/// Reports `outcome` if the script failed or left work unfinished; ending any other way is
+/// expected while restarting.
 fn report_failure(outcome: RunOutcome) {
     match outcome {
         RunOutcome::Failed(error)
         | RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::Failed(error) }) => {
             CliError::Script(error).report();
+        }
+        RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::TimedOut }) => {
+            eprintln!("watch: {}", CliError::IncompleteDisposal);
         }
         _ => {}
     }

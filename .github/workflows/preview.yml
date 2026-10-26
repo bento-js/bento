@@ -1,9 +1,5 @@
-# The preview: the cheapest realistic artifact through which a human can exercise the change.
-#
-# Bento's repository holds its vision, architecture, and project record, so its preview is the
-# rendered site, deployed to a real URL and commented on the pull request. A downloadable build
-# artifact is not a preview — nobody unzips a file and starts a local server to review a docs
-# change.
+# This workflow previews the project record and guides as a rendered site.
+# CI also builds installable native and backend-free CLI preview archives.
 #
 # GitHub Pages serves the preview publicly. That is correct only while the record is already
 # readable in a public repository; a private repository should use the Cloudflare Pages recipe at

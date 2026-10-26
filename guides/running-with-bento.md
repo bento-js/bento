@@ -1,7 +1,7 @@
 ---
 id: guide.running-with-bento
 title: Running with Bento
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0002]
 ---
 
 # Running with Bento
@@ -21,13 +21,15 @@ Bento options go before the target. Everything after the target belongs to the s
 
 ### Get Bento
 
-Bento is built from this repository for macOS on Apple silicon. Building needs the Rust toolchain pinned in `rust-toolchain.toml`, which `rustup` selects automatically. From the repository root:
+Bento is built from this repository for macOS on Apple silicon. The default CLI build includes the local Prompt API backend and requires macOS 27.0 or newer and Xcode with SDK 27 or newer. Building also needs the Rust toolchain pinned in `rust-toolchain.toml`, which `rustup` selects automatically. From the repository root:
 
 ```sh
 cargo install --locked --path crates/bento_cli
 ```
 
 This installs the `bento` executable into Cargo's bin directory (`~/.cargo/bin` by default). Running an installed project needs nothing else. Installing dependencies needs pnpm and Node, because `bento install` delegates to the project's declared pnpm, and the package tools a task runs, such as `oxfmt`, `tsc`, or `remix db migrate`, start through their own executables, which may be Node scripts.
+
+Use `cargo install --locked --path crates/bento_cli --no-default-features` for a backend-free build without the new Foundation Models SDK requirement. The JavaScript `LanguageModel` API remains present but unavailable. See [Using the Prompt API](prompt-api.md) for model readiness, grants, and Rust reuse.
 
 ### Choose what to run
 
@@ -48,7 +50,7 @@ Arguments for a task go after `--`, and Bento appends them, shell-quoted, to the
 
 ### Grant capabilities
 
-Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, or load native addons. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
+Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, load native addons, or access the local language model. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
 
 | Flag | Grants | Items |
 | --- | --- | --- |
@@ -57,8 +59,11 @@ Guest code can use only what the launch grants it. Without any grant flag, a scr
 | `--allow-net[=HOST[:PORT],...]` | Connecting and listening | A hostname, an IPv4 address, or an IPv6 address in brackets, as in `[::1]:8080`; a host without a port covers all its ports |
 | `--allow-env[=NAME,...]` | Seeing and setting environment variables | Exact variable names |
 | `--allow-addons[=PATH,...]` | Loading native Node-API addons | Paths; each covers everything beneath it |
+| `--allow-language-model[=true\|false]` | Accessing the local language model | Boolean capability; no model identifiers |
 
-A flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
+For the scoped flags above, a flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
+
+`--allow-language-model` requests the boolean capability. `--allow-language-model=false` explicitly denies it, including when a nested launch inherits access. Without the grant, model availability reports `unavailable` and creation fails with `NotAllowedError` before inspecting native readiness.
 
 A network target names an endpoint, not a spelling. Hostnames match regardless of case, and IP addresses match by value: `[0:0:0:0:0:0:0:1]:8080` is the same endpoint as `[::1]:8080`, and the IPv4-mapped `[::ffff:127.0.0.1]` is the same as `127.0.0.1`. Bento never looks hostnames up, so `localhost` and `127.0.0.1` stay different targets.
 
@@ -105,6 +110,8 @@ Packages with Node-API native addons, such as the compilers `remix/assets` uses,
 An addon runs as native code in the `bento` process, so it sees the environment `bento` itself was started with, not the variables granted to the script. The Oxc resolver that `remix/assets` loads honors `NODE_PATH` there: launched with `NODE_PATH` pointing at another project's packages, it can resolve packages outside your project, which a scoped read grant then denies. Start `bento` without `NODE_PATH` set.
 
 Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. It shows the error's message and where it happened, as [Read error reports](#read-error-reports) describes, and `bento` exits with status 1.
+
+A script that ends while work it started is still running does not finish the run yet. Bento cancels that work and waits five seconds for it to settle. When it has not settled by then, `bento` reports that the work the script started did not finish within the shutdown deadline and that disposal is incomplete, then exits with status 1, whatever the script's own exit code was.
 
 ### Read error reports
 
@@ -170,6 +177,8 @@ A module the script actually loads from one of those places, such as an entrypoi
 
 Edits within about a tenth of a second of each other cause one restart. Bento says on standard error which file changed each time it restarts. The new instance starts only after the old one has shut down, as it would for a termination signal, and released its port. When loading fails, Bento reports the error, says it is waiting for changes, and keeps watching, so fixing the file or creating the missing one recovers; it never keeps serving the old code as though the reload had worked. A script that ends by itself, by finishing its work or calling `process.exit`, does not end the watch either: Bento reports how it ended and runs it again after the next change.
 
+When a run ends with work it started still unsettled at the shutdown deadline, Bento says that disposal is incomplete and keeps watching, instead of ending with status 1 as a plain `bento run` does. A restart whose shutdown leaves work unfinished is reported the same way.
+
 Watching does not reload `.env` files and does not rerun the tasks that started it. When the guest book's `dev` task starts `bento run --watch server.ts`, migrations run once, before the watcher starts. `--watch` selects the `development` mode for the environment files and `NODE_ENV` unless your environment or `.env` sets `NODE_ENV`.
 
 Stopping the command stops both the application and the watching. Ctrl-C or a termination signal stops the running script as [Stop a run](#stop-a-run) describes, and then `bento` exits instead of waiting for changes. When no script is running, because loading failed or the script ended by itself, `bento` exits at once with `130` or `143`. A nested `bento run --watch` that a task started stops the same way when you stop the outer `bento`.
@@ -203,7 +212,7 @@ A second Ctrl-C or termination signal does not wait: `bento` exits immediately w
 | pnpm's code | `pnpm install` failed. |
 | `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
 | `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
-| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, or threw an uncaught exception. |
+| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
 
 ## Worked example
 

@@ -15,6 +15,10 @@ workspace = true
 name = "bento"
 path = "src/main.rs"
 
+[features]
+default = ["prompt-foundation-models"]
+prompt-foundation-models = ["bento_runtime/prompt-foundation-models"]
+
 [dependencies]
 ariadne = "0.6.0"
 bento_host.workspace = true

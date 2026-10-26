@@ -47,6 +47,10 @@ pub(crate) enum CliError {
     WatchedTask(String),
     #[error("{}: {}", runtime_report::describe(.0.kind), runtime_report::plain_text(&.0.message))]
     Script(RuntimeError),
+    #[error(
+        "work the script started did not finish within the shutdown deadline; disposal is incomplete"
+    )]
+    IncompleteDisposal,
     #[error("cannot watch {} for changes: {source}", .path.display())]
     Watch { path: PathBuf, source: notify::Error },
 }

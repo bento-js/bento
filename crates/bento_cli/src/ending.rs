@@ -65,6 +65,39 @@ pub(crate) fn finished(outcome: RunOutcome) -> Result<ExitCode, CliError> {
         RunOutcome::Completed => Ok(ExitCode::SUCCESS),
         RunOutcome::Exited(code) => Ok(process_exit_code(code)),
         RunOutcome::Failed(error) => Err(CliError::Script(error)),
-        RunOutcome::Shutdown(_) => unreachable!("bento shuts a script down only after a signal"),
+        // A script that ended by itself reports a shutdown only when its disposal did not
+        // finish: work it started outlived the deadline, so nothing can say the run is over
+        // and done with.
+        RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::TimedOut }) => {
+            Err(CliError::IncompleteDisposal)
+        }
+        RunOutcome::Shutdown(_) => {
+            unreachable!("a script that ended by itself reports only incomplete disposal")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::ExitCode;
+
+    use bento_runtime::{RunOutcome, ShutdownOutcome, ShutdownReport};
+
+    use super::finished;
+
+    /// A script can end on its own while work it started is still running. The runtime
+    /// reports that as incomplete disposal, and `bento` says so and fails rather than
+    /// claiming the script finished cleanly.
+    #[test]
+    fn a_script_whose_disposal_did_not_finish_is_reported_as_an_error() {
+        let outcome = RunOutcome::Shutdown(ShutdownReport { outcome: ShutdownOutcome::TimedOut });
+
+        let error = finished(outcome).expect_err("incomplete disposal is not a clean ending");
+
+        assert!(
+            error.to_string().contains("disposal is incomplete"),
+            "the ending a user sees must say what was left unfinished: {error}"
+        );
+        assert_eq!(format!("{:?}", error.exit_code()), format!("{:?}", ExitCode::from(1)));
     }
 }

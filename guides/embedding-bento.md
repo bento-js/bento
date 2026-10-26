@@ -1,7 +1,7 @@
 ---
 id: guide.embedding-bento
 title: Embedding Bento
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0002]
 ---
 
 # Embedding Bento
@@ -63,7 +63,7 @@ The runtime loads the project compiler settings once before execution and transf
 
 ## Grants and environment
 
-Read, write, network, environment, and native-addon authority are independent. Ungranted operations fail without interactive prompts. Guest subprocesses and remote module imports remain unavailable. Granting access to a host module does not grant filesystem or database authority: the Rust handler remains responsible for its application's service policy, such as rejecting writes to a read-only store.
+Read, write, network, environment, native-addon, and language-model authority are independent. Ungranted operations fail without interactive prompts. Guest subprocesses and remote module imports remain unavailable. Granting access to a host module does not grant filesystem or database authority: the Rust handler remains responsible for its application's service policy, such as rejecting writes to a read-only store.
 
 Build path items with `bento_host::canonical_path`, which resolves an absolute path as the operating system would: symlinks are followed, a `..` after a link leaves the link's target, a dangling link names the location it points to, and a part that does not exist yet is kept as written beneath its nearest existing directory. Parse network items from text with `"[::1]:8080".parse::<NetTarget>()`, which accepts a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port and rejects anything else. Network items name endpoints: IP addresses are kept in canonical form and hostnames in lowercase, so `[0:0:0:0:0:0:0:1]:8080` and `[::1]:8080` are one target, and hostnames are never looked up.
 
@@ -78,6 +78,14 @@ Only granted names from `RuntimeConfig.env` are visible through `process.env` an
 Web Workers and `node:worker_threads` inherit the instance's environment and host-module registrations, not the host process environment. Their environment operations, signal listeners, and working-directory operations obey the same containment as the main isolate. Guest `chdir` cannot change the host's working directory.
 
 Unsupported upstream features, including `Worker`'s `deno.permissions` option and listeners with `reusePort`, throw `NotSupported` before starting a worker or binding a listener. Guests can catch these errors; uncaught errors fail only the instance as `ErrorKind::Uncaught` with the guest source location. `process.abort()`, `process.kill()`, and `Deno.kill()` cannot terminate or signal the host process; they fail explicitly. Use the host's runtime handle for signal delivery.
+
+### Enable the local language model
+
+Enable `bento_runtime`'s opt-in `prompt-foundation-models` Cargo feature and set `RuntimeConfig.grants.language_model = true` to expose native model access to guests. The native backend requires Apple silicon, macOS 27.0 or newer, SDK 27 or newer for builds, and a ready Apple Intelligence model. Build the embedding executable with `MACOSX_DEPLOYMENT_TARGET=27.0`: only the final link declares a deployment target, and at Rust's default macOS floor the linker selects Swift's back-deployment concurrency library, which the executable cannot resolve at run time. Library embeddings enable neither the feature nor the grant by default.
+
+`LanguageModel` remains exposed without the feature. Without the grant, its availability is `unavailable` and creation rejects with `NotAllowedError` before the backend is inspected. Workers inherit the grant but own separate session resources. Runtime disposal cancels inference and waits for native callbacks to settle within the existing bounded shutdown contract; `TimedOut` still means disposal is incomplete.
+
+For Rust-only model use, depend on `bento_prompt` with its `foundation-models` feature; no V8 runtime is required. [Using the Prompt API](prompt-api.md) describes the web surface, schema subset, cancellation rules, and ambient declarations.
 
 ## Expose asynchronous Rust services
 
@@ -113,9 +121,11 @@ Failed `require.resolve` calls with `options.paths` record no watch inputs. Repa
 
 `handle.signal(Signal::Terminate)` delivers virtual `SIGTERM`; `Signal::Interrupt` delivers virtual `SIGINT`. Guest `process.on` listeners receive these signals. If the signal has no guest listener, its default action requests shutdown. Embedded instances never register process-global OS signal handlers; the CLI owns OS signal handling and forwards the relevant signals to its guest.
 
-`handle.shutdown()` requests termination and returns a `ShutdownReport` within the configured deadline plus a small disposal margin. If a `SIGTERM` listener exists, the guest can stop accepting requests and drain work, for example with `server.close(() => process.exit(0))` and `server.closeAllConnections()`. Without a listener, Bento closes runtime resources and cancels pending guest work. `ShutdownOutcome::Graceful { exit_code }` means disposal completed cooperatively. `ShutdownOutcome::Failed(error)` preserves an uncaught failure during shutdown or a failure that occurred before the shutdown request; `wait()` also returns that failure as `RunOutcome::Failed`. At the deadline Bento interrupts synchronous JavaScript and disposes the instance, reporting `Interrupted`, never graceful success. `TimedOut` means disposal did not finish within the bounded interruption/disposal window, including when native code has not yielded; it is not proof that disposal will never finish.
+`handle.shutdown()` requests termination and returns a `ShutdownReport` within the configured deadline plus a small disposal margin. If a `SIGTERM` listener exists, the guest can stop accepting requests and drain work, for example with `server.close(() => process.exit(0))` and `server.closeAllConnections()`. Without a listener, Bento closes runtime resources and cancels pending guest work. `ShutdownOutcome::Graceful { exit_code }` means disposal completed cooperatively. `ShutdownOutcome::Failed(error)` preserves an uncaught failure during shutdown or a failure that occurred before the shutdown request; `wait()` also returns that failure as `RunOutcome::Failed`, unless disposal then timed out as well, as described below. At the deadline Bento interrupts synchronous JavaScript and disposes the instance, reporting `Interrupted`, never graceful success. `TimedOut` means disposal did not finish within the bounded interruption/disposal window, including when native code has not yielded; it is not proof that disposal will never finish.
 
-The graceful report's `exit_code` is `Option<i32>`: `Some(n)` preserves the guest's exit code, including `Some(0)` when a signal handler closes its server and lets the event loop drain, an assigned `process.exitCode`, or an explicit `process.exit(0)`. `None` means Bento's default shutdown ended execution without a guest exit code. A host must not interpret `None` as a successful guest exit. The CLI preserves guest codes and uses 130 for interrupt or 143 for termination when no guest exit code exists.
+The graceful report's `exit_code` is `Option<i32>`: `Some(n)` preserves the guest's exit code, including `Some(0)` when a signal handler closes its server and lets the event loop drain, an assigned `process.exitCode`, or an explicit `process.exit(0)`. `None` means Bento's default shutdown ended execution without a guest exit code. A host must not interpret `None` as a successful guest exit. The CLI preserves guest codes and uses 130 for interrupt or 143 for termination when no guest exit code exists. A timed-out disposal keeps no guest code at all; the CLI reports the incomplete disposal and exits with 1, including for a run that ended on its own.
+
+`wait()` reports incomplete disposal for a run that ended on its own as well. A guest that completes, calls `process.exit`, or fails still owns whatever work the instance holds, such as live Prompt API inference. When that work does not settle within the shutdown deadline, `wait()` returns `RunOutcome::Shutdown` carrying the same `ShutdownReport` with `ShutdownOutcome::TimedOut` that a later `shutdown()` call returns, instead of `Completed`, `Exited`, or `Failed`. The guest's exit code is not preserved then, exactly as for a timed-out requested shutdown.
 
 Once shutdown completes gracefully or by interruption, listeners and connections are closed and another instance can bind the same port. Dropping a running instance also requests bounded shutdown. Host-owned services and persistent data are not discarded when the isolate is disposed. A runtime interrupted by the deadline is never restarted in the same isolate.
 

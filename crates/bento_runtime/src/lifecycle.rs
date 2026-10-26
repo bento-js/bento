@@ -80,6 +80,7 @@ struct State {
     closing_workers: bool,
     interrupted: bool,
     disposed: bool,
+    incomplete: bool,
     report: Option<ShutdownReport>,
     feature_failure: Option<RuntimeError>,
     signals: BTreeMap<u64, (String, watch::Sender<()>)>,
@@ -234,7 +235,17 @@ impl Control {
         self.state.lock().feature_failure.clone()
     }
 
-    // A completion report is retained for later shutdown calls, but returned only for requested shutdown.
+    /// Records that owned native work outlived the instance's disposal deadline, so this
+    /// shutdown is reported as incomplete rather than graceful.
+    pub(crate) fn incomplete_disposal(&self) {
+        let mut state = self.state.lock();
+        state.incomplete = true;
+        state.report.get_or_insert(ShutdownReport { outcome: ShutdownOutcome::TimedOut });
+        self.changed.notify_all();
+    }
+
+    // A completion report is retained for later shutdown calls, and returned here for a
+    // requested shutdown and for a disposal that did not finish.
     pub(crate) fn complete(&self, execution: &RunOutcome) -> Option<ShutdownReport> {
         let mut state = self.state.lock();
         state.disposed = true;
@@ -253,7 +264,7 @@ impl Control {
         };
         let report = state.report.get_or_insert(ShutdownReport { outcome }).clone();
         self.changed.notify_all();
-        state.requested.then_some(report)
+        (state.requested || state.incomplete).then_some(report)
     }
 
     fn request_shutdown(&self) {

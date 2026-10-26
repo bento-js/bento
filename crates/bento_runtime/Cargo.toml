@@ -11,6 +11,11 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+# The Prompt API adapter is always installed, so guest code sees one JavaScript surface
+# whichever way the host built Bento. Only the native model backend is optional.
+[features]
+prompt-foundation-models = ["bento_prompt/foundation-models"]
+
 # The engine, Web/Node compatibility, and Node-API come from the dependency set of Deno v2.9.7's
 # standalone runtime (`cli/rt`): deno_lib's worker factory over deno_runtime. Per policy.0001,
 # parsing and ESM resolution use Oxc; node_resolver remains only where deno_node's CommonJS
@@ -18,6 +23,7 @@ workspace = true
 [dependencies]
 bento_compiler.workspace = true
 bento_host.workspace = true
+bento_prompt = { workspace = true, features = ["deno"] }
 
 deno_core.workspace = true
 deno_error.workspace = true
