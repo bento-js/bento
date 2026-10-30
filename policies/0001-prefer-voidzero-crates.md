@@ -28,14 +28,14 @@ The first runtime design adapted Deno's standalone runtime wholesale, which woul
 ## Enforcement
 
 - Tier: check, with prose for role choices.
-- Mechanism: `vp run check` runs `node tools/crate-dependencies.ts`. It fails when any workspace crate declares a direct dependency on `deno_ast`, `deno_graph`, `dprint-swc-ext`, or any `swc`/`swc_*` package, under any dependency kind or rename.
+- Mechanism: `mise run check` runs `mise run deps:policy`, which is `node tools/crate-dependencies.ts`. It fails when any workspace crate declares a direct dependency on `deno_ast`, `deno_graph`, `dprint-swc-ext`, or any `swc`/`swc_*` package, under any dependency kind or rename.
 - Prose justification: the check catches the SWC stack, which has a VoidZero replacement for every role Bento owns. Whether a Deno crate is required or replaceable depends on what it does. A crate like `node_resolver` is legitimate when `deno_node` requires it, so reviewers judge Deno crates against this policy rather than a denylist.
 
 ## How to comply
 
 1. Before adding a dependency for a parsing, transformation, resolution, source-map, minification, or bundling role, look for the VoidZero crate that provides it (`oxc`, `oxc_resolver`, `oxc_sourcemap`, Rolldown) and use that.
 2. If only a Deno or SWC crate can fill the role, record why in the dependent crate's `Cargo.toml` next to the dependency. If the check rejects it, change this policy through a proposal rather than working around the check.
-3. Run `vp run check` before submitting.
+3. Run `mise run check` before submitting.
 
 ## Revision history
 

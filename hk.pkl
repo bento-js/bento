@@ -1,0 +1,164 @@
+/// hk owns every git hook in this repository.
+///
+/// Install them with `mise run setup` (which runs `hk install --mise`). Never run
+/// `bd hooks install`: it points `core.hooksPath` at `.beads/hooks`, which disables
+/// every hook hk installed. Beads instead runs as hk steps below, calling the same
+/// `bd hooks run <hook>` entry point beads' own shims call.
+///
+/// The hk version here must match the `hk` pin in mise.toml. Bump both together.
+amends "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Config.pkl"
+
+import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.pkl"
+
+/// Files another tool owns and rewrites, and files kept byte-exact on purpose. `bd`
+/// regenerates `.beads/metadata.json` and `.beads/issues.jsonl`, and it writes
+/// `metadata.json` with no trailing newline, which `newlines` would otherwise fail on
+/// after every `mise run setup`. `fixtures/` is an independent project with its own
+/// toolchain and lockfile; `bench/results/` holds recorded benchmark output and
+/// `bench/src/samples/` recorded HTTP documents, both kept exactly as they were
+/// captured; `napi-symbols-macos.def` is a linker symbol list taken verbatim from
+/// upstream.
+exclude = List(
+    ".beads/**",
+    "fixtures/**",
+    "bench/results/**",
+    "bench/src/samples/**",
+    "crates/bento_runtime/napi-symbols-macos.def",
+    "target/**"
+)
+
+/// Formatters and linters. `check`, `fix` and `pre-commit` all share this set, so a
+/// clean `hk check --all` in CI means a clean pre-commit locally.
+local linters = new Mapping<String, Step> {
+    ["trailing_whitespace"] = Builtins.trailing_whitespace
+    ["newlines"] = Builtins.newlines
+    ["check_merge_conflict"] = Builtins.check_merge_conflict
+
+    // The workflows are part of the gate: `actionlint` is pinned in mise.toml, so
+    // the hook, `mise run check` and CI all check them with the same version. The
+    // builtin globs `.github/workflows/*.yml` and `*.yaml`.
+    ["actionlint"] = Builtins.actionlint
+
+    // Oxfmt formats far more than TypeScript — it also owns JSON, JSONC, YAML,
+    // TOML, Markdown and CSS in this repository, including fenced code blocks
+    // inside Markdown. Settings live in .oxfmtrc.jsonc.
+    ["oxfmt"] = (Builtins.oxfmt) {
+        exclude = List(
+            "**/pnpm-lock.yaml",
+            "**/package-lock.json",
+            // Built by `mise run docs:build`.
+            "docs/.vitepress/dist/**",
+            "docs/.vitepress/cache/**"
+        )
+    }
+
+    // `--deny-warnings` is the builtin's default, so a rule set to "warn" in
+    // .oxlintrc.jsonc still blocks a commit. If you add a rule you only want
+    // advisory, make it advisory for the hook too rather than leaving the hook red.
+    ["oxlint"] = (Builtins.ox_lint) {
+        exclude = List(
+            "docs/.vitepress/dist/**",
+            "docs/.vitepress/cache/**",
+            // An independent project whose types come from its own install.
+            "examples/direct-source/**"
+        )
+    }
+
+    // Type checking runs through the mise task rather than `tsrs` directly, so there
+    // is one definition of how to type-check this project, used by the hook, CI, and
+    // a person at a terminal.
+    ["tsrs"] {
+        glob = List("**/*.ts", "**/*.tsx", "tsconfig.json")
+        exclude = List("docs/.vitepress/dist/**", "docs/.vitepress/cache/**")
+        check = "mise run typecheck"
+        exclusive = true
+    }
+
+    // Only rustfmt runs here. Clippy, rustdoc and the crate tests need macOS with the
+    // SDK the native build targets and take minutes; `mise run rust` owns them and CI
+    // runs it on its macOS runners. `cargo fmt --check` builds nothing, so every
+    // platform can afford it on every commit.
+    ["cargo-fmt"] = (Builtins.cargo_fmt) {
+        // The builtin omits `--all`. The root manifest here is virtual, so `cargo fmt`
+        // already covers every member, but the house verification command is
+        // `cargo fmt --all --check`; spelling it out keeps them the same command.
+        check {
+            command = "cargo fmt --all --check --manifest-path {{workspace_indicator}}"
+        }
+        check_list_files {
+            command = "cargo fmt --all --check --manifest-path {{workspace_indicator}} -- --files-with-diff"
+        }
+        fix {
+            command = "cargo fmt --all --manifest-path {{workspace_indicator}}"
+        }
+    }
+}
+
+/// `bd hooks run` exits 3 when the beads database is not initialized. Beads' own
+/// shims treat that as success so a fresh clone can commit before `mise run setup`
+/// has run; these steps do the same.
+hooks {
+    ["check"] {
+        steps = linters
+    }
+
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+
+    ["pre-commit"] {
+        fix = true
+        stage = true
+        stash = "git"
+        steps = (linters) {
+            ["beads"] {
+                check = "bd hooks run pre-commit || [ $? -eq 3 ]"
+                exclusive = true
+            }
+        }
+    }
+
+    ["commit-msg"] {
+        steps {
+            ["scoped-commit"] {
+                check = "node tools/check-scoped-commit.ts {{commit_msg_file}}"
+            }
+        }
+    }
+
+    ["prepare-commit-msg"] {
+        steps {
+            ["beads"] {
+                check = "bd hooks run prepare-commit-msg {{hook_args}} || [ $? -eq 3 ]"
+            }
+        }
+    }
+
+    ["pre-push"] {
+        steps {
+            ["check"] {
+                check = "mise run check"
+            }
+            ["beads"] {
+                check = "bd hooks run pre-push {{hook_args}} || [ $? -eq 3 ]"
+            }
+        }
+    }
+
+    ["post-checkout"] {
+        steps {
+            ["beads"] {
+                check = "bd hooks run post-checkout {{hook_args}} || [ $? -eq 3 ]"
+            }
+        }
+    }
+
+    ["post-merge"] {
+        steps {
+            ["beads"] {
+                check = "bd hooks run post-merge {{hook_args}} || [ $? -eq 3 ]"
+            }
+        }
+    }
+}

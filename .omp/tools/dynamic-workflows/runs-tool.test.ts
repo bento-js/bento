@@ -1,7 +1,7 @@
 import type { ExtensionAPI, Theme } from "@oh-my-pi/pi-coding-agent";
 
 import { createRequire } from "node:module";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
     WorkflowAgentOutcome,

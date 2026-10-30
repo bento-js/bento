@@ -6,14 +6,14 @@ A rule an agent must remember is the weakest kind of rule. Under load, prose get
 
 | Tier | Mechanism | Role |
 | --- | --- | --- |
-| **Tier 0 — Checks** | `vp run validate` — the validator in `tools/` — CI workflows, the `commit-msg` git hook, and the harness lifecycle wiring in `.omp/extensions/` | Deterministic; runs whether or not the agent remembers. A rule that can live here must. |
-| **Tier 1 — Tasks** | Vite+ commands and tasks the process invokes by name: `vp fmt`, `vp run check`, `vp run docs:build` | Deterministic once invoked, but something must invoke them. |
+| **Tier 0 — Checks** | hk's git hooks (`commit-msg` runs `node tools/check-scoped-commit.ts`, `pre-push` runs `mise run check`), GitHub Actions running that same task, the record validator in `tools/validate.ts`, and the harness lifecycle wiring in `.omp/extensions/` | Deterministic; runs whether or not the agent remembers. A rule that can live here must. |
+| **Tier 1 — Tasks** | mise tasks the process invokes by name: `mise run check`, `mise run fmt`, `mise run validate`, `mise run status` | Deterministic once invoked, but something must invoke them. |
 | **Tier 2 — Templates** | `.agents/templates/` | Shape the work so the correct thing is the path of least resistance. |
 | **Tier 3 — Prose** | `AGENTS.md`, `SKILL.md` files, and these rules | Necessary for judgment that cannot be mechanized; the tier most likely to be missed. |
 
 ## The rule
 
-- Before writing a prose rule, ask whether a check or template could enforce it deterministically. If it can, build that instead.
+- Before writing a prose rule, ask whether a check or template could enforce it deterministically. If it can, build that instead — usually a new hk step or a new assertion in the validator, reached through a `mise` task so humans and CI run the same thing.
 - Where a check already enforces a rule, do not also state it in prose — delete the prose.
 - Keep judgment in prose. Good naming, the right abstraction, and a justified deviation are not cheap deterministic checks.
 

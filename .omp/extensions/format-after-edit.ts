@@ -12,13 +12,13 @@ export default function formatAfterEdit(pi: ExtensionAPI): void {
         if (files.length === 0) return;
 
         let before = files.map(file => readFileSync(file, "utf8"));
-        let result = await pi.exec("vp", ["fmt", "--no-error-on-unmatched-pattern", ...files], {
-            cwd: ctx.cwd,
-        });
+        let result = await pi.exec("mise", ["run", "fmt", "--", ...files], { cwd: ctx.cwd });
         let names = files.map(file => relative(ctx.cwd, file));
         if (result.code !== 0) {
             let output = stripVTControlCharacters(`${result.stdout}${result.stderr}`).trim();
-            return { additionalContext: `\`vp fmt\` failed on ${names.join(", ")}:\n${output}` };
+            return {
+                additionalContext: `\`mise run fmt\` failed on ${names.join(", ")}:\n${output}`,
+            };
         }
 
         let reformatted = names.filter(
@@ -27,7 +27,7 @@ export default function formatAfterEdit(pi: ExtensionAPI): void {
         if (reformatted.length === 0) return;
         // The edit's hashline anchors describe the file as it was before formatting.
         return {
-            additionalContext: `\`vp fmt\` reformatted ${reformatted.join(", ")}; re-read before editing again.`,
+            additionalContext: `\`mise run fmt\` reformatted ${reformatted.join(", ")}; re-read before editing again.`,
         };
     });
 }

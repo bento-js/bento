@@ -2,8 +2,8 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 import { stripVTControlCharacters } from "node:util";
 
-// `vp run check` prints every task's log, the docs build included; the cap keeps one failure from
-// flooding the agent's context.
+// `mise run check` prints every task's log; the cap keeps one failure from flooding the agent's
+// context.
 const REPORTED_LINES = 120;
 
 // OMP stops waiting for an extension handler after 30 seconds and lets the stop through. Ending the
@@ -12,14 +12,14 @@ const GATE_TIMEOUT_MS = 25_000;
 
 // The lifecycle wiring in AGENTS.md: before the agent ends its turn, the full gate runs, and a
 // failure sends the agent back with the output instead of letting it report work that does not pass.
-// Vite+ caches each task by its inputs, so a turn that changed nothing replays in a fraction of a
-// second.
+// A turn that changed nothing still pays for the gate, so the timeout below decides whether the
+// gate or the agent reports the result.
 export default function checkBeforeStop(pi: ExtensionAPI): void {
     pi.on("session_stop", async (event, ctx) => {
         // One refusal per stop, so a failure the agent cannot fix does not trap the session.
         if (event.stop_hook_active) return;
 
-        let result = await pi.exec("vp", ["run", "check"], {
+        let result = await pi.exec("mise", ["run", "check"], {
             cwd: ctx.cwd,
             signal: event.signal,
             timeout: GATE_TIMEOUT_MS,
@@ -28,7 +28,7 @@ export default function checkBeforeStop(pi: ExtensionAPI): void {
         if (result.killed) {
             return {
                 decision: "block",
-                reason: `\`vp run check\` did not finish within ${GATE_TIMEOUT_MS / 1000} seconds. Run it yourself and read its result before finishing.`,
+                reason: `\`mise run check\` did not finish within ${GATE_TIMEOUT_MS / 1000} seconds. Run it yourself and read its result before finishing.`,
             };
         }
 
@@ -39,7 +39,7 @@ export default function checkBeforeStop(pi: ExtensionAPI): void {
             .join("\n");
         return {
             decision: "block",
-            reason: `\`vp run check\` failed. Fix it before finishing, or say why it cannot pass.\n\n${output}`,
+            reason: `\`mise run check\` failed. Fix it before finishing, or say why it cannot pass.\n\n${output}`,
         };
     });
 }
