@@ -7,22 +7,38 @@ import { test, type TestContext } from "node:test";
 
 let statusScript = new URL("./status.ts", import.meta.url).pathname;
 
+// Git's own environment variables name the repository a command acts on, and a caller can
+// have them set: `git` exports GIT_DIR and GIT_INDEX_FILE to every hook it runs, so a hook
+// that runs this suite would otherwise point these fixture commands — `git init` included —
+// at the real repository. Every child process here gets an environment without them.
+function fixtureEnvironment(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+    let environment: NodeJS.ProcessEnv = { ...process.env, ...extra };
+    for (let name of Object.keys(environment)) {
+        if (name.startsWith("GIT_")) delete environment[name];
+    }
+    return environment;
+}
+
 function statusWithPullRequests(t: TestContext, pullRequests: object[]): string {
     let root = mkdtempSync(path.join(tmpdir(), "workbench-status-"));
     t.after(() => rmSync(root, { force: true, recursive: true }));
-    execFileSync("git", ["init", "-q", "-b", "feature", root]);
-    execFileSync("git", [
-        "-C",
-        root,
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.com",
-        "commit",
-        "--allow-empty",
-        "-qm",
-        "fixture",
-    ]);
+    execFileSync("git", ["init", "-q", "-b", "feature", root], { env: fixtureEnvironment() });
+    execFileSync(
+        "git",
+        [
+            "-C",
+            root,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "fixture",
+        ],
+        { env: fixtureEnvironment() },
+    );
     let bin = path.join(root, "bin");
     mkdirSync(bin);
     let gh = path.join(bin, "gh");
@@ -50,11 +66,10 @@ function statusWithPullRequests(t: TestContext, pullRequests: object[]): string 
     return execFileSync(process.execPath, [statusScript], {
         cwd: root,
         encoding: "utf8",
-        env: {
-            ...process.env,
+        env: fixtureEnvironment({
             PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
             TEST_PULL_REQUESTS: JSON.stringify(pullRequests),
-        },
+        }),
     });
 }
 
@@ -96,20 +111,26 @@ test("does not select an arbitrary PR when a branch name has been reused", t => 
 function statusInRepositoryWithoutRemote(t: TestContext): string {
     let root = mkdtempSync(path.join(tmpdir(), "workbench-status-local-"));
     t.after(() => rmSync(root, { force: true, recursive: true }));
-    execFileSync("git", ["init", "-q", "-b", "main", root]);
-    execFileSync("git", [
-        "-C",
-        root,
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.com",
-        "commit",
-        "--allow-empty",
-        "-qm",
-        "fixture",
-    ]);
-    execFileSync("git", ["-C", root, "switch", "-q", "-c", "feature/x"]);
+    execFileSync("git", ["init", "-q", "-b", "main", root], { env: fixtureEnvironment() });
+    execFileSync(
+        "git",
+        [
+            "-C",
+            root,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "fixture",
+        ],
+        { env: fixtureEnvironment() },
+    );
+    execFileSync("git", ["-C", root, "switch", "-q", "-c", "feature/x"], {
+        env: fixtureEnvironment(),
+    });
 
     // No origin and no usable gh, so refs/heads/main is the only evidence of which
     // branch is the default one.
@@ -122,10 +143,9 @@ function statusInRepositoryWithoutRemote(t: TestContext): string {
     return execFileSync(process.execPath, [statusScript], {
         cwd: root,
         encoding: "utf8",
-        env: {
-            ...process.env,
+        env: fixtureEnvironment({
             PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
-        },
+        }),
     });
 }
 
