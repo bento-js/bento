@@ -29,10 +29,16 @@ test("a runtime that cannot be launched is incompatible at startup, with the rea
         mode: "production",
     });
 
+    // The real error is the platform's. macOS reports ENOEXEC for a file that is not a
+    // program; glibc retries an ENOEXEC exec through /bin/sh, so on Linux the file starts
+    // as a shell script and fails with the shell's exit code instead. Either way the
+    // verdict is incompatible at startup and carries the reason the runtime gave.
+    let reason = process.platform === "darwin" ? "ENOEXEC" : "exit code 127";
+
     expect(verdict).toEqual({
         compatible: false,
         check: "startup",
-        failures: [expect.stringContaining("ENOEXEC")],
+        failures: [expect.stringContaining(reason)],
         evidence: [],
     });
 });
