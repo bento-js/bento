@@ -7,21 +7,19 @@ Name each file `<NNNN>-<slug>.md`, using the next four-digit number and a kebab-
 | Status | Meaning | Decided by | Phase |
 | --- | --- | --- | --- |
 | `draft` | Being written and iterated on in the draft pull request. May carry `[NEEDS CLARIFICATION:`. | agent | 2 |
-| `awaiting-implementation` | The approval owner settled the proposal. Implementation is underway or not yet started. | approval owner | 3 |
+| `awaiting-implementation` | The human settled the proposal. Implementation is underway or not yet started. | human | 3 |
 | `active-review` | First full pass at tests, guides and code exists; report posted and pull request marked ready. | agent | 4 |
-| `returned-for-revisions` | The acceptance review asked for changes. Back to implementation, or to the proposal if the design changed. | approval owner | 4 → 3 or 2 |
-| `accepted` | The approval owner accepted the work. The vision update and final implementation record are underway. | approval owner | 5 |
-| `implemented` | The accepted implementation and final records are committed in the feature pull request before merge. Merge and required delivery remain separate. | agent | 5 |
-| `rejected` | The approval owner declined the change. Kept as record. | approval owner | terminal |
+| `returned-for-revisions` | The human requested changes. Back to implementation, or to the proposal if the design changed. | human | 4 → 3 or 2 |
+| `accepted` | The human accepted the work. Vision update, merge and release are underway. | human | 5 |
+| `implemented` | The accepted implementation and final records are committed in the feature pull request before merge. Merge and any required release remain separate. | agent | 5 |
+| `rejected` | The human declined the change. Kept as record. | human | terminal |
 | `withdrawn` | The author pulled it. Kept as record. | either | terminal |
 | `superseded` | A later proposal replaced it. | either | terminal |
 
-**Decided by** names the approval owner: the human, or the strategist for decisions delegated by [an active build mandate](https://github.com/markmals/bento/blob/main/AGENTS.md#bounded-build-mandates). Proposal approval requires settled intent and recorded authority. Acceptance of implementation additionally requires the readiness report, fresh checks, independent reviews, and an exercised preview. An implementer's completion claim alone cannot authorize acceptance.
+**Decided by** is about judgement, not keystrokes. The human may ask the agent to make the edit — that is fine. What an agent must never do is decide on its own that a proposal is settled enough to implement, or that finished work is good enough to accept. An agent that can reach those two conclusions unaided is an agent approving its own work.
 
-Every proposal records where its authority came from in `## Authorization`: the human's direct consent for this change, or the mandate proposal and approved revision it runs under, why the change fits inside it, and the approval decisions the strategist took. A proposal may also carry an optional `## Build mandate` section; once the human approves that proposal, it is what delegates a bounded set of decisions. Mandates need no separate directory, frontmatter key, or status — an ordinary proposal in this lifecycle carries them — and a mandate proposal cannot authorize itself.
+After acceptance and the vision update, the agent records `implemented` in the original feature pull request before merging it. This status does not claim that the pull request has merged or that a required release happened. The pull request records integration; keep any remaining delivery visible in the proposal or pull request until separately authorized and performed. A merge-only change needs no release.
 
-`implemented` records the accepted implementation in the original feature pull request after the vision update and before merge. It does not claim that the pull request merged or that required delivery happened. The pull request records integration; keep any required release visible in the proposal or pull request until separately authorized and performed. A merge-only change needs no release. For already merged pull requests, inspect the merged revision before deciding whether a local `accepted` record needs reconciliation; do not create a status-only follow-up pull request.
-
-A proposal stays `draft` for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the approval owner iterates on it there — editing directly, or asking for changes — until the design is settled. Iteration is the normal case, not a sign of a bad first draft.
+A proposal stays `draft` for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the human edits it there — directly, or by asking for changes — until they are satisfied. Iteration is the normal case, not a sign of a bad first draft.
 
 History is preserved: never delete a superseded entry — mark it `superseded` and link its replacement through `supersedes`.
