@@ -1,29 +1,30 @@
 ---
 name: adversarial-review
-description: Use when an implementation has passed cross-artifact review and you need a final refutational pass before declaring a proposal done — or whenever code looks correct and the suite is green but nobody has tried to break it. Surfaces defects on edges the proposal never enumerated, tests that would still pass if the behavior were wrong, and aliasing / mutation / concurrency / resource bugs that confirmatory review approves.
+description: Use when an implementation has passed its self-check and you need a refutational pass before declaring a proposal done — or whenever code looks correct and the suite is green but nobody has tried to break it. Surfaces defects on edges the proposal never enumerated, tests that would still pass if the behavior were wrong, and aliasing / mutation / concurrency / resource bugs that confirmatory review approves.
 ---
 
 # Adversarial Review
 
-The preceding cross-artifact review is **confirmatory** — it compares the implementation with the proposal and other artifacts. This one is **refutational**. Its job is not to confirm the code is right; it is to assume the code is wrong and find the input, caller action, or missing test that proves it.
+The implementer's self-check is **confirmatory** — it compares the implementation with the proposal and other artifacts. This review is **refutational**. Its job is not to confirm the code is right; it is to assume the code is wrong and find the input, caller action, or missing test that proves it.
 
 **Core principle:** a green suite and a clause-by-clause match prove the code does what someone thought to check. The adversary's whole value is in what nobody thought to check.
 
-Lifts the adversarial-refinement idea from VDD. Adapted to this repo: Phase 3, stage 2, fresh context, refute-by-default, convergence by exhaustion.
+Lifts the adversarial-refinement idea from VDD. Adapted to this repo: Phase 3, after the self-check, fresh context, refute-by-default.
 
 ## When to use
 
-- Phase 3, after cross-artifact review.
+- Phase 3, after the implementer's self-check.
 - Before declaring any proposal done.
 - Any time code "looks correct, tests pass" but no one has tried to break it.
 - Standalone, against an existing implementation you distrust.
 
 **Do NOT use this skill for:**
 
-- Replacing cross-artifact review. This runs after it, not instead of it. A refutational pass on code that does not match the proposal wastes the adversary's attention on the wrong layer.
+- Replacing the self-check. This runs after it, not instead of it. A refutational pass on code that does not match the proposal wastes the adversary's attention on the wrong layer.
+- Style. Naming, formatting, and taste are out of scope; report behavior, test, security, and proposal-fidelity findings only.
 - Trivial edits (a renamed constant, a typo). Nothing to break.
 
-## Why a third stage at all
+## Why a separate stage
 
 Measured baseline (this repo): a confirmatory reviewer handed an otherwise-correct view model whose only flaw was returning its internal mutable array by reference **approved it as "the implementation is correct"** — the proposal never enumerated copy semantics, so the clause check sailed past the aliasing bug. It then **invented a test defect that did not exist**. Confirmatory review is good at enumerated gaps and blind to un-enumerated ones. That blind spot is this skill's entire reason to exist.
 
@@ -59,9 +60,9 @@ A fabricated defect corrupts the review as surely as a missed one. The baseline 
 
 ## Convergence — the stopping signal
 
-This is hallucination-based termination. You are done when, and only when, you are **reduced to inventing problems that aren't there.**
+This is hallucination-based termination. Within one pass, you are done when, and only when, you are **reduced to inventing problems that aren't there.**
 
-- Real defect found → report it, it feeds back, you go again on the fixed code.
+- Real defect found → report it. It feeds back; another pass runs only when its fix was substantial.
 - Findings have decayed to wording nitpicks and stylistic preference → converged. Say so plainly.
 - You catch yourself manufacturing a flaw to have something to say → that is the exit signal, not a finding. Stop and report convergence.
 
@@ -87,11 +88,10 @@ VERDICT: BROKEN (n defects) | CONVERGED (no real defect found across all five le
 
 ## Feeding findings back
 
-- **DEFECTS** → the implementer subagent fixes; re-run this stage on the fixed code.
+- **DEFECTS** → fixed when they fall inside the proposal's scope; the review runs once more only when a fix was substantial.
 - **SUSPICIONS** → verify or drop before acting. Never fix a suspicion blind.
-- **PROPOSAL GAPS** → surface to the user / route to the proposal. Do not let the implementer silently encode an answer.
-
-Loop until VERDICT is CONVERGED.
+- **PROPOSAL GAPS** → surface to the user / route to the proposal. Do not let the implementation silently encode an answer.
+- **Findings outside the proposal's scope** → declined with reasoning or filed through `tracking-work`; never fixed by widening the change.
 
 ## Red flags — you're doing confirmatory review again
 
@@ -105,7 +105,7 @@ Any of these → you reverted to confirmation. Restart from the refute-by-defaul
 
 ## Related skills
 
-- `reviewing-an-implementation` — the confirmatory comparison that precedes this stage and surfaces declined findings.
+- `reviewing-an-implementation` — the self-check that precedes this stage and the readiness report that records declined findings.
 - `implementing-a-proposal` — the discipline whose tests this stage tries to defeat.
 - `systematic-debugging` — once a defect is confirmed, used to find its root cause before the fix.
-- `.agents/rules/verification.md` — the gate this stage feeds; a proposal is not done until the adversary converges.
+- `.agents/rules/verification.md` — the gate this stage feeds.
