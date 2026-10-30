@@ -1,0 +1,9 @@
+# actionlint configuration.
+#
+# The Rust job runs on `xcode-27`, a runner label this repository has available but
+# which is not in actionlint's list of public GitHub-hosted labels. Declaring it here
+# keeps the job's label checked for typos against a list we maintain, instead of
+# silencing the rule.
+self-hosted-runner:
+    labels:
+        - xcode-27
