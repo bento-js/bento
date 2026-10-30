@@ -1,0 +1,180 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+# mise owns the task graph. Every other tool is invoked from a task here, so the
+# local gate and the CI gate cannot drift apart.
+#
+# `secrets` on a task is rejected by mise < 2026.10.4.
+min_version = "2026.10.4"
+
+[settings]
+# Required for `[secrets.fnox]` task grants.
+# A global or local-only setting does not travel to CI, so it is committed here.
+experimental = true
+# Keep mise.lock current as tools change; `mise lock --platform …` regenerates it.
+lockfile = true
+
+[tools]
+# hk's version must match the `amends`/`import` URLs in hk.pkl — bump both together.
+hk = "2.8.1"
+fnox = "1.42.1"
+"1password" = "2.41.1" # provides `op`, the 1Password CLI fnox shells out to
+gh = "2.103.2"
+actionlint = "1.7.12"
+node = "26.12.1" # 26 or newer: every tools/*.ts runs on native type stripping
+pnpm = "12.15.0" # matches `packageManager` in package.json; keep the two in step
+worktrunk = "0.81.0" # provides `wt`
+# Beads is not in the mise registry; the GitHub release backend installs the same
+# binary `brew install beads` does. Pin it: an older `bd` refuses to open a newer DB.
+"github:gastownhall/beads" = "1.3.2" # provides `bd`
+# One `.omp/tools/dynamic-workflows` test loads the workflow tool through Oh My Pi's
+# real custom-tool loader, and that loader only runs on Bun. Pinning it here is what
+# makes `mise run test` work on a fresh clone and on a CI runner.
+bun = "1.3.9"
+# Rust is pinned to the channel in rust-toolchain.toml — rustup reads that file for
+# every `cargo` invocation, and the native release builds go through rustup directly.
+# Change both together. `minimal` leaves out the offline docs, which nothing here reads.
+rust = { version = "1.99.0", profile = "minimal", components = "clippy,rustfmt" }
+
+[env]
+# Locally installed CLIs — oxfmt, oxlint, tsrs, tsc, vitest, vitepress, changeset —
+# without a `pnpm exec` prefix. They are devDependencies, never global installs.
+_.path = ["{{config_root}}/node_modules/.bin"]
+# Cargo turns colour off when it is not writing to a terminal, which hides it from
+# task output and CI logs alike.
+CARGO_TERM_COLOR = "always"
+
+# Secrets are resolved by fnox and granted per task with `secrets = [...]`.
+# Never list a secret in `[env]` — that would export it to every process.
+# This block must exist: without it `mise tasks validate` rejects a grant.
+[secrets.fnox]
+# profile = "dev"
+
+# ── The uniform surface ──────────────────────────────────────────────────────
+
+[tasks.setup]
+description = "Idempotent first-run bootstrap: dependencies, work tracker, git hooks"
+depends = ["deps:install"]
+run = [
+    # `--skip-agents` stops bd from writing its own agent-instruction files; AGENTS.md
+    # documents the work tracker itself.
+    # `--skip-hooks` is load-bearing: without it `bd init` points core.hooksPath at
+    # .beads/hooks, and every hook hk installs is then ignored by git.
+    "bd init --init-if-missing --non-interactive --prefix bento --skip-agents --skip-hooks",
+    # Commit `.beads/issues.jsonl` so the work graph is reviewable in a diff.
+    "bd config set export.auto true",
+    # hk owns every git hook, beads included (see hk.pkl). Never run `bd hooks install`.
+    "hk install --mise",
+]
+
+[tasks.check]
+description = "The single blocking gate: formatting, lint, types, tests, records, docs"
+alias = "c"
+# `hk check --all` runs every step in hk.pkl: whitespace, newlines, merge conflicts,
+# actionlint, Oxfmt, Oxlint, `cargo fmt --check`, and the `tsrs` step (which calls
+# `mise run typecheck`). Formatting, linting and type checking are therefore already
+# in this gate — adding them to `depends` would only run them twice. If you remove a
+# step from hk.pkl, add it back here.
+#
+# The rest of the Rust gate is `mise run rust`, deliberately outside this task: Bento
+# builds only on macOS with Apple silicon and the full suite takes minutes, so CI runs
+# it in its own macOS job.
+depends = ["test"]
+run = ["hk check --all", "mise run validate", "mise run deps:policy", "mise run docs:build"]
+
+[tasks.validate]
+description = "Check proposals, policies, decisions and guides against the record rules"
+run = "node tools/validate.ts"
+
+[tasks.status]
+description = "Where the work stands: current phase, next action, who acts"
+run = "node tools/status.ts"
+
+[tasks.test]
+alias = "t"
+description = "Run every test: the record tools, the workflow tool, and the benchmark harness"
+# The glob form, not `node --test tools/`: it names exactly what runs and does not
+# depend on the runner's directory-discovery rules.
+#
+# `.omp/tools/` and `bench/` keep Vitest: those suites mock modules with
+# `vi.mock`/`vi.hoisted`, which `node:test` has no equivalent for. vitest.config.ts
+# scopes Vitest to those two trees so it never collects the `node:test` suites above.
+run = ["node --test 'tools/**/*.test.ts'", "vitest run"]
+
+[tasks.fmt]
+alias = "f"
+description = "Format with Oxfmt; accepts file paths"
+run = "oxfmt"
+
+[tasks.lint]
+alias = "l"
+description = "Lint with Oxlint (type-aware) and apply safe fixes"
+# `--disable-nested-config`: fixtures/remix-guest-book is an independent project with
+# its own .oxlintrc.jsonc, and Oxlint refuses to load a nested config that sets
+# `options.typeAware`, even though .oxlintrc.jsonc here never lints that directory.
+run = "oxlint --disable-nested-config --fix"
+
+[tasks.typecheck]
+description = "Typecheck with tsrs (the Rust port of tsc 7), and the Prompt API example with tsc"
+# Three projects, because they hold their sources to different rules: `tools/*.ts` is run
+# by `node --test` through type stripping and so must stay erasable, the root project is
+# compiled by OMP's loader and by Vite, and the Prompt API example is checked with the
+# real TypeScript compiler because that is what a consumer of `prompt.d.ts` runs.
+run = ["tsrs", "tsrs -p tools/tsconfig.json", "tsc --project examples/prompt-api/tsconfig.json"]
+
+[tasks.changeset]
+description = "Describe this change for the changelog (`mise run changeset -- --empty` when nothing releasable changed)"
+run = "changeset add"
+
+[tasks.version]
+description = "Apply pending changesets: bump the version in package.json and write CHANGELOG.md"
+# Bento publishes nothing yet: the crates are `publish = false` and the npm package is
+# private. This task consumes the changesets a release would ship; the release itself
+# is still a human decision made outside CI.
+run = "changeset version"
+
+# ── Bento's own surface ──────────────────────────────────────────────────────
+
+[tasks."deps:install"]
+description = "Install npm dependencies with the pinned pnpm"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."deps:policy"]
+description = "Check that no crate depends on the SWC stack (policy.0001)"
+run = "node tools/crate-dependencies.ts"
+
+[tasks.rust]
+description = "The Rust gate: rustfmt, clippy, rustdoc, and every crate's tests (macOS arm64)"
+# Outside `check` on purpose — see the comment there. The deployment target matches the
+# macOS version the default CLI build requires; `cargo fmt --check` needs neither it nor
+# the SDK, which is why that one step also runs as an hk hook on every platform.
+env = { MACOSX_DEPLOYMENT_TARGET = "27.0", RUSTDOCFLAGS = "-D warnings" }
+run = [
+    "cargo fmt --all --check",
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo doc --workspace --no-deps",
+    "cargo test --workspace --no-fail-fast",
+]
+
+[tasks.build]
+alias = "b"
+description = "Build the `bento` CLI from source"
+run = "cargo build -p bento_cli"
+
+[tasks.dev]
+alias = "d"
+description = "Run the CLI from source: `mise run dev -- run --allow-read=. main.ts`"
+run = "cargo run -p bento_cli --"
+
+[tasks."docs:dev"]
+description = "Serve the documentation site with hot reload"
+run = "vitepress dev docs"
+
+[tasks."docs:build"]
+description = "Build the documentation site into docs/.vitepress/dist"
+# DOCS_BASE sets the site's base path; GitHub Pages and the pull-request previews
+# both serve from a subdirectory, so the workflows set it and a local build does not.
+run = "vitepress build docs"
+
+[tasks."docs:preview"]
+description = "Serve the built documentation site locally"
+depends = ["docs:build"]
+run = "vitepress preview docs"

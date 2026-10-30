@@ -8,17 +8,7 @@ allowBuilds:
     onnxruntime-node: true
     protobufjs: true
     vue-demi: true
-catalog:
-    vite: npm:@voidzero-dev/vite-plus-core@1.1.0
-    vite-plus: 1.1.0
 # The coding agent is tracked at `latest`; holding it back by the release-age window would pin the
 # repository's harness tooling to whatever shipped a day earlier.
 minimumReleaseAgeExclude:
     - "@oh-my-pi/*"
-overrides:
-    vite@*: "catalog:"
-peerDependencyRules:
-    allowAny:
-        - vite
-    allowedVersions:
-        vite: "*"

@@ -11,7 +11,7 @@ import {
     type AgentProgress,
     type SingleResult,
 } from "@oh-my-pi/pi-coding-agent/task";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkflowCoordination } from "./runs.js";
 

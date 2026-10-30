@@ -12,12 +12,22 @@
         "target": "ES2022",
         "verbatimModuleSyntax": true
     },
-    "exclude": ["docs/.vitepress/cache", "docs/.vitepress/dist", "node_modules"],
+    "exclude": [
+        "docs/.vitepress/cache",
+        "docs/.vitepress/dist",
+        "node_modules",
+        // The VitePress theme is Vue single-file components and a `.ts` entry that imports them
+        // by name. Only `vue-tsc` can resolve a named export out of an SFC; `tsrs` sees the
+        // `declare module "*.vue"` shim in env.d.ts and reports an error for correct code.
+        // `mise run docs:build` is what type-checks this directory, and it is in the gate.
+        "docs/.vitepress/theme",
+        // Checked as its own project: tools/tsconfig.json adds `erasableSyntaxOnly`, because
+        // Node runs those files by stripping types rather than compiling them.
+        "tools"
+    ],
     "include": [
-        "vite.config.ts",
+        "vitest.config.ts",
         "docs/.vitepress/**/*.ts",
-        "docs/.vitepress/**/*.vue",
-        "docs/.vitepress/**/*.tsx",
         ".omp/extensions/**/*.ts",
         ".omp/tools/**/*.ts",
         "bench/**/*.ts"

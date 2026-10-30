@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import type { RuntimeName, Series } from "../results-model.ts";
 import type { RunContext } from "../workload.ts";

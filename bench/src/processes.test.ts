@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { baseEnvironment } from "./launch-commands.ts";
 import { LaunchError, runToCompletion, spawnManaged } from "./processes.ts";

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { once } from "node:events";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
-import { afterEach, describe, expect, test } from "vite-plus/test";
+import { afterEach, describe, expect, test } from "vitest";
 
 import type { ExpectedEntry } from "./document-gate.ts";
 import type { Mode } from "./results-model.ts";
