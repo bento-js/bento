@@ -17,6 +17,7 @@ mod signals;
 mod task;
 mod watch;
 
+use std::ffi::OsString;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -25,9 +26,17 @@ use crate::arguments::{Cli, Command};
 use crate::error::CliError;
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse() {
+    let arguments: Vec<OsString> = std::env::args_os().collect();
+    if let Some(missing) = permission_flags::missing_argument(&arguments) {
+        CliError::from(missing).report();
+        return ExitCode::FAILURE;
+    }
+    let cli = match Cli::try_parse_from(arguments) {
         Ok(cli) => cli,
-        Err(usage) => return usage_error(&usage),
+        Err(usage) => {
+            let _ = usage.print();
+            return if usage.use_stderr() { ExitCode::FAILURE } else { ExitCode::SUCCESS };
+        }
     };
     let outcome = match cli.command {
         Command::Run(arguments) => run::run(&arguments),
@@ -40,15 +49,4 @@ fn main() -> ExitCode {
             error.exit_code()
         }
     }
-}
-
-/// Reports a command line clap rejected, or the help or version it asked for. A value flag
-/// without its value is reported in Node's words.
-fn usage_error(usage: &clap::Error) -> ExitCode {
-    if let Some(missing) = permission_flags::missing_argument(usage) {
-        CliError::from(missing).report();
-        return ExitCode::FAILURE;
-    }
-    let _ = usage.print();
-    if usage.use_stderr() { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }

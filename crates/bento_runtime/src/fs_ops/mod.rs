@@ -80,7 +80,7 @@ fn requested_path<'a>(state: &OpState, path: Cow<'a, Path>) -> Cow<'a, Path> {
     if path.is_absolute() || path.as_os_str().is_empty() {
         path
     } else {
-        Cow::Owned(state.borrow::<crate::ops::InstanceEnvironment>().cwd.join(path))
+        Cow::Owned(state.borrow::<crate::environment::InstanceEnvironment>().cwd.join(path))
     }
 }
 

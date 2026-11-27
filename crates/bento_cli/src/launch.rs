@@ -29,7 +29,7 @@ impl Launch {
         entry: Option<&Path>,
     ) -> Result<Launch, CliError> {
         let requested = flags.requested(invocation_directory)?;
-        for warning in flags.comma_warnings() {
+        for warning in flags.comma_warnings(entry.is_some()) {
             eprintln!("warning: {warning}");
         }
         let mut inherited = process_environment::read()?;

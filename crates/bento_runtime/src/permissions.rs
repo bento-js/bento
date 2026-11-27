@@ -18,12 +18,12 @@ use sys_traits::impls::RealSys;
 use bento_host::{PathPattern, Permission, Permissions, Scope, canonical_path};
 use bento_prompt::deno::Access;
 
-/// The permissions one instance holds, shared by its main isolate and every worker, so a
-/// permission the guest drops is gone from all of them at once.
+/// The permissions one isolate holds: the main isolate's, or one worker's. As in Node, a
+/// permission the guest drops is gone only from the isolate that dropped it.
 pub(crate) struct Authority {
     permissions: Mutex<Permissions>,
-    /// What Deno's operations check, rebuilt from `permissions` whenever they change. Every
-    /// isolate holds a clone that shares the same checks.
+    /// What Deno's operations check, rebuilt from `permissions` whenever they change. The
+    /// isolate's operations hold clones that share the same checks.
     container: PermissionsContainer,
     model: Access,
     cwd: PathBuf,
@@ -35,7 +35,8 @@ impl Authority {
             inner: RuntimePermissionDescriptorParser::new(RealSys),
             cwd: cwd.clone(),
         });
-        let container = PermissionsContainer::new(parser, deno_permissions(&permissions));
+        let container = PermissionsContainer::new(parser, deno_permissions(&permissions))
+            .with_node_unix_sockets();
         let model = Access::new(permissions.holds(Permission::LanguageModel));
         Arc::new(Authority { permissions: Mutex::new(permissions), container, model, cwd })
     }

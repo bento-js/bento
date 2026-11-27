@@ -19,17 +19,20 @@ use deno_runtime::{BootstrapOptions, WorkerExecutionMode};
 use deno_tls::RootCertStoreProvider;
 use sys_traits::impls::RealSys;
 
+use bento_host::Permissions;
 use bento_prompt::deno::Cleanup;
 
+use crate::environment::InstanceEnvironment;
 use crate::lifecycle::Control;
 use crate::loader::LoaderFactory;
-use crate::ops::{InstanceEnvironment, bento_instance};
+use crate::ops::bento_instance;
 use crate::permissions::Authority;
 
 pub(crate) struct WorkerFactory {
     loader: LoaderFactory,
     environment: InstanceEnvironment,
-    authority: Arc<Authority>,
+    /// The permissions the instance was launched with, which every worker starts with.
+    launch: Permissions,
     argv: Vec<String>,
     sessions: Cleanup,
     pub roots: LibWorkerFactoryRoots,
@@ -41,7 +44,7 @@ impl WorkerFactory {
     pub(crate) fn new(
         loader: LoaderFactory,
         environment: InstanceEnvironment,
-        authority: Arc<Authority>,
+        launch: Permissions,
         argv: Vec<String>,
         certificates: Arc<dyn RootCertStoreProvider>,
         sessions: Cleanup,
@@ -49,7 +52,7 @@ impl WorkerFactory {
         Self {
             loader,
             environment,
-            authority,
+            launch,
             argv,
             sessions,
             roots: Default::default(),
@@ -64,9 +67,10 @@ impl WorkerFactory {
     }
 
     fn create(self: &Arc<Self>, args: CreateWebWorkerArgs) -> (WebWorker, SendableWebWorkerHandle) {
-        // A worker checks the instance's own permissions rather than a copy, so it always has
-        // its creator's current ones, including drops made after it started.
-        let permissions = self.authority.container().clone();
+        // As in Node, each worker holds permissions of its own, starting from the launch's:
+        // drops its creator made do not apply to it, and drops it makes apply to it alone.
+        let authority = Authority::new(self.launch.clone(), self.environment.cwd.clone());
+        let permissions = authority.container().clone();
         let loaders = self.loader.create_for_worker(
             args.parent_permissions,
             permissions.clone(),
@@ -91,20 +95,17 @@ impl WorkerFactory {
             extensions: vec![
                 bento_instance::init(
                     self.environment.clone(),
-                    self.authority.clone(),
+                    authority.clone(),
                     self.loader.modules.clone(),
                     self.loader.control.clone(),
                     self.loader.node.inputs.clone(),
                 ),
                 crate::feature_ops::extension(self.callback()),
                 crate::subprocess_ops::extension(),
-                // The same adapter and the same model access, over this isolate's own
-                // sessions: identifiers never cross isolates, and the instance's cleanup is
-                // shared so shutdown can account for work a worker started.
-                bento_prompt::deno::extension(
-                    self.authority.model().clone(),
-                    self.sessions.clone(),
-                ),
+                // The same adapter, over this isolate's own sessions and model access:
+                // identifiers never cross isolates, and the instance's cleanup is shared so
+                // shutdown can account for work a worker started.
+                bento_prompt::deno::extension(authority.model().clone(), self.sessions.clone()),
             ],
             startup_snapshot: deno_snapshots::CLI_SNAPSHOT,
             residual_lazy_js_sources: deno_snapshots::RESIDUAL_LAZY_JS,

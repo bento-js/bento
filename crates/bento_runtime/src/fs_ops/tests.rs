@@ -7,7 +7,7 @@ use deno_runtime::deno_permissions::{
 };
 use sys_traits::impls::RealSys;
 
-use crate::ops::InstanceEnvironment;
+use crate::environment::InstanceEnvironment;
 
 deno_core::extension!(
     removal_test,

@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{ArgAction, Args};
 use thiserror::Error;
 
@@ -132,12 +132,17 @@ impl PermissionFlags {
         }))
     }
 
-    /// Node's warning for each file system flag given a value with a comma, which names one
-    /// path rather than a list of them.
-    pub(crate) fn comma_warnings(&self) -> impl Iterator<Item = String> {
+    /// Node's warning for each file system flag given exactly one value, with a comma in it,
+    /// which names one path rather than a list of them. As in Node, the script a launch runs
+    /// counts as one more `--allow-fs-read` value, so `reads_entry` launches never warn for it.
+    pub(crate) fn comma_warnings(&self, reads_entry: bool) -> impl Iterator<Item = String> {
+        let warns = move |permission: Permission| match self.values(permission) {
+            [value] => value.contains(',') && !(reads_entry && permission == Permission::FsRead),
+            _ => false,
+        };
         [Permission::FsRead, Permission::FsWrite]
             .into_iter()
-            .filter(|permission| self.values(*permission).iter().any(|value| value.contains(',')))
+            .filter(move |permission| warns(*permission))
             .map(|permission| {
                 format!(
                     "The {} CLI flag has changed. Passing a comma-separated list of paths is no \
@@ -174,20 +179,26 @@ impl PermissionFlags {
     }
 }
 
-/// The error Node reports when `usage` is clap's report that a value flag was given no value,
-/// as at the end of the command line or before another option.
-pub(crate) fn missing_argument(usage: &clap::Error) -> Option<PermissionError> {
-    let is_empty =
-        |kind| matches!(usage.get(kind), Some(ContextValue::String(value)) if value.is_empty());
-    if usage.kind() != ErrorKind::InvalidValue || !is_empty(ContextKind::InvalidValue) {
-        return None;
+/// The error Node reports for a value flag of `bento run`'s options, in `arguments`, given as
+/// a separate word without a value after it: the command line ends, or the next word starts
+/// with `-`. Node reads such a word as an option even where clap would take it as the value
+/// (`-`) or report it as unknown (`-x`). The words after the target are the target's own.
+pub(crate) fn missing_argument(arguments: &[OsString]) -> Option<PermissionError> {
+    let mut words = arguments.iter().skip(1).skip_while(|word| *word != "run").skip(1);
+    while let Some(word) = words.next() {
+        let Some(flag) = VALUE_FLAGS.into_iter().map(Permission::flag).find(|flag| word == flag)
+        else {
+            if word == "--" || !word.as_encoded_bytes().starts_with(b"-") {
+                return None;
+            }
+            continue;
+        };
+        match words.next() {
+            Some(value) if !value.as_encoded_bytes().starts_with(b"-") => {}
+            _ => return Some(PermissionError::MissingArgument { flag: flag.to_owned() }),
+        }
     }
-    let Some(ContextValue::String(argument)) = usage.get(ContextKind::InvalidArg) else {
-        return None;
-    };
-    let given = argument.split(' ').next()?;
-    let flag = VALUE_FLAGS.into_iter().map(Permission::flag).find(|flag| *flag == given)?;
-    Some(PermissionError::MissingArgument { flag: flag.to_owned() })
+    None
 }
 
 /// The paths `values` allow for `permission`, resolved against `base`.

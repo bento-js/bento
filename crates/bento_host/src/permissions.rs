@@ -44,9 +44,10 @@ impl Permissions {
     }
 
     /// Whether anything is withheld: always for a restricted instance, and for an unrestricted
-    /// one with a denial. Exactly these instances define `process.permission`.
+    /// one with a denial or a dropped environment. Exactly these instances define
+    /// `process.permission`.
     pub fn withholds_anything(&self) -> bool {
-        self.restricted || !self.denied.is_empty()
+        self.restricted || !self.denied.is_empty() || self.allowed != PermissionSet::everything()
     }
 
     /// Whether this instance holds all of `permission`: what `process.permission.has()` answers
@@ -74,15 +75,27 @@ impl Permissions {
     }
 
     /// What `process.permission.has('env', name)` answers: whether the instance's permissions
-    /// cover the variable, or it is one Node always keeps and was not dropped.
+    /// cover the variable, or it is one Node always keeps and was not dropped. With the whole
+    /// environment taken away, only the always-kept variables answer `true`, as in Node.
     pub fn has_variable(&self, name: &str) -> bool {
-        !self.denied.env.covers(name) && (self.allowed.env.covers(name) || is_always_kept(name))
+        match &self.denied.env {
+            Scope::All => is_always_kept(name),
+            denied => {
+                !denied.covers(name) && (self.allowed.env.covers(name) || is_always_kept(name))
+            }
+        }
     }
 
     /// Whether a variable of the environment an instance starts with is removed before guest
     /// code runs: it is neither covered nor one Node always keeps.
     pub fn removes_variable(&self, name: &str) -> bool {
         !is_always_kept(name) && !self.holds_variable(name)
+    }
+
+    /// Whether this instance's permissions deny the variable `name` outright: a denial of an
+    /// unrestricted instance, or a drop, rather than the absence of an allowance.
+    pub fn denies_variable(&self, name: &str) -> bool {
+        self.denied.env.covers(name)
     }
 
     /// The paths this instance's permissions allow for `permission`, which must be
@@ -110,8 +123,16 @@ impl Permissions {
     }
 
     /// Irreversibly removes all of `permission`, as `process.permission.drop(scope)` does.
+    ///
+    /// Dropping the environment also forgets the variables dropped one by one, as Node does:
+    /// afterwards the always-kept variables answer `has()` again, and each can be dropped anew.
     pub fn drop_whole(&mut self, permission: Permission) {
-        self.denied.set_whole(permission, true);
+        if permission == Permission::Env {
+            self.allowed.env = Scope::None;
+            self.denied.env = Scope::None;
+        } else {
+            self.denied.set_whole(permission, true);
+        }
     }
 
     /// Irreversibly removes the one file system allowance given by exactly `pattern`, as

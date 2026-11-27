@@ -351,20 +351,25 @@ attempt('read sibling', () => fs.readFileSync('file.txt'));
     );
 }
 
-/// A comma is part of the path in both. Bento always warns about it, as the proposal says;
-/// Node 26 warns only when the flag has exactly one value, and it counts the implied entry
-/// file among the values, so for a script it never warns.
+/// A comma is part of the path in both, and both warn about it only when the flag has exactly
+/// one value, counting the script among the read values, so a script launch never warns about
+/// reading.
 #[test]
 fn a_comma_is_part_of_the_path() {
     let project = project();
-    let (_, bento) = project.same(
+    let warned = |outcome: &Outcome, flag: &str| {
+        outcome.stderr.contains(&format!("The {flag} CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions"))
+    };
+    let (node, bento) = project.same(
         NODE,
-        &["--permission", "--allow-fs-read=./a,./b"],
+        &["--permission", "--allow-fs-read=./a,./b", "--allow-fs-write=./a,./b"],
         "report('comma path', process.permission.has('fs.read', `${process.cwd()}/a,./b`));\nreport('a', process.permission.has('fs.read', 'a'));",
         &[],
     );
-    let warning = "warning: The --allow-fs-read CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions";
-    assert!(bento.stderr.contains(warning), "{}", bento.stderr);
+    for outcome in [&node, &bento] {
+        assert!(!warned(outcome, "--allow-fs-read"), "{}", outcome.stderr);
+        assert!(warned(outcome, "--allow-fs-write"), "{}", outcome.stderr);
+    }
 }
 
 #[test]
@@ -424,6 +429,11 @@ report('dropped always kept', [process.env.HOME, has('env', 'HOME')]);
 attempt('drop a wildcard', () => drop('env', 'APP_*'));
 drop('env');
 report('dropped everything', Object.keys(process.env).sort());
+report('has after dropping everything', ['HOME', 'PATH', 'APP_B'].map((name) => has('env', name)).concat(has('env')));
+drop('env', 'PATH');
+report('dropped anew', [has('env', 'PATH'), process.env.PATH]);
+drop('env');
+report('dropped everything again', [has('env', 'PATH'), process.env.PATH]);
 "#,
         &env,
     );
@@ -489,7 +499,7 @@ fn bento_rejects_a_value_given_to_a_boolean_flag_where_node_ignores_it() {
 }
 
 #[test]
-fn a_worker_keeps_its_creators_permissions_whatever_its_exec_argv() {
+fn a_worker_keeps_the_launchs_permissions_whatever_its_exec_argv() {
     let project = project();
     let flags = ["--permission", "--allow-worker"];
     let script = r#"
@@ -524,22 +534,549 @@ fn a_missing_flag_value_exits_with_bentos_usage_status() {
 }
 
 #[test]
-fn a_drop_reaches_workers_already_running_where_node_leaves_them_unchanged() {
+fn drops_stay_in_the_thread_that_makes_them() {
     let project = project();
-    let flags = ["--permission", "--allow-worker", "--allow-net"];
+    project.same(
+        NODE,
+        &["--permission", "--allow-worker", "--allow-net", "--allow-child-process"],
+        r#"
+import { Worker } from 'node:worker_threads';
+const source = `
+    const { parentPort } = require('node:worker_threads');
+    parentPort.on('message', (command) => {
+        if (command === 'drop') process.permission.drop('child');
+        parentPort.postMessage([process.permission.has('net'), process.permission.has('child')]);
+    });
+`;
+const ask = (worker, command) => {
+    worker.postMessage(command);
+    return new Promise((resolve) => worker.once('message', resolve));
+};
+const before = new Worker(source, { eval: true });
+report('running worker', await ask(before, 'report'));
+process.permission.drop('net');
+report('main after its drop', process.permission.has('net'));
+report('running worker after the main drop', await ask(before, 'report'));
+const after = new Worker(source, { eval: true });
+report('worker created after the drop', await ask(after, 'report'));
+report('worker drop', await ask(before, 'drop'));
+report('main after the worker drop', process.permission.has('child'));
+report('other worker after the worker drop', await ask(after, 'report'));
+await before.terminate();
+await after.terminate();
+"#,
+        &[],
+    );
+}
+
+impl Project {
+    /// Writes `text` to `name` in the project, creating its directories.
+    fn file(&self, name: &str, text: &str) {
+        let path = self.root.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+}
+
+#[test]
+fn a_denied_module_anywhere_in_a_dynamic_import_rejects_it_as_node_does() {
+    let project = project();
+    project.file("dependency.mjs", "export const item = 1;\n");
+    project.file(
+        "wrapper.mjs",
+        "globalThis.evaluated = true;\nexport { item } from './dependency.mjs';\n",
+    );
+    project.file("outer.mjs", "export { item } from './wrapper.mjs';\n");
+    let script = r#"
+await settle('a readable module whose import is denied', import('./wrapper.mjs'));
+await settle('the same module again', import('./wrapper.mjs'));
+await settle('a module two imports above the denial', import('./outer.mjs'));
+report('the readable module evaluated', globalThis.evaluated ?? false);
+await settle('the denied module itself', import('./dependency.mjs'));
+"#;
+    project.same(
+        NODE,
+        &["--permission", "--allow-fs-read=./wrapper.mjs", "--allow-fs-read=./outer.mjs"],
+        script,
+        &[],
+    );
+    project.same(
+        NODE,
+        &["--permission", "--allow-fs-read=./wrapper.mjs", "--allow-fs-read=./dependency.mjs"],
+        "report('item', (await import('./wrapper.mjs')).item);",
+        &[],
+    );
+}
+
+/// Node's resolver reads a package's `package.json` and settles on a file it then reads, so it
+/// refuses either when the instance may not read it, before either can reveal anything.
+#[test]
+fn resolution_refuses_files_the_instance_may_not_read_as_node_does() {
+    let project = project();
+    project.file("node_modules/pkg/package.json", r#"{"name":"pkg","exports":"./token.js"}"#);
+    project.file("node_modules/pkg/token.js", "export const token = 1;\n");
+    project.file("secret.cjs", "module.exports = 1;\n");
+    project.file("readable.mjs", "export const readable = 1;\n");
+    project.file("src/entry.mjs", "export { inner } from './inner.mjs';\n");
+    project.file("src/inner.mjs", "export const inner = 1;\n");
+    let script = r#"
+for (const specifier of ['pkg', './secret.cjs', './other.mjs', './readable.mjs', './src/entry.mjs']) {
+    let resolved;
+    attempt(`resolve ${specifier}`, () => { resolved = import.meta.resolve(specifier); });
+    report(`resolved ${specifier}`, resolved);
+    await settle(`import ${specifier}`, import(specifier));
+}
+"#;
+    for flags in [
+        &["--permission", "--allow-fs-read=./readable.mjs"][..],
+        &["--permission", "--allow-fs-read=./node_modules/pkg/package.json"],
+        &["--permission", "--allow-fs-read=./src/*"],
+    ] {
+        project.same(NODE, flags, script, &[]);
+    }
+    project.same(
+        NODE,
+        &["--permission"],
+        r#"
+attempt('resolve a subpath of a package', () => import.meta.resolve('pkg/sub'));
+await settle('import a subpath of a package', import('pkg/sub'));
+"#,
+        &[],
+    );
+}
+
+/// `require()` probes the directories of a lookup without the permission model, as Node's
+/// `internalModuleStat` does, and is refused the file it settles on.
+#[test]
+fn require_refuses_the_file_it_resolves_as_node_does() {
+    let project = project();
+    project.file("secret.cjs", "module.exports = 1;\n");
+    project.file("sub/x.cjs", "module.exports = 'x';\n");
+    project.file("node_modules/pkg/package.json", r#"{"name":"pkg","main":"index.js"}"#);
+    project.file("node_modules/pkg/index.js", "module.exports = 1;\n");
+    project.same(
+        NODE,
+        &["--permission", "--allow-fs-read=./sub/x.cjs"],
+        r#"
+import Module, { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+attempt('require', () => require('./secret.cjs'));
+attempt('require.resolve', () => require.resolve('./secret.cjs'));
+attempt('require.resolve an absolute path', () => require.resolve(`${process.cwd()}/secret.cjs`));
+attempt('require.resolve a directory', () => require.resolve('./sub'));
+attempt('require a package', () => require('pkg'));
+attempt('require.resolve a package', () => require.resolve('pkg'));
+report('require a readable file', require('./sub/x.cjs'));
+report('require.resolve a readable file', require.resolve('./sub/x.cjs'));
+for (const path of ['secret.cjs', 'sub', 'absent', 'secret.cjs/x']) {
+    report(`stat ${path}`, Module._stat(`${process.cwd()}/${path}`));
+}
+"#,
+        &[],
+    );
+}
+
+/// For a bare request, Node's `require()` reads `<node_modules>/<name>/package.json` before the
+/// manifest's `exports` can shape the result, and is refused it even when the package is absent.
+#[test]
+fn require_refuses_a_package_manifest_as_node_does() {
+    let project = project();
+    project.file("node_modules/pkg/package.json", r#"{"name":"pkg","exports":"./token.js"}"#);
+    project.file("node_modules/pkg/token.js", "module.exports = 1;\n");
+    let script = r#"
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+attempt('require a package', () => require('pkg'));
+attempt('require.resolve a package', () => require.resolve('pkg'));
+attempt('require an absent package', () => require('absent'));
+attempt('require a subpath of an absent scoped package', () => require('@scope/absent/sub'));
+report('require a built-in module', typeof require('node:fs'));
+"#;
+    for flags in [
+        &["--permission"][..],
+        &["--permission", "--allow-fs-read=./node_modules/pkg/package.json"],
+        &["--permission", "--allow-fs-read=./node_modules/*"],
+    ] {
+        project.same(NODE, flags, script, &[]);
+    }
+    project.same(
+        NODE,
+        &["--permission"],
+        "import { createRequire } from 'node:module';\nattempt('require a subpath of a package', () => createRequire(import.meta.url)('pkg/sub'));",
+        &[],
+    );
+}
+
+/// A module that answers `_start` with nothing, for WASI to run.
+const EMPTY_WASI_MODULE: &str = "[0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,5,3,1,0,1,7,19,2,6,109,101,109,111,114,121,2,0,6,95,115,116,97,114,116,0,0,10,4,1,2,0,11]";
+
+#[test]
+fn no_path_to_the_wasi_class_escapes_its_permission() {
+    let project = project();
+    let script = format!(
+        r#"
+import {{ WASI }} from 'node:wasi';
+const bytes = new Uint8Array({EMPTY_WASI_MODULE});
+const options = {{ version: 'preview1', returnOnExit: true }};
+const run = async (label, make) => {{
+    let wasi;
+    try {{ wasi = make(); }} catch (error) {{ report(label, shape(error)); return; }}
+    const {{ instance }} = await WebAssembly.instantiate(bytes, wasi.getImportObject());
+    report(label, [wasi instanceof WASI, wasi.start(instance)]);
+}};
+await run('the class', () => new WASI(options));
+await run('the class it extends', () => new (Object.getPrototypeOf(WASI))(options));
+await run('its prototype constructor', () => new WASI.prototype.constructor(options));
+await run('a subclass', () => new (class extends WASI {{}})(options));
+attempt('a call without new', () => WASI(options));
+// Node validates the options before its binding checks the permission.
+for (const [label, value] of [['no options', undefined], ['a bad version', {{ version: 'bogus' }}],
+    ['bad args', {{ version: 'preview1', args: 5 }}], ['a bad stdin', {{ version: 'preview1', stdin: -1 }}]]) {{
+    try {{ new WASI(value); report(label, 'ok'); }} catch (error) {{ report(label, [error.name, error.code, error.message]); }}
+}}
+"#
+    );
+    project.same(NODE, &["--permission"], &script, &[]);
+    project.same(NODE, &["--permission", "--allow-wasi"], &script, &[]);
+}
+
+#[test]
+fn an_inspector_session_in_a_worker_is_refused_as_node_refuses_it() {
+    let project = project();
     let script = r#"
 import { Worker } from 'node:worker_threads';
+import { Session } from 'node:inspector';
 const worker = new Worker(`
     const { parentPort } = require('node:worker_threads');
-    parentPort.on('message', () => parentPort.postMessage(process.permission.has('net')));
+    const inspector = require('node:inspector');
+    const { Session } = require('node:inspector/promises');
+    const results = [];
+    for (const [label, connect] of [
+        ['connectToMainThread', () => new inspector.Session().connectToMainThread()],
+        ['promises connectToMainThread', () => new Session().connectToMainThread()],
+        ['connect', () => new inspector.Session().connect()],
+    ]) {
+        try { connect(); results.push([label, 'ok']); }
+        catch (error) { results.push([label, [error.code, error.permission, error.resource, error.message]]); }
+    }
+    parentPort.postMessage(results);
 `, { eval: true });
-process.permission.drop('net');
-worker.postMessage('report');
-report('worker has net', await new Promise((resolve) => worker.once('message', resolve)));
-await worker.terminate();
+for (const [label, outcome] of await new Promise((resolve) => worker.once('message', resolve))) report(label, outcome);
+try { new Session().connectToMainThread(); } catch (error) { report('the main thread', [error.code, error.message]); }
 "#;
-    let node = project.node(NODE, &flags, script, &[]);
-    let bento = project.bento(&flags, script, &[]);
-    assert_eq!(node.stdout.trim(), r#"["worker has net",true]"#, "{node:?}");
-    assert_eq!(bento.stdout.trim(), r#"["worker has net",false]"#, "{bento:?}");
+    project.same(NODE, &["--permission", "--allow-worker"], script, &[]);
+}
+
+#[test]
+fn dns_denials_reach_callbacks_and_promises_as_in_node() {
+    let project = project();
+    project.same(
+        NODE,
+        &["--permission"],
+        r#"
+import dns from 'node:dns';
+const dnsShape = (error) => error ? { ...shape(error), errno: error.errno ?? null, hostname: error.hostname ?? null } : 'ok';
+const order = [];
+const settled = [];
+const track = (label) => (error) => { order.push(label); settled.push([label, dnsShape(error)]); };
+const request = dns.lookup('localhost', track('lookup'));
+order.push(`lookup returned ${request.constructor.name}`);
+dns.lookup('localhost', { all: true }, track('lookup all'));
+dns.lookupService('127.0.0.1', 22, track('lookupService'));
+order.push('lookupService returned');
+dns.resolve4('localhost', track('resolve4'));
+dns.resolve('localhost', 'MX', track('resolve MX'));
+dns.reverse('127.0.0.1', track('reverse'));
+new dns.Resolver().resolveTxt('localhost', track('Resolver resolveTxt'));
+process.nextTick(() => order.push('nextTick'));
+setImmediate(() => order.push('setImmediate'));
+await new Promise((resolve) => setTimeout(resolve, 50));
+for (const [label, outcome] of settled) report(label, outcome);
+report('order', order);
+report('lookup an address', await new Promise((resolve) => dns.lookup('127.0.0.1', (error, address) => resolve(error ? dnsShape(error) : address))));
+for (const method of ['lookup', 'lookupService', 'resolve', 'resolve4', 'resolve6', 'resolveAny', 'resolveCaa', 'resolveCname', 'resolveMx',
+    'resolveNaptr', 'resolveNs', 'resolvePtr', 'resolveSoa', 'resolveSrv', 'resolveTxt', 'reverse']) {
+    const host = method === 'reverse' || method === 'lookupService' ? '127.0.0.1' : 'localhost';
+    let error;
+    try { await (method === 'lookupService' ? dns.promises.lookupService(host, 22) : dns.promises[method](host)); } catch (caught) { error = caught; }
+    report(`promises ${method}`, dnsShape(error));
+}
+"#,
+        &[],
+    );
+}
+
+/// The `errno` of Node's socket error is the denial itself.
+const SOCKET_SHAPE: &str = r#"
+const socketShape = (error) => ({ ...shape(error), errno: typeof error.errno === 'object' ? shape(error.errno) : error.errno ?? null,
+    address: error.address ?? null, port: error.port ?? null });
+"#;
+
+#[test]
+fn a_refused_udp_bind_reaches_an_error_event_as_in_node() {
+    let project = project();
+    let script = format!(
+        r#"{SOCKET_SHAPE}
+import dgram from 'node:dgram';
+const outcome = (label, type, act) => new Promise((resolve) => {{
+    const socket = dgram.createSocket(type);
+    socket.once('error', (error) => {{ report(label, socketShape(error)); resolve(); }});
+    try {{ act(socket); }} catch (error) {{ report(`${{label}} threw`, shape(error)); resolve(); }}
+}});
+await outcome('bind', 'udp4', (socket) => socket.bind());
+await outcome('bind a port and address', 'udp4', (socket) => socket.bind(5555, '127.0.0.1'));
+await outcome('bind over IPv6', 'udp6', (socket) => socket.bind(5556));
+await outcome('bind a host name', 'udp4', (socket) => socket.bind(5557, 'localhost'));
+await outcome('send', 'udp4', (socket) => socket.send('x', 9999, '127.0.0.1'));
+await outcome('connect', 'udp4', (socket) => socket.connect(9999, '127.0.0.1'));
+"#
+    );
+    project.same(NODE, &["--permission"], &script, &[]);
+}
+
+#[test]
+fn unix_domain_sockets_need_only_the_network_permission_as_in_node() {
+    let project = project();
+    let script = format!(
+        r#"{SOCKET_SHAPE}
+import net from 'node:net';
+const connected = (socket) => new Promise((resolve) => {{
+    socket.once('error', (error) => resolve(socketShape(error)));
+    socket.once('connect', () => {{ socket.destroy(); resolve('connected'); }});
+}});
+const server = net.createServer();
+try {{
+    await new Promise((resolve, reject) => {{ server.once('error', reject); server.listen('server.sock', resolve); }});
+    report('listen', 'listening');
+}} catch (error) {{ report('listen', shape(error)); }}
+attempt('listen with options', () => net.createServer().listen({{ path: 'other.sock' }}).close());
+report('connect', await connected(net.connect('server.sock')));
+report('createConnection', await connected(net.createConnection({{ path: 'server.sock' }})));
+report('connect to a missing socket', await connected(net.connect('missing.sock')));
+server.close();
+"#
+    );
+    for flags in [
+        &["--permission"][..],
+        &["--permission", "--allow-fs-read=*", "--allow-fs-write=*"],
+        &["--permission", "--allow-net"],
+    ] {
+        project.same(NODE, flags, &script, &[]);
+    }
+}
+
+/// Node's file system functions differ in how they report a denial: `lstat`, and the `rm` and
+/// `cp` built on it, check in JavaScript with a shorter message; some callback functions throw;
+/// `realpath` walks the path; and a few name the resolved path or `mkdtemp`'s template.
+#[test]
+fn file_system_denials_match_node_function_by_function() {
+    let project = project();
+    project.same(
+        NODE,
+        &["--permission", "--allow-fs-read=./existing"],
+        r#"
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import { lstatSync, watch } from 'node:fs';
+import { promisify } from 'node:util';
+const secret = 'secret.txt';
+const readable = 'existing/sub/file.txt';
+const secretUrl = new URL(`file://${process.cwd()}/secret.txt`);
+for (const [label, action] of Object.entries({
+    lstatSync: () => fs.lstatSync(secret),
+    'lstatSync imported by name': () => lstatSync(secret),
+    statSync: () => fs.statSync(secret),
+    rmSync: () => fs.rmSync(secret),
+    'rmSync forced': () => fs.rmSync('missing.txt', { force: true }),
+    realpathSync: () => fs.realpathSync(secret),
+    'realpathSync through ..': () => fs.realpathSync('existing/../secret.txt'),
+    'realpathSync.native': () => fs.realpathSync.native(secret),
+    mkdtempSync: () => fs.mkdtempSync('tmp-'),
+    cpSync: () => fs.cpSync(readable, 'out.txt'),
+    'cpSync a secret': () => fs.cpSync(secret, 'out.txt'),
+    existsSync: () => fs.existsSync(secret),
+    readlinkSync: () => fs.readlinkSync(secret),
+    watch: () => fs.watch(secret).close(),
+    'watch imported by name': () => watch(secret).close(),
+    'watch a URL': () => fs.watch(secretUrl).close(),
+    'watch a readable file': () => fs.watch(readable).close(),
+    watchFile: () => fs.watchFile(secret, () => {}),
+    'watchFile through ..': () => fs.watchFile('existing/../secret.txt', () => {}),
+    'watchFile a readable file': () => { fs.watchFile(readable, () => {}); fs.unwatchFile(readable); },
+})) attempt(label, action);
+try { fs.watchFile(secret); } catch (error) { report('watchFile without a listener', [error.code, error.message]); }
+const call = (label, invoke) => new Promise((resolve) => {
+    try { invoke((error) => { report(label, shape(error ?? undefined)); resolve(); }); }
+    catch (error) { report(`${label} threw`, shape(error)); resolve(); }
+});
+for (const [label, invoke] of Object.entries({
+    lstat: (done) => fs.lstat(secret, done),
+    stat: (done) => fs.stat(secret, done),
+    rm: (done) => fs.rm(secret, done),
+    'rm forced': (done) => fs.rm('missing.txt', { force: true }, done),
+    cp: (done) => fs.cp(readable, 'out.txt', done),
+    'cp dereferencing': (done) => fs.cp(secret, 'out.txt', { dereference: true }, done),
+    realpath: (done) => fs.realpath(secret, done),
+    'realpath of a readable file': (done) => fs.realpath(readable, done),
+    'realpath.native': (done) => fs.realpath.native(secret, done),
+    mkdtemp: (done) => fs.mkdtemp('tmp-', done),
+    mkdir: (done) => fs.mkdir('newdir', done),
+    'mkdir recursive': (done) => fs.mkdir('newdir/a', { recursive: true }, done),
+    chmod: (done) => fs.chmod(secret, 0o644, done),
+    utimes: (done) => fs.utimes(secret, 1, 1, done),
+    lutimes: (done) => fs.lutimes(secret, 1, 1, done),
+    rmdir: (done) => fs.rmdir('test', done),
+    readlink: (done) => fs.readlink(secret, done),
+    readFile: (done) => fs.readFile(secret, done),
+    writeFile: (done) => fs.writeFile(secret, 'x', done),
+    open: (done) => fs.open(secret, done),
+    readdir: (done) => fs.readdir('test', done),
+    access: (done) => fs.access(secret, done),
+    opendir: (done) => fs.opendir('test', done),
+    rename: (done) => fs.rename(secret, 'renamed.txt', done),
+    copyFile: (done) => fs.copyFile(secret, 'copy.txt', done),
+    symlink: (done) => fs.symlink(secret, 'link.txt', done),
+    unlink: (done) => fs.unlink(secret, done),
+})) await call(label, invoke);
+report('exists', await new Promise((resolve) => fs.exists(secret, resolve)));
+report('exists a readable file', await new Promise((resolve) => fs.exists(readable, resolve)));
+report('exists promisified', await promisify(fs.exists)(secret));
+for (const [label, start] of Object.entries({
+    lstat: () => fsp.lstat(secret),
+    'fs.promises lstat': () => fs.promises.lstat(secret),
+    stat: () => fsp.stat(secret),
+    rm: () => fsp.rm(secret),
+    cp: () => fsp.cp(readable, 'out.txt'),
+    'cp dereferencing': () => fsp.cp(secret, 'out.txt', { dereference: true }),
+    realpath: () => fsp.realpath(secret),
+    mkdtemp: () => fsp.mkdtemp('tmp-'),
+    mkdir: () => fsp.mkdir('newdir'),
+    chmod: () => fsp.chmod(secret, 0o644),
+    readlink: () => fsp.readlink(secret),
+    readFile: () => fsp.readFile(secret),
+    access: () => fsp.access(secret),
+    opendir: () => fsp.opendir('test'),
+})) await settle(`promises ${label}`, start());
+for (const [label, open] of [['read stream', () => fs.createReadStream(secret)], ['write stream', () => fs.createWriteStream(secret)]]) {
+    report(label, await new Promise((resolve) => open().once('error', (error) => resolve(shape(error))).once('open', () => resolve('opened'))));
+}
+"#,
+        &[],
+    );
+}
+
+/// Node checks once it has validated the arguments and chosen the file, the shell for `shell`.
+#[test]
+fn child_process_denials_follow_nodes_validation_and_name_its_file() {
+    let project = project();
+    project.same(
+        NODE,
+        &["--permission"],
+        r#"
+import childProcess from 'node:child_process';
+import { spawn } from 'node:child_process';
+const outcome = (label, action) => {
+    try { action(); report(label, 'ok'); }
+    catch (error) {
+        const { code, permission, resource, message } = error;
+        report(label, [code, permission ?? null, resource === process.execPath ? 'execPath' : resource ?? null, message]);
+    }
+};
+for (const [label, action] of Object.entries({
+    'spawn()': () => childProcess.spawn(),
+    'spawn imported by name': () => spawn(),
+    'spawn(5)': () => childProcess.spawn(5),
+    "spawn('')": () => childProcess.spawn(''),
+    'spawnSync()': () => childProcess.spawnSync(),
+    'execFile()': () => childProcess.execFile(),
+    'execFileSync()': () => childProcess.execFileSync(),
+    'spawn with a null byte': () => childProcess.spawn('ls\0'),
+    'spawn with a bad cwd': () => childProcess.spawn('ls', { cwd: 5 }),
+    'spawn with a bad shell': () => childProcess.spawn('ls', { shell: 5 }),
+    'ChildProcess spawn without options': () => new childProcess.ChildProcess().spawn(),
+    'ChildProcess spawn without a file': () => new childProcess.ChildProcess().spawn({}),
+    spawn: () => childProcess.spawn('ls', ['-l']),
+    'spawn with shell': () => childProcess.spawn('printf ok', { shell: true }),
+    'spawn imported by name with shell': () => spawn('printf ok', { shell: true }),
+    'spawn with a shell': () => childProcess.spawn('printf ok', { shell: '/bin/bash' }),
+    'spawnSync with shell': () => childProcess.spawnSync('printf ok', { shell: true }),
+    'execFile with shell': () => childProcess.execFile('echo', ['x'], { shell: true }),
+    'execFileSync with a shell': () => childProcess.execFileSync('echo', ['x'], { shell: '/bin/bash' }),
+    exec: () => childProcess.exec('echo hi'),
+    'exec with a shell': () => childProcess.exec('echo hi', { shell: '/bin/bash' }),
+    'execSync with a shell': () => childProcess.execSync('echo hi', { shell: '/bin/bash' }),
+    fork: () => childProcess.fork('child.js'),
+    'fork with execPath': () => childProcess.fork('child.js', [], { execPath: '/bin/echo' }),
+    'ChildProcess spawn': () => new childProcess.ChildProcess().spawn({ file: 'ls', args: ['ls'] }),
+})) outcome(label, action);
+"#,
+        &[],
+    );
+}
+
+/// An empty reference names nothing: `has()` answers no, Node 26's `drop()` reads it as no
+/// reference at all, and Node 27 refuses one for the environment.
+#[test]
+fn an_empty_reference_matches_node() {
+    let project = project();
+    project.same(
+        NODE,
+        &[
+            "--permission",
+            "--allow-fs-read=./existing",
+            "--allow-fs-write=*",
+            "--allow-net",
+            "--allow-child-process",
+        ],
+        r#"
+const { has, drop } = process.permission;
+for (const scope of ['fs', 'fs.read', 'fs.write', 'net', 'child', 'worker', 'bogus']) {
+    report(`has ${scope}`, [has(scope, ''), has(scope, new Uint8Array())]);
+}
+const state = () => [has('fs.read', 'existing'), has('fs.write', '/x'), has('net'), has('child')];
+drop('fs.read', ''); report('drop fs.read', state());
+drop('fs.write', new Uint8Array()); report('drop fs.write', state());
+drop('net', ''); report('drop net', state());
+drop('child', ''); report('drop child', state());
+"#,
+        &[],
+    );
+    project.same(
+        NODE_ENVIRONMENT,
+        &["--permission", "--allow-env=APP_*"],
+        r#"
+const { has, drop } = process.permission;
+report('has env', [has('env', ''), has('env', new Uint8Array())]);
+attempt('drop an empty name', () => drop('env', ''));
+attempt('drop empty bytes', () => drop('env', new Uint8Array()));
+report('kept', [process.env.APP_A, has('env', 'APP_A')]);
+"#,
+        &[("APP_A", "a")],
+    );
+}
+
+/// Node's glob skips what it may not inspect, so a walk from an unreadable working directory
+/// finds nothing. A walk that starts in a readable directory and climbs out of it is left out:
+/// deno_node's glob rethrows the `lstat` failure there, a file system difference of its own.
+#[test]
+fn glob_skips_what_it_may_not_read_as_node_does() {
+    let project = project();
+    project.same(
+        NODE,
+        &["--permission", "--allow-fs-read=./existing"],
+        r#"
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+for (const [label, pattern, options] of [['in the working directory', '*.txt', {}], ['into a readable directory', 'existing/**', {}],
+    ['into unreadable directories', 'test*/*', {}]]) {
+    report(`glob ${label}`, await new Promise((resolve) => fs.glob(pattern, options, (error, matches) => resolve(error ? shape(error) : matches.sort()))));
+    try {
+        const matches = [];
+        for await (const match of fsp.glob(pattern, options)) matches.push(match);
+        report(`promises glob ${label}`, matches.sort());
+    } catch (error) { report(`promises glob ${label}`, shape(error)); }
+}
+"#,
+        &[],
+    );
 }

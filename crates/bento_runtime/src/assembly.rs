@@ -18,11 +18,12 @@ use tokio::sync::mpsc;
 
 use bento_prompt::deno::Cleanup;
 
+use crate::environment::InstanceEnvironment;
 use crate::host::HostModules;
 use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
 use crate::node::NodeServices;
-use crate::ops::{InstanceEnvironment, bento_instance};
+use crate::ops::bento_instance;
 use crate::permissions::Authority;
 use crate::sources::Sources;
 use crate::workers::WorkerFactory;
@@ -172,7 +173,7 @@ fn create_worker(
     let workers = Arc::new(WorkerFactory::new(
         loader.clone(),
         environment.clone(),
-        authority.clone(),
+        config.permissions.clone(),
         config.argv.clone(),
         Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
         sessions.clone(),
@@ -230,7 +231,7 @@ fn main_worker(
     Ok(factory.create_custom_worker(
         WorkerExecutionMode::Run,
         main,
-        vec![ModuleSpecifier::parse("bento:compat")?, ModuleSpecifier::parse("bento:subprocess")?],
+        vec![ModuleSpecifier::parse("bento:compat")?],
         Vec::new(),
         permissions,
         extensions,

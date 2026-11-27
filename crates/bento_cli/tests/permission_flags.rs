@@ -85,15 +85,23 @@ fn a_value_flag_without_a_value_requires_an_argument() {
     for flag in ["--allow-fs-read", "--allow-fs-write", "--allow-env"] {
         let expected = format!("error: {flag} requires an argument\n");
         assert_eq!(rejected(&temp, &["run", "--permission", flag]), expected);
-        assert_eq!(
-            rejected(&temp, &["run", "--permission", flag, "--allow-net", "ceiling"]),
-            expected
-        );
+        for next in ["--allow-net", "-x", "-", "--unknown", "--"] {
+            assert_eq!(
+                rejected(&temp, &["run", "--permission", flag, next, "ceiling"]),
+                expected,
+                "{flag} {next}"
+            );
+        }
 
         let empty = format!("{flag}=");
         let message = rejected(&temp, &["run", "--permission", &empty, "ceiling"]);
         assert_eq!(message, format!("error: {flag}= requires an argument\n"));
     }
+
+    let output = temp.bento(&["run", "--permission", "show.mjs", "--allow-fs-read", "-x"]).output();
+    let output = output.unwrap();
+    assert!(output.status.success(), "the script's own words: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ran\n");
 }
 
 #[test]
@@ -255,13 +263,12 @@ fn environment_values_are_comma_separated_and_repeatable_and_skip_empty_items() 
 }
 
 #[test]
-fn a_comma_in_a_path_value_warns_and_stays_part_of_one_path() {
+fn a_comma_in_a_lone_path_value_warns_and_stays_part_of_one_path() {
     let temp = project();
 
     for flag in ["--allow-fs-read", "--allow-fs-write"] {
         let value = format!("{flag}=data,db");
-        let output =
-            temp.bento(&["run", "--permission", &value, &value, "ceiling"]).output().unwrap();
+        let output = temp.bento(&["run", "--permission", &value, "ceiling"]).output().unwrap();
 
         assert!(output.status.success(), "{}", stderr(&output));
         assert_eq!(stderr(&output), format!("warning: The {flag}{COMMA_WARNING}\n"));
@@ -271,7 +278,20 @@ fn a_comma_in_a_path_value_warns_and_stays_part_of_one_path() {
             _ => PermissionSet { fs_write: one_path, ..PermissionSet::default() },
         };
         assert_eq!(recorded(&temp), Permissions::restricted(expected));
+
+        let repeated = temp.bento(&["run", "--permission", &value, &value, "ceiling"]).output();
+        assert_eq!(stderr(&repeated.unwrap()), "", "{flag} given twice, as Node counts it");
     }
+
+    let script = |flag: &str| {
+        let value = format!("{flag}=data,db");
+        stderr(&temp.bento(&["run", "--permission", &value, "show.mjs"]).output().unwrap())
+    };
+    assert_eq!(script("--allow-fs-read"), "", "the script counts as a read value, as in Node");
+    assert_eq!(
+        script("--allow-fs-write"),
+        format!("warning: The --allow-fs-write{COMMA_WARNING}\n")
+    );
 }
 
 #[test]

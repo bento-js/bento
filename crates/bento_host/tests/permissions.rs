@@ -171,6 +171,25 @@ fn dropping_a_variable_removes_it_even_under_an_allowance_of_everything() {
 }
 
 #[test]
+fn dropping_the_environment_forgets_single_drops_and_keeps_answering_for_kept_variables() {
+    let mut permissions = Permissions::unrestricted();
+    permissions.drop_variable("HOME");
+    assert!(!permissions.has_variable("HOME"));
+
+    permissions.drop_whole(Permission::Env);
+
+    assert!(permissions.has_variable("HOME"), "Node answers for an always-kept name again");
+    assert!(permissions.has_variable("PATH"));
+    assert!(!permissions.has_variable("APP_A"));
+    assert!(!permissions.holds_any(Permission::Env));
+    assert!(permissions.withholds_anything());
+
+    permissions.drop_variable("PATH");
+
+    assert!(!permissions.has_variable("PATH"), "a name dropped afterwards is dropped anew");
+}
+
+#[test]
 fn a_dropped_name_with_a_wildcard_changes_nothing() {
     let mut permissions = Permissions::restricted(PermissionSet {
         env: names(&["APP_*"]),

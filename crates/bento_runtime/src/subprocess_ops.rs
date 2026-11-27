@@ -8,7 +8,7 @@ use deno_error::JsErrorBox;
 
 use bento_host::CEILING_ENV;
 
-use crate::ops::InstanceEnvironment;
+use crate::environment::InstanceEnvironment;
 use crate::permissions::Authority;
 
 /// Deno's spawn operations, kept under other names so Bento's replacements can call them.
@@ -106,8 +106,8 @@ fn bento_spawn_sync<'s>(
 
 /// Starts the process from the instance rather than the host process: in the guest's working
 /// directory unless the call names another, with the instance's environment where the call
-/// would inherit one, and, from a restricted instance, its current permissions as the ceiling
-/// of any `bento` the process starts.
+/// would inherit one, and, from an instance that withholds anything, its current permissions
+/// as the ceiling of any `bento` the process starts.
 fn spawn<'s>(
     scope: &mut v8::PinScope<'s, '_>,
     state: &Rc<RefCell<OpState>>,
@@ -132,7 +132,7 @@ fn spawn<'s>(
         if clear { BTreeMap::new() } else { environment.values.lock().clone() };
     env.extend(given);
     let permissions = authority.current();
-    if permissions.is_restricted() {
+    if permissions.withholds_anything() {
         let ceiling = permissions
             .to_ceiling_value()
             .map_err(|error| JsErrorBox::type_error(error.to_string()))?;

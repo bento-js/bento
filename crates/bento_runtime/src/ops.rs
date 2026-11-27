@@ -1,130 +1,21 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
-use deno_core::{OpDecl, OpState, op2, v8};
+use deno_core::{OpDecl, OpState, op2};
 use deno_error::JsErrorBox;
-use parking_lot::Mutex;
 
-use bento_host::{Permission, Permissions, is_always_kept};
+use bento_host::Permission;
 
+use crate::environment::{
+    InstanceEnvironment, bento_cwd, bento_delete_env, bento_env, bento_get_env, bento_set_env,
+    op_bento_register_env_warning,
+};
 use crate::host::HostModules;
 use crate::host_ops::op_bento_host_call;
 use crate::lifecycle::Control;
 use crate::permissions::Authority;
 use crate::signals::{bento_signal_bind, bento_signal_poll, bento_signal_unbind};
 use crate::watch_inputs::{WatchInputs, op_bento_failed_require, op_bento_missing_require_target};
-
-/// The environment every isolate of one instance reads and writes.
-#[derive(Clone)]
-pub(crate) struct InstanceEnvironment {
-    pub values: Arc<Mutex<BTreeMap<String, String>>>,
-    /// Variables removed before guest code ran whose first read has not been warned about.
-    unwarned: Arc<Mutex<BTreeSet<String>>>,
-    pub cwd: PathBuf,
-}
-
-impl InstanceEnvironment {
-    /// The environment an instance starts with: `values`, less every variable `permissions`
-    /// removes unless the host keeps it in `kept`.
-    pub(crate) fn new(
-        mut values: BTreeMap<String, String>,
-        kept: &BTreeSet<String>,
-        permissions: &Permissions,
-        cwd: PathBuf,
-    ) -> Self {
-        let mut removed = BTreeSet::new();
-        if permissions.withholds_anything() {
-            values.retain(|name, _| {
-                let keep = kept.contains(name) || !permissions.removes_variable(name);
-                if !keep {
-                    removed.insert(name.clone());
-                }
-                keep
-            });
-        }
-        Self { values: Arc::new(Mutex::new(values)), unwarned: Arc::new(Mutex::new(removed)), cwd }
-    }
-}
-
-/// How an isolate emits the warning for the first read of a removed variable.
-struct RemovedVariableWarning(v8::Global<v8::Function>);
-
-#[op2(nofast)]
-fn op_bento_register_env_warning(
-    scope: &mut v8::PinScope,
-    state: &mut OpState,
-    warn: v8::Local<v8::Function>,
-) {
-    state.put(RemovedVariableWarning(v8::Global::new(scope, warn)));
-}
-
-#[op2(reentrant)]
-#[string]
-fn bento_get_env(
-    scope: &mut v8::PinScope,
-    state: Rc<RefCell<OpState>>,
-    #[string] key: String,
-) -> Option<String> {
-    let (value, warn) = {
-        let state = state.borrow();
-        let environment = state.borrow::<InstanceEnvironment>();
-        let value = environment.values.lock().get(&key).cloned();
-        let first_read = value.is_none() && environment.unwarned.lock().remove(&key);
-        let warn = first_read
-            .then(|| state.try_borrow::<RemovedVariableWarning>().map(|warning| warning.0.clone()))
-            .flatten();
-        (value, warn)
-    };
-    if let Some(warn) = warn {
-        let warn = v8::Local::new(scope, warn);
-        let receiver = v8::undefined(scope).into();
-        let name = v8::String::new(scope, &key).map(Into::into);
-        if let Some(name) = name {
-            warn.call(scope, receiver, &[name]);
-        }
-    }
-    value
-}
-
-#[op2]
-#[serde]
-fn bento_env(state: &OpState) -> BTreeMap<String, String> {
-    state.borrow::<InstanceEnvironment>().values.lock().clone()
-}
-
-#[op2(fast)]
-fn bento_set_env(
-    state: &mut OpState,
-    #[string] key: &str,
-    #[string] value: &str,
-) -> Result<(), JsErrorBox> {
-    check_key(key)?;
-    if value.contains('\0') {
-        return Err(JsErrorBox::type_error("environment values cannot contain NUL"));
-    }
-    let environment = state.borrow::<InstanceEnvironment>();
-    environment.unwarned.lock().remove(key);
-    environment.values.lock().insert(key.to_owned(), value.to_owned());
-    Ok(())
-}
-
-#[op2(fast)]
-fn bento_delete_env(state: &mut OpState, #[string] key: &str) -> Result<(), JsErrorBox> {
-    check_key(key)?;
-    state.borrow::<InstanceEnvironment>().values.lock().remove(key);
-    Ok(())
-}
-
-fn check_key(key: &str) -> Result<(), JsErrorBox> {
-    if key.is_empty() || key.contains(['=', '\0']) {
-        return Err(JsErrorBox::type_error("invalid environment variable name"));
-    }
-    Ok(())
-}
 
 /// Whether the instance withholds anything, which is when `process.permission` exists.
 #[op2(fast)]
@@ -163,6 +54,8 @@ fn op_bento_permission_has(
 }
 
 /// `process.permission.drop(scope, reference)`, after JavaScript has validated its arguments.
+/// JavaScript removes the dropped variables from the isolate's own `process.env`, which in a
+/// worker is a copy.
 #[op2]
 fn op_bento_permission_drop(
     state: &OpState,
@@ -170,7 +63,6 @@ fn op_bento_permission_drop(
     #[string] reference: Option<String>,
 ) {
     let authority = state.borrow::<Arc<Authority>>();
-    let environment = state.borrow::<InstanceEnvironment>();
     let permissions = match scope {
         "fs" => vec![Permission::FsRead, Permission::FsWrite],
         _ => Permission::from_scope(scope).into_iter().collect(),
@@ -184,21 +76,10 @@ fn op_bento_permission_drop(
             }
             (Permission::Env, Some(name)) => {
                 authority.give_up(|permissions| permissions.drop_variable(name));
-                environment.values.lock().remove(name);
-            }
-            (Permission::Env, None) => {
-                authority.give_up(|permissions| permissions.drop_whole(Permission::Env));
-                environment.values.lock().retain(|name, _| is_always_kept(name));
             }
             (permission, _) => authority.give_up(|permissions| permissions.drop_whole(permission)),
         }
     }
-}
-
-#[op2]
-#[string]
-fn bento_cwd(state: &OpState) -> String {
-    state.borrow::<InstanceEnvironment>().cwd.to_string_lossy().into_owned()
 }
 
 #[op2(fast)]
@@ -244,6 +125,7 @@ fn middleware(original: OpDecl) -> OpDecl {
         _ => match crate::feature_ops::replacement(original.name)
             .or_else(|| crate::subprocess_ops::replacement(original.name))
             .or_else(|| crate::fs_ops::replacement(original.name))
+            .or_else(|| crate::require_ops::replacement(original.name))
         {
             Some(replacement) => replacement,
             None => return original,
@@ -290,6 +172,24 @@ deno_core::extension!(bento_instance,
         ), deno_core::ExtensionFileSource::new(
             "ext:bento_instance/permission.mjs",
             deno_core::ascii_str_include!("permission.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/child_process.mjs",
+            deno_core::ascii_str_include!("permission/child_process.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/errors.mjs",
+            deno_core::ascii_str_include!("permission/errors.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/file_system.mjs",
+            deno_core::ascii_str_include!("permission/file_system.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/network.mjs",
+            deno_core::ascii_str_include!("permission/network.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/process_permission.mjs",
+            deno_core::ascii_str_include!("permission/process_permission.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/wasi_inspector.mjs",
+            deno_core::ascii_str_include!("permission/wasi_inspector.mjs"),
         )];
         extension.esm_files = Cow::Borrowed(HOST_SOURCE);
     },

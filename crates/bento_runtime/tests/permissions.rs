@@ -220,7 +220,7 @@ assert.throws(() => has('fs.read', 5), {{ code: 'ERR_INVALID_ARG_TYPE', message:
 }
 
 #[test]
-fn dropping_removes_exactly_what_it_names_and_reaches_every_worker() {
+fn dropping_removes_exactly_what_it_names_from_its_own_thread() {
     let directory = project();
     let root = canonical(directory.path());
     std::fs::create_dir_all(root.join("existing/sub")).unwrap();
@@ -236,6 +236,7 @@ fn dropping_removes_exactly_what_it_names_and_reaches_every_worker() {
             env: names(&["APP_*"]),
             net: true,
             worker: true,
+            child_process: true,
             ..PermissionSet::default()
         },
     );
@@ -248,14 +249,24 @@ fn dropping_removes_exactly_what_it_names_and_reaches_every_worker() {
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 const { has, drop } = process.permission;
-const worker = new Worker(`
+const source = `
     const { parentPort } = require('node:worker_threads');
-    parentPort.on('message', () => parentPort.postMessage([
-        process.permission.has('net'),
-        process.permission.has('fs.read', 'existing/other'),
-        process.permission.has('env', 'APP_A'),
-    ]));
-`, { eval: true });
+    parentPort.on('message', (command) => {
+        if (command === 'drop') process.permission.drop('child');
+        parentPort.postMessage([
+            process.permission.has('net'),
+            process.permission.has('child'),
+            process.permission.has('env', 'APP_A'),
+            process.env.APP_A ?? null,
+        ]);
+    });
+`;
+const ask = (worker, command) => {
+    worker.postMessage(command);
+    return new Promise((resolve) => worker.once('message', resolve));
+};
+const before = new Worker(source, { eval: true });
+assert.deepEqual(await ask(before, 'report'), [true, true, true, 'a']);
 drop('fs.read', 'existing/sub');
 assert.equal(has('fs.read', 'existing/sub/file.txt'), true, 'still covered by existing');
 drop('fs.read', 'existing');
@@ -269,11 +280,17 @@ assert.equal(process.env.APP_A, undefined);
 assert.equal(has('env', 'APP_A'), false);
 assert.equal(process.env.APP_B, 'b');
 assert.throws(() => drop('env', 'APP_*'), { name: 'TypeError', code: 'ERR_INVALID_ARG_VALUE', message: 'Wildcards are not supported when dropping environment variables' });
-worker.postMessage('report');
-const seen = await new Promise((resolve) => worker.once('message', resolve));
-// A worker's process.env is its own copy, as in Node; its permissions are its creator's.
-assert.deepEqual(seen, [false, false, false]);
-await worker.terminate();
+// As in Node, every thread holds its own permissions, starting from the launch's: a worker
+// keeps what its creator drops, and a worker created afterwards starts with the launch's
+// permissions and a copy of its creator's environment.
+assert.deepEqual(await ask(before, 'report'), [true, true, true, 'a']);
+const after = new Worker(source, { eval: true });
+assert.deepEqual(await ask(after, 'report'), [true, true, true, null]);
+assert.deepEqual(await ask(before, 'drop'), [true, false, true, 'a']);
+assert.equal(has('child'), true, 'a worker drop stays in the worker');
+assert.deepEqual(await ask(after, 'report'), [true, true, true, null]);
+await before.terminate();
+await after.terminate();
 "#,
     ));
 }
@@ -437,25 +454,34 @@ fn an_unrestricted_embedding_that_denies_something_defines_process_permission() 
     let root = canonical(directory.path());
     std::fs::write(root.join("secret.txt"), "secret").unwrap();
     std::fs::write(root.join("public.txt"), "public").unwrap();
-    let settings = config_with(
+    let mut settings = config_with(
         &root,
         Permissions::unrestricted_denying(PermissionSet {
             fs_read: Scope::only([pattern("secret.txt", &root)]),
+            env: names(&["SECRET"]),
             ..PermissionSet::default()
         }),
     );
+    settings.env.insert("SECRET".into(), "secret".into());
+    settings.env.insert("PUBLIC".into(), "public".into());
+    settings.kept_env.insert("SECRET".into());
     completed(run(
         settings,
         "denying.mjs",
         &format!(
             r#"{DENIED}
 import fs from 'node:fs';
+import {{ spawnSync }} from 'node:child_process';
 assert.equal(fs.readFileSync('public.txt', 'utf8'), 'public');
 denied(() => fs.readFileSync('secret.txt'), 'FileSystemRead', 'secret.txt');
 assert.equal(process.permission.has('fs.read'), false);
 assert.equal(process.permission.has('fs.read', 'public.txt'), true);
 assert.equal(process.permission.has('fs.write'), true);
 assert.equal(process.permission.has('child'), true);
+assert.equal(process.env.SECRET, undefined, 'a denial outweighs the host keeping the variable');
+assert.equal(process.env.PUBLIC, 'public');
+const ceiling = spawnSync('/bin/sh', ['-c', 'printf %s "$BENTO_PERMISSION_CEILING"'], {{ encoding: 'utf8' }}).stdout;
+assert.match(ceiling, /secret\.txt/, 'a bento the child starts stays within the denial');
 "#
         ),
     ));
@@ -523,4 +549,37 @@ fn a_static_import_of_a_module_the_instance_may_not_read_fails_as_a_denial() {
         "{}",
         error.message
     );
+}
+
+/// Node reads a package's `package.json` before it follows the manifest's `exports`, so a
+/// static import of a package the instance may not read names the manifest and nothing the
+/// manifest says.
+#[test]
+fn a_static_import_of_a_package_the_instance_may_not_read_names_its_manifest() {
+    let directory = project();
+    let root = canonical(directory.path());
+    let package = root.join("node_modules/pkg");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::write(package.join("package.json"), r#"{"name":"pkg","exports":"./token.js"}"#)
+        .unwrap();
+    std::fs::write(package.join("token.js"), "export const token = 1;\n").unwrap();
+    let outcome = run(
+        restricted(
+            &root,
+            PermissionSet {
+                fs_read: Scope::only([pattern("main.mjs", &root)]),
+                ..PermissionSet::default()
+            },
+        ),
+        "main.mjs",
+        "import { token } from 'pkg';\nconsole.log(token);\n",
+    );
+    let RunOutcome::Failed(error) = outcome else { panic!("{outcome:?}") };
+    assert_eq!(error.kind, ErrorKind::Permission, "{}", error.message);
+    assert!(
+        error.message.contains(&package.join("package.json").display().to_string()),
+        "{}",
+        error.message
+    );
+    assert!(!error.message.contains("token.js"), "{}", error.message);
 }

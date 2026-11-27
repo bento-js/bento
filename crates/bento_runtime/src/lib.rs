@@ -53,6 +53,7 @@
 
 mod assembly;
 mod cjs;
+mod environment;
 mod error;
 mod feature_ops;
 mod features;
@@ -66,6 +67,7 @@ mod node;
 mod ops;
 mod package_lookup;
 mod permissions;
+mod require_ops;
 mod signals;
 mod sources;
 mod subprocess_ops;
