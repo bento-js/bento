@@ -1,1 +1,0 @@
-import{t as e}from"./framework.COFTIYvu.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.BS8fkQv5.js`),[])};export{t as default};
