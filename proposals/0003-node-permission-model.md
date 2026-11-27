@@ -238,16 +238,10 @@ These are the only intended differences from Node 26.13.1, and from Node v27.0.0
 
 - `RuntimeConfig::new(project_root, permissions)` takes a required `Permissions` value, and `RuntimeConfig.permissions` replaces `RuntimeConfig.grants`. `Permissions` implements no `Default`, and no constructor chooses a mode on the host's behalf.
 - A `Permissions` value is either unrestricted, optionally with denials, or restricted, with allowances. Nothing about the CLI is implicit in the library: a restricted embedding gets no implied entrypoint read, and the environment rules apply to the `RuntimeConfig.env` map the host supplies.
-- Restricted allowances:
-    - Reading and writing files: all, or a set of canonical paths and wildcard patterns, with the CLI's semantics.
-    - Network: all, or a set of endpoints, each a host or IP address with an optional port, as today's network scope works. Only the library can scope the network to endpoints.
-    - Environment variables: all, or a set of names and prefix patterns.
-    - Native addons: all, or a set of canonical paths beneath which addons may load. Only the library can scope addons to paths.
-    - Child processes, workers, WASI, FFI, the inspector, OpenSSL STORE loaders, mounting a virtual file system, and the local language model: each allowed or not.
-- Unrestricted denials are exactly as specific as Node's flags, no more and no less:
+- Restricted allowances and unrestricted denials are exactly as specific as Node's flags, no more and no less:
     - Reading and writing files: all, or a set of canonical paths and wildcard patterns, matched with the CLI's semantics.
     - Environment variables: all, or a set of names and prefix patterns.
-    - Network, child processes, workers, native addons, WASI, FFI, the inspector, OpenSSL STORE loaders, mounting a virtual file system, and the local language model: each denied as a whole, or not.
+    - Network, child processes, workers, native addons, WASI, FFI, the inspector, OpenSSL STORE loaders, mounting a virtual file system, and the local language model: each allowed or denied as a whole. The library cannot limit the network to particular endpoints or native addons to particular paths, just as the CLI cannot.
 - A denial takes away exactly what the matching allowance would give. Reading a denied path throws Node's `ERR_ACCESS_DENIED` with permission `FileSystemRead`, as in a restricted instance, while other paths stay readable. Denied environment variables are removed at startup unless they are always kept, and denying the whole environment removes every variable except the always-kept ones.
 - In an unrestricted instance, each permission that is not denied is held as if allowed with `*`. `has()` without a reference answers `false` for a kind with any denial. As in Node for a `*` allowance, `drop()` with a reference changes nothing, and `drop()` without one removes the whole kind.
 - `bento_host::canonical_path` and `package_lookup_paths` keep their roles for building canonical path allowances.
@@ -267,15 +261,15 @@ This change breaks existing commands and Rust callers. Nothing stored needs migr
 | --- | --- |
 | `--allow-read` / `--allow-read=a,b` | `--permission --allow-fs-read=*` / `--permission --allow-fs-read=a --allow-fs-read=b` |
 | `--allow-write=data` | `--permission --allow-fs-write=data` (add `/*` when `data` does not exist yet) |
-| `--allow-net` / `--allow-net=host:port` | `--permission --allow-net` (every host); scope endpoints through the library |
+| `--allow-net` / `--allow-net=host:port` | `--permission --allow-net` (every host) |
 | `--allow-env=A,B` | `--permission --allow-env=A,B` |
-| `--allow-addons` / `--allow-addons=path` | `--permission --allow-addons`; scope paths through the library |
+| `--allow-addons` / `--allow-addons=path` | `--permission --allow-addons` (every path) |
 | `--allow-language-model` / `=false` | `--permission --allow-language-model` / `--permission` without it |
 
 - In a restricted instance, ungranted environment variables are removed rather than hidden, guest writes to any variable succeed, and values from the project's environment files are visible.
 - A nested launch that passes `--permission` no longer inherits the permissions its flags leave out.
 - Code that checks for Deno's `NotCapable` or `PermissionDenied` errors must check for Node's `ERR_ACCESS_DENIED` and `ERR_DLOPEN_DISABLED` instead.
-- Rust callers pass a `Permissions` value to `RuntimeConfig::new`; `Grants`, `GrantRequest`, and `RuntimeConfig.grants` are replaced.
+- Rust callers pass a `Permissions` value to `RuntimeConfig::new`; `Grants`, `GrantRequest`, and `RuntimeConfig.grants` are replaced. A host that limited the network to particular endpoints, or native addons to particular paths, can now only allow or deny each as a whole.
 - For the CLI, this replaces proposal 0001's deny-by-default flags, its refusal of subprocesses and system information, and proposal 0002's requirement that the CLI grant the language model explicitly. For the library, proposal 0002's default of no model access becomes the host's explicit choice. Neither proposal is superseded as a whole.
 
 ## Implications on adoption
@@ -318,13 +312,14 @@ Nothing new is installed. Projects and scripts that pass the old flags must rewr
 
 - Audit mode ([#261](https://github.com/bento-js/bento/issues/261)), reading permissions from Node configuration files ([#262](https://github.com/bento-js/bento/issues/262)), and accepting Node's command line ([#260](https://github.com/bento-js/bento/issues/260)) each extend this model toward Node.
 - When Node 27 is released, its permission model may differ from both Node 26 and the alpha's `--allow-env`. Following it would be a new proposal.
+- Scopes finer than Node's flags, such as limiting the network to particular hosts and ports or native addons to particular paths. Bento had both before this proposal. This first version matches Node's all-or-nothing flags in the CLI and the library alike, and a later proposal could add either scope back to one or both.
 
 ## Alternatives considered
 
 - **Keep denying everything by default, as Deno does.** This makes a developer's own project the hard case, and the tools Bento needs to run assume Node's default.
 - **Restrict a launch whenever it passes any `--allow-*` flag, without `--permission`.** Mark chose Node 26's switch for parity; Node 26 rejects `--allow-*` without it.
 - **Restrict only the kinds a launch names.** One flag would then sandbox nothing else, and the flags would mean something different from Node's.
-- **Keep Bento's endpoint-scoped `--allow-net` and path-scoped `--allow-addons` in the CLI.** Mark chose Node's boolean flags so the CLI never gives a Node flag a different meaning. The library keeps both scopes.
+- **Keep Bento's endpoint-scoped network and path-scoped addon permissions, in the CLI or in the library.** Mark chose Node's all-or-nothing permissions for both, everywhere, so this first version is consistent and no Node flag gets a different meaning. Finer scopes are a possible future direction.
 - **Follow Node 26 exactly and leave the environment unrestricted.** Mark chose to keep environment restriction, with Node 27's syntax so Bento will not drift from it.
 - **Compare paths as written, as Node does.** Node documents following links outside the granted paths as a limitation, and Bento's resolved checks already exist and are stricter.
 - **Accept and ignore boolean flag values, as Node does.** A command written for Bento's earlier `--allow-net=HOST` would then silently allow every host.
