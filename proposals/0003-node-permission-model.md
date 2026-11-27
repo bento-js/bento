@@ -2,7 +2,7 @@
 id: proposal.0003
 title: Node's Permission Model
 authors: [Mark]
-status: draft
+status: awaiting-implementation
 pull-request: https://github.com/bento-js/bento/pull/259
 issues: [https://github.com/bento-js/bento/issues/266]
 supersedes: []
@@ -13,12 +13,6 @@ supersedes: []
 ## Summary
 
 Bento adopts Node 26's permission model. A `bento run` launch is unrestricted unless it passes `--permission`, and Node's `--allow-*` flags say what a restricted launch may do. Rust hosts must choose restricted or unrestricted explicitly. System information and subprocesses become available as they are in Node.
-
-## Authorization
-
-- Authority: Mark's direct consent on 2026-11-27: "Let's make our first proposal one to invert the permissions system. I want it to allow all by default and only require permissions when permissions flags are passed." In the same session he chose to "mimic Node 26's pattern exactly if we can", to make embedders state restricted or unrestricted through a required argument, to add Node 27's `--allow-env` and keep `--allow-language-model` beyond Node 26, and to enable guest subprocesses in this change.
-- Fit: Ordinary per-change consent. No build mandate applies.
-- Decisions recorded: None yet. The proposal stays `draft` until Mark settles it.
 
 ## Motivation
 
@@ -105,7 +99,7 @@ bento run --permission --allow-fs-read=. --allow-net server.ts → serves; write
 bento run --allow-net server.ts                                → fails before running: --permission is required
 ```
 
-An embedding host passes its choice to `RuntimeConfig::new`: an unrestricted runtime, optionally with whole kinds denied, or a restricted runtime with what it allows. No constructor chooses for it.
+An embedding host passes its choice to `RuntimeConfig::new`: an unrestricted runtime, optionally denying some of what Node's flags can allow, or a restricted runtime with what it allows. No constructor chooses for it.
 
 ## Detailed design
 
@@ -215,7 +209,7 @@ An unrestricted instance may use the local language model when the build include
 
 ### `process.permission`
 
-- `process.permission` is defined in every instance that is denied anything: every restricted instance, and an unrestricted embedding that denies at least one permission. Workers of such an instance have it too.
+- `process.permission` is defined in every instance that is denied anything: every restricted instance, and an unrestricted embedding with at least one denial. Workers of such an instance have it too.
 - `has(scope[, reference])` takes the scopes in the table plus `fs`, and returns `false` for any other scope. For the file system scopes, the reference may be a path string relative to `process.cwd()`, a `file:` URL, or a `Uint8Array` of path bytes, and is resolved to its real location as checks are. For `env`, the reference is a variable name. Other scopes ignore the reference. `has()` without a reference answers whether the whole scope is allowed: `has('fs.read')` is `true` only after `--allow-fs-read=*`.
 - `drop(scope[, reference])` irreversibly removes the whole scope, or with a reference, the one allowance given by exactly that value. A reference that matches no allowance changes nothing, as in Node 26.13.1. Dropping `env` with a name removes that variable from the environment. Dropping the whole `env` scope removes every variable except the always-kept ones.
 - A drop affects the whole instance and every worker it has created, and the ceiling given to processes it starts afterward. Files, sockets, child processes, and workers that are already open stay open.
@@ -243,14 +237,19 @@ These are the only intended differences from Node 26.13.1, and from Node v27.0.0
 ### Rust embedding API
 
 - `RuntimeConfig::new(project_root, permissions)` takes a required `Permissions` value, and `RuntimeConfig.permissions` replaces `RuntimeConfig.grants`. `Permissions` implements no `Default`, and no constructor chooses a mode on the host's behalf.
-- A `Permissions` value is either unrestricted, with an optional set of denied permission kinds, or restricted, with the allowances below. Nothing about the CLI is implicit in the library: a restricted embedding gets no implied entrypoint read, and the environment rules apply to the `RuntimeConfig.env` map the host supplies.
+- A `Permissions` value is either unrestricted, optionally with denials, or restricted, with allowances. Nothing about the CLI is implicit in the library: a restricted embedding gets no implied entrypoint read, and the environment rules apply to the `RuntimeConfig.env` map the host supplies.
 - Restricted allowances:
     - Reading and writing files: all, or a set of canonical paths and wildcard patterns, with the CLI's semantics.
     - Network: all, or a set of endpoints, each a host or IP address with an optional port, as today's network scope works. Only the library can scope the network to endpoints.
     - Environment variables: all, or a set of names and prefix patterns.
     - Native addons: all, or a set of canonical paths beneath which addons may load. Only the library can scope addons to paths.
     - Child processes, workers, WASI, FFI, the inspector, OpenSSL STORE loaders, mounting a virtual file system, and the local language model: each allowed or not.
-- An unrestricted instance that denies a kind behaves, for that kind, exactly like a restricted instance without the allowance. Denying the environment removes every variable except the always-kept ones.
+- Unrestricted denials are exactly as specific as Node's flags, no more and no less:
+    - Reading and writing files: all, or a set of canonical paths and wildcard patterns, matched with the CLI's semantics.
+    - Environment variables: all, or a set of names and prefix patterns.
+    - Network, child processes, workers, native addons, WASI, FFI, the inspector, OpenSSL STORE loaders, mounting a virtual file system, and the local language model: each denied as a whole, or not.
+- A denial takes away exactly what the matching allowance would give. Reading a denied path throws Node's `ERR_ACCESS_DENIED` with permission `FileSystemRead`, as in a restricted instance, while other paths stay readable. Denied environment variables are removed at startup unless they are always kept, and denying the whole environment removes every variable except the always-kept ones.
+- In an unrestricted instance, each permission that is not denied is held as if allowed with `*`. `has()` without a reference answers `false` for a kind with any denial. As in Node for a `*` allowance, `drop()` with a reference changes nothing, and `drop()` without one removes the whole kind.
 - `bento_host::canonical_path` and `package_lookup_paths` keep their roles for building canonical path allowances.
 
 ### Documentation and fixtures
@@ -331,11 +330,12 @@ Nothing new is installed. Projects and scripts that pass the old flags must rewr
 - **Accept and ignore boolean flag values, as Node does.** A command written for Bento's earlier `--allow-net=HOST` would then silently allow every host.
 - **Give the library a default, restricted or unrestricted.** Mark chose a required argument, so every embedder states the intention.
 - **Leave subprocesses to a later proposal.** Mark chose to include them: without them, "unrestricted" would still exclude one of Node's permissions, and `--allow-child-process` would be a flag that does nothing.
+- **Let unrestricted embeddings deny only whole kinds, or also deny individual endpoints and addon paths.** Mark chose denials exactly as specific as Node's flags: paths and patterns for files, names and prefixes for the environment, and whole kinds for everything else.
 - **Keep project environment-file values hidden from restricted instances, as today.** Node keeps the values of the environment files an operator names, and Bento's project environment files are their counterpart.
 
 ## Open questions
 
-- [NEEDS CLARIFICATION: This design lets an unrestricted embedding deny whole permission kinds only. Should it also deny individual resources (a path, an endpoint, an environment variable), as Deno's `--deny-*` flags do?]
+None.
 
 ## Acknowledgments
 
