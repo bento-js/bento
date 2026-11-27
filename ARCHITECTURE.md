@@ -294,7 +294,7 @@ Apple embedding uses a stable C-compatible handle API with Swift wrappers. It mu
 
 ## Security and observability
 
-The trust boundary is the host capability layer, backed by Rust-side enforcement. Each runtime has explicit grants for resources, module origins, network destinations, environment variables, and process features. Trusted desktop and server configurations can expose broad access; untrusted extensions receive narrowly scoped access.
+The trust boundary is the host capability layer, backed by Rust-side enforcement. Each runtime holds explicit permissions for files, module origins, the network, environment variables, and process features, in Node's vocabulary. Trusted desktop and server configurations can run unrestricted; untrusted extensions run restricted to narrowly scoped permissions.
 
 Bento should expose structured errors, exceptions, async-operation spans, module-resolution traces, type/lint diagnostics, source maps, test results, and runtime resource statistics to the host. Telemetry exporting is opt-in and cannot override host data-access policy.
 

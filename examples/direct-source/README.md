@@ -14,7 +14,7 @@ bento install --frozen-lockfile
 Then run the entry point:
 
 ```sh
-bento run --allow-read=. main.ts
+bento run main.ts
 ```
 
 It prints the rendered component, on one line:
@@ -23,6 +23,12 @@ It prints the rendered component, on one line:
 <ul><li>Tamagoyaki: 10 minutes</li><li>Onigiri: 5 minutes</li></ul>
 ```
 
-Running needs only Bento: not Node, Deno, Bun, or pnpm, which need not be on `PATH`. Bento transforms the TypeScript and TSX in memory, so running writes no JavaScript, or any other file, into the project. The only grant is `--allow-read=.`, which lets Bento load the project's own modules and its installed packages. Rendering loads no native addon, so the example grants none.
+Running needs only Bento: not Node, Deno, Bun, or pnpm, which need not be on `PATH`. Bento transforms the TypeScript and TSX in memory, so running writes no JavaScript, or any other file, into the project.
+
+Without permission flags, `bento run` is unrestricted, as `node` is. To run the example restricted, allow only reading the project, which lets Bento load the project's own modules and its installed packages; rendering loads no native addon and writes nothing:
+
+```sh
+bento run --permission --allow-fs-read=. main.ts
+```
 
 `remix` depends on esbuild, whose install script this example never needs, so `pnpm-workspace.yaml` leaves it denied. That file also keeps the example a project of its own rather than part of the repository's workspace.
