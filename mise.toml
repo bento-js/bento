@@ -11,6 +11,9 @@ min_version = "2026.10.4"
 experimental = true
 # Keep mise.lock current as tools change; `mise lock --platform …` regenerates it.
 lockfile = true
+# Node publishes neither musl nor Intel macOS builds of its alpha releases, so the lockfile
+# covers the platforms every pinned tool ships for. Bento itself builds only on Apple silicon.
+lockfile_platforms = ["linux-arm64", "linux-x64", "macos-arm64", "windows-x64"]
 
 [tools]
 # hk's version must match the `amends`/`import` URLs in hk.pkl — bump both together.
@@ -19,7 +22,11 @@ fnox = "1.42.1"
 "1password" = "2.41.1" # provides `op`, the 1Password CLI fnox shells out to
 gh = "2.103.2"
 actionlint = "1.7.12"
-node = "26.12.1" # 26 or newer: every tools/*.ts runs on native type stripping
+# The first Node is `node`: 26 or newer, because every tools/*.ts runs on native type
+# stripping. Both are the exact releases Bento's permission model is measured against
+# (proposal 0003): bento_cli's Node parity tests find each on PATH by its version, the
+# alpha for `--allow-env`.
+node = ["26.13.1", "27.0.0-alpha.0.2.0"]
 pnpm = "12.15.0" # matches `packageManager` in package.json; keep the two in step
 worktrunk = "0.81.0" # provides `wt`
 # Beads is not in the mise registry; the GitHub release backend installs the same
@@ -161,7 +168,7 @@ run = "cargo build -p bento_cli"
 
 [tasks.dev]
 alias = "d"
-description = "Run the CLI from source: `mise run dev -- run --allow-read=. main.ts`"
+description = "Run the CLI from source: `mise run dev -- run main.ts`"
 run = "cargo run -p bento_cli --"
 
 [tasks."docs:dev"]
