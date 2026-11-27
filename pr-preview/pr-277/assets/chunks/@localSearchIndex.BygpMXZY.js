@@ -1,0 +1,1 @@
+import{t as e}from"./framework.BBSmaUi9.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.CIV9eXMr.js`),[])};export{t as default};
