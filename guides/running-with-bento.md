@@ -100,7 +100,7 @@ Quote a value containing `*` in your shell, as in `--allow-fs-read='*'`, so that
 
 - `*` alone covers every path.
 - Any other value is a path, absolute or relative to the directory you run `bento` in, not to the project root.
-- A value containing `*` covers every path whose text begins with the text before the first `*`. Anything after that `*` is ignored. `--allow-fs-read='./test*'` covers `test`, `test2`, and `testing/notes.txt`, but not `tes`.
+- A value containing `*` covers every path whose text begins with the text before the first `*`. Anything after that `*` covers nothing, though `process.permission.drop()` compares it, as Node does. `--allow-fs-read='./test*'` covers `test`, `test2`, and `testing/notes.txt`, but not `tes`.
 - Without `*`, an existing directory covers itself and everything beneath it. Anything else, a file or a path that does not exist yet, covers exactly that path. A directory the code will create needs a trailing `*`: `--allow-fs-write='./build/*'` covers `build` itself and everything the code creates beneath it.
 - A comma is part of the path. To allow several paths, repeat the flag. When a flag has exactly one value and it contains a comma, Bento prints Node's warning to standard error, naming the flag, and continues. As in Node, the script you run counts as one more `--allow-fs-read` value, so running a script never warns about reading:
 
@@ -122,7 +122,7 @@ An unrestricted launch sees the whole prepared environment. A restricted launch 
 
 `process.execPath` is the `bento` executable, and Bento does not accept Node's command-line options yet ([#260](https://github.com/bento-js/bento/issues/260)). `fork()`, and any code that starts `process.execPath` with Node's options, therefore fails with Bento's usage error from the child, even in an unrestricted launch.
 
-`worker_threads.Worker` and the Web `Worker` work in an unrestricted launch, and in a restricted one with `--allow-worker`. As in Node, every thread holds permissions of its own: a worker starts with the permissions the launch started with, whatever its creator has dropped, and passing `execArgv` cannot change them.
+`worker_threads.Worker` and the Web `Worker` work in an unrestricted launch, and in a restricted one with `--allow-worker`. As in Node, every thread holds permissions of its own: a worker starts with the permissions the launch started with, whatever its creator has dropped, and passing `execArgv` cannot change them. Also as in Node 26, a worker may read everything beneath the directory you run `bento` in, even when the launch may not, so pass `--allow-worker` only when the code may read that whole tree.
 
 Native addons load in an unrestricted launch, and in a restricted one with `--allow-addons`, from any path. An addon runs native code inside the `bento` process, outside every permission: once loaded, it is not contained by the file, network, or environment restrictions. Pass `--allow-addons` only when you trust every package that ships an addon.
 
