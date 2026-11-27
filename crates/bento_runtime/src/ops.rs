@@ -8,7 +8,7 @@ use bento_host::Permission;
 
 use crate::environment::{
     InstanceEnvironment, bento_cwd, bento_delete_env, bento_env, bento_get_env, bento_set_env,
-    op_bento_register_env_warning,
+    op_bento_own_environment, op_bento_register_env_warning,
 };
 use crate::host::HostModules;
 use crate::host_ops::op_bento_host_call;
@@ -142,6 +142,7 @@ deno_core::extension!(bento_instance,
         op_bento_failed_require,
         op_bento_missing_require_target,
         op_bento_register_env_warning,
+        op_bento_own_environment,
         op_bento_permission_withholds,
         op_bento_permission_has,
         op_bento_permission_drop,
@@ -190,6 +191,9 @@ deno_core::extension!(bento_instance,
         ), deno_core::ExtensionFileSource::new(
             "ext:bento_instance/permission/wasi_inspector.mjs",
             deno_core::ascii_str_include!("permission/wasi_inspector.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/worker_environment.mjs",
+            deno_core::ascii_str_include!("worker_environment.mjs"),
         )];
         extension.esm_files = Cow::Borrowed(HOST_SOURCE);
     },

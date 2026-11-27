@@ -1,8 +1,9 @@
 import { core } from "ext:core/mod.js";
-// Every module of the extension is evaluated with it; these two install themselves only once
+// Every module of the extension is evaluated with it; these three install themselves only once
 // bootstrap has run (see `assembly::load_instance_modules`).
 import "ext:bento_instance/permission.mjs";
 import "ext:bento_instance/require_watch.mjs";
+import "ext:bento_instance/worker_environment.mjs";
 
 let invokeHost = core.ops.op_bento_host_call;
 

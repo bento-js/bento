@@ -10,14 +10,44 @@ use node_resolver::cache::NodeResolutionThreadLocalCache;
 use node_resolver::{NodeResolutionKind, PackageJsonResolver, ResolutionMode, UrlOrPathRef};
 use sys_traits::impls::RealSys;
 
+use crate::environment::InstanceEnvironment;
 use crate::node::Resolver;
 
+/// deno_node operations whose permission checks Node makes elsewhere, or not at all.
 pub(crate) fn replacement(name: &str) -> Option<OpDecl> {
     Some(match name {
         "op_require_stat" => bento_require_stat(),
         "op_require_resolve_exports" => bento_require_resolve_exports(),
+        "op_worker_threads_filename" => bento_worker_threads_filename(),
         _ => return None,
     })
+}
+
+/// deno_node 0.197.0's `op_worker_threads_filename` without its read checks. Node reads a
+/// worker's script in the worker, so a script the instance may not read fails there and reaches
+/// the `Worker`'s `'error'` event rather than throwing from `new Worker()`.
+#[op2]
+#[string]
+fn bento_worker_threads_filename(
+    state: &OpState,
+    #[string] specifier: &str,
+) -> Result<Option<String>, JsErrorBox> {
+    if specifier.starts_with("data:") {
+        return Ok(None);
+    }
+    if specifier.starts_with("file:") {
+        return Ok(Some(
+            deno_core::ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err)?.into(),
+        ));
+    }
+    if Path::new(specifier).is_relative() && !specifier.starts_with('.') {
+        return Err(JsErrorBox::generic("Relative path entries must start with '.' or '..'"));
+    }
+    let cwd = &state.borrow::<InstanceEnvironment>().cwd;
+    let path = deno_path_util::normalize_path(Cow::Owned(cwd.join(specifier)));
+    let path = std::fs::canonicalize(&path).map_or(path, Cow::Owned);
+    let url = deno_path_util::url_from_file_path(&path).map_err(JsErrorBox::from_err)?;
+    Ok(Some(url.into()))
 }
 
 /// Node's `internalModuleStat`, which `require()` uses to probe the directories and candidate

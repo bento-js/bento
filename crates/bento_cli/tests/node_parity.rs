@@ -313,6 +313,23 @@ attempt('drop without scope', () => drop());
     );
 }
 
+/// A drop compares the whole value, text after the `*` included, so `existing/*` and
+/// `existing/*ignored` are different allowances although they cover the same paths.
+#[test]
+fn dropping_a_pattern_compares_the_text_after_its_wildcard_as_node_does() {
+    let project = project();
+    let script = r#"
+const { has, drop } = process.permission;
+for (const reference of ['existing/*ignored', 'existing/**', 'existing', 'existing/*']) {
+    drop('fs.read', reference);
+    report(`after dropping ${reference}`, has('fs.read', 'existing/sub/file.txt'));
+}
+"#;
+    for allowance in ["--allow-fs-read=./existing/*", "--allow-fs-read=./existing/*ignored"] {
+        project.same(NODE, &["--permission", allowance], script, &[]);
+    }
+}
+
 #[test]
 fn an_unrestricted_launch_matches_node_without_permission() {
     let project = project();
@@ -567,6 +584,73 @@ await after.terminate();
 "#,
         &[],
     );
+}
+
+#[test]
+fn a_worker_and_its_processes_see_the_workers_own_environment() {
+    let project = project();
+    project.same(
+        NODE_ENVIRONMENT,
+        &[
+            "--permission",
+            "--allow-fs-read=*",
+            "--allow-worker",
+            "--allow-child-process",
+            "--allow-env=SHARED",
+        ],
+        r#"
+import { Worker } from 'node:worker_threads';
+const worker = new Worker(`
+    const { parentPort } = require('node:worker_threads');
+    const { execFileSync } = require('node:child_process');
+    parentPort.once('message', () => {
+        process.permission.drop('env', 'SHARED');
+        process.env.FROM_WORKER = 'w';
+        const shown = execFileSync('/bin/sh', ['-c', 'printf "%s|%s|%s" "\${SHARED-unset}" "\${FROM_WORKER-unset}" "\${FROM_MAIN-unset}"'], { encoding: 'utf8' });
+        parentPort.postMessage([process.env.SHARED ?? null, shown]);
+    });
+`, { eval: true });
+process.env.FROM_MAIN = 'm';
+worker.postMessage('go');
+report('worker', await new Promise((resolve) => worker.once('message', resolve)));
+report('main', [process.env.SHARED ?? null, process.env.FROM_WORKER ?? null]);
+await worker.terminate();
+"#,
+        &[("SHARED", "s")],
+    );
+}
+
+/// A worker may read everything beneath the working directory, as in Node, even when the thread
+/// that starts it may not. A worker script outside it fails inside the worker and reaches the
+/// `Worker`'s `'error'` event. Bento's worker errors carry the name and message but not yet
+/// Node's own properties, so the case compares those two.
+#[test]
+fn a_worker_reads_beneath_the_working_directory_and_reports_other_denials_as_error_events() {
+    let project = project();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_script = outside.path().canonicalize().unwrap().join("worker.mjs");
+    std::fs::write(&outside_script, "console.log('outside worker ran');").unwrap();
+    project.file(
+        "worker.mjs",
+        "import fs from 'node:fs';\nimport { parentPort } from 'node:worker_threads';\nparentPort.postMessage([process.permission.has('fs.read', 'file.txt'), fs.readFileSync('file.txt', 'utf8').length > 0, process.permission.has('fs.read')]);",
+    );
+    let script = r#"
+import { Worker } from 'node:worker_threads';
+report('main may read beneath the working directory', process.permission.has('fs.read', 'file.txt'));
+const reading = new Worker('./worker.mjs');
+report('worker reads beneath it', await new Promise((resolve) => reading.once('message', resolve)));
+await reading.terminate();
+let failing;
+attempt('construct', () => { failing = new Worker(OUTSIDE); });
+const [error, code] = await Promise.all([
+    new Promise((resolve) => failing.once('error', resolve)),
+    new Promise((resolve) => failing.once('exit', resolve)),
+]);
+report('error event', [error.name, error.message]);
+report('exit', code);
+"#
+    .replace("OUTSIDE", &format!("{:?}", outside_script.display().to_string()));
+    project.same(NODE, &["--permission", "--allow-worker"], &script, &[]);
 }
 
 impl Project {

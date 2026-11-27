@@ -18,22 +18,32 @@ pub enum PathPattern {
     /// Exactly this canonical path: a file, or a path that did not exist when the pattern was
     /// made.
     Exact(PathBuf),
-    /// Every path whose text begins with this text, as a value with `*` covers. A prefix that
-    /// ends in `/` also covers the directory it names, so an existing directory `/srv` is the
-    /// prefix `/srv/`.
-    Prefix(PathBuf),
+    /// Every path whose text begins with `prefix`, as a value with `*` covers.
+    Prefix {
+        /// The text before the `*`. A prefix that ends in `/` also covers the directory it
+        /// names, so an existing directory `/srv` is the prefix `/srv/`.
+        prefix: PathBuf,
+        /// The text a value had after its `*`. It covers nothing, but it is part of the value,
+        /// so `process.permission.drop()` tells `dir/*` and `dir/*x` apart, as Node does.
+        ignored: OsString,
+    },
 }
 
 impl PathPattern {
+    /// Every path whose text begins with `prefix`, with no text after the `*`.
+    pub fn prefix(prefix: impl Into<PathBuf>) -> PathPattern {
+        PathPattern::Prefix { prefix: prefix.into(), ignored: OsString::new() }
+    }
+
     /// The pattern a command-line value names, resolved against `base` as `bento` resolves
     /// `--allow-fs-read=VALUE` against the directory it runs in.
     ///
     /// A value containing `*` covers every path that begins with the text before the first
-    /// `*`; the text after it is ignored, and the directory part of the text is resolved to its
-    /// real location. Any other value is resolved to its real location, and covers everything
-    /// beneath it when it is an existing directory, or else exactly itself. The value `*` alone
-    /// is all of the permission ([`crate::Scope::All`]), not a pattern; here it would mean the
-    /// paths beneath `base`.
+    /// `*`; the text after it is kept but covers nothing, and the directory part of the text is
+    /// resolved to its real location. Any other value is resolved to its real location, and
+    /// covers everything beneath it when it is an existing directory, or else exactly itself.
+    /// The value `*` alone is all of the permission ([`crate::Scope::All`]), not a pattern; here
+    /// it would mean the paths beneath `base`.
     ///
     /// # Errors
     ///
@@ -41,7 +51,7 @@ impl PathPattern {
     pub fn resolve(value: impl AsRef<OsStr>, base: &Path) -> io::Result<PathPattern> {
         let value = value.as_ref().as_bytes();
         match value.iter().position(|byte| *byte == b'*') {
-            Some(wildcard) => wildcard_prefix(&value[..wildcard], base),
+            Some(wildcard) => wildcard_prefix(&value[..wildcard], &value[wildcard + 1..], base),
             None => {
                 let path = canonical_path(&base.join(OsStr::from_bytes(value)))?;
                 Ok(if path.is_dir() { directory(path) } else { PathPattern::Exact(path) })
@@ -54,7 +64,7 @@ impl PathPattern {
         let path = path.as_os_str().as_bytes();
         match self {
             PathPattern::Exact(exact) => path == exact.as_os_str().as_bytes(),
-            PathPattern::Prefix(prefix) => prefix_covers(prefix_bytes(prefix), path),
+            PathPattern::Prefix { prefix, .. } => prefix_covers(prefix_bytes(prefix), path),
         }
     }
 }
@@ -70,19 +80,23 @@ fn prefix_covers(prefix: &[u8], path: &[u8]) -> bool {
 }
 
 /// The prefix pattern for the text before a `*`: its directory part at its real location,
-/// then the partial name after the directory's last `/`, kept as written.
-fn wildcard_prefix(text: &[u8], base: &Path) -> io::Result<PathPattern> {
+/// then the partial name after the directory's last `/`, kept as written, with `ignored`, the
+/// text after the `*`.
+fn wildcard_prefix(text: &[u8], ignored: &[u8], base: &Path) -> io::Result<PathPattern> {
     let split = text.iter().rposition(|byte| *byte == b'/').map_or(0, |slash| slash + 1);
     let (directory_part, partial_name) = text.split_at(split);
     let directory = canonical_path(&base.join(OsStr::from_bytes(directory_part)))?;
     let mut prefix = beneath(directory).into_vec();
     prefix.extend_from_slice(partial_name);
-    Ok(PathPattern::Prefix(PathBuf::from(OsString::from_vec(prefix))))
+    Ok(PathPattern::Prefix {
+        prefix: PathBuf::from(OsString::from_vec(prefix)),
+        ignored: OsStr::from_bytes(ignored).to_owned(),
+    })
 }
 
 /// The prefix pattern covering an existing directory and everything beneath it.
 fn directory(path: PathBuf) -> PathPattern {
-    PathPattern::Prefix(PathBuf::from(beneath(path)))
+    PathPattern::prefix(beneath(path))
 }
 
 /// `directory` followed by exactly one `/`.
@@ -104,11 +118,11 @@ impl Pattern for PathPattern {
     fn within(&self, other: &PathPattern) -> bool {
         match (self, other) {
             (PathPattern::Exact(path), _) => other.covers(path),
-            (PathPattern::Prefix(_), PathPattern::Exact(_)) => false,
+            (PathPattern::Prefix { .. }, PathPattern::Exact(_)) => false,
             // Whatever `prefix` covers begins with it, so with `outer` too. The directory a
             // `prefix` ending in `/` names is at least as long as `outer` unless the two are
             // equal, so `outer` covers it too.
-            (PathPattern::Prefix(prefix), PathPattern::Prefix(outer)) => {
+            (PathPattern::Prefix { prefix, .. }, PathPattern::Prefix { prefix: outer, .. }) => {
                 prefix_bytes(prefix).starts_with(prefix_bytes(outer))
             }
         }
@@ -119,7 +133,10 @@ impl Pattern for PathPattern {
             (PathPattern::Exact(path), pattern) | (pattern, PathPattern::Exact(path)) => {
                 pattern.covers(path)
             }
-            (PathPattern::Prefix(one), PathPattern::Prefix(other)) => {
+            (
+                PathPattern::Prefix { prefix: one, .. },
+                PathPattern::Prefix { prefix: other, .. },
+            ) => {
                 let (one, other) = (prefix_bytes(one), prefix_bytes(other));
                 one.starts_with(other) || other.starts_with(one)
             }
@@ -129,11 +146,13 @@ impl Pattern for PathPattern {
 
 impl fmt::Display for PathPattern {
     /// The pattern as a command-line value would name it: the path, or the prefix followed by
-    /// `*`.
+    /// `*` and any text written after it.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PathPattern::Exact(path) => write!(formatter, "{}", path.display()),
-            PathPattern::Prefix(prefix) => write!(formatter, "{}*", prefix.display()),
+            PathPattern::Prefix { prefix, ignored } => {
+                write!(formatter, "{}*{}", prefix.display(), ignored.display())
+            }
         }
     }
 }

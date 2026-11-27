@@ -143,7 +143,7 @@ impl Launch {
 fn beneath(directory: &Path) -> PathPattern {
     let mut prefix = directory.as_os_str().to_owned();
     prefix.push("/");
-    PathPattern::Prefix(PathBuf::from(prefix))
+    PathPattern::prefix(prefix)
 }
 
 /// The guest may read anything under `readable`, so the store it must not see has to resolve

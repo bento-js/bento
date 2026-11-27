@@ -83,12 +83,13 @@ fn a_wildcard_covers_every_path_beginning_with_the_text_before_it() {
 }
 
 #[test]
-fn the_text_after_the_first_wildcard_is_ignored() {
+fn the_text_after_the_first_wildcard_covers_nothing_but_stays_part_of_the_value() {
     let layout = layout();
 
-    assert_eq!(layout.pattern("existing/*zzz"), layout.pattern("existing/*"));
-    assert_eq!(layout.pattern("te*st*"), layout.pattern("te*"));
+    assert_ne!(layout.pattern("existing/*zzz"), layout.pattern("existing/*"));
     assert!(layout.covers("existing/*zzz", "existing/sub/file.txt"));
+    assert!(layout.covers("te*st*", "test2"));
+    assert!(layout.covers("te*st*", "teapot"));
 }
 
 #[test]
@@ -140,7 +141,7 @@ fn patterns_read_as_command_line_values() {
 fn the_root_directory_is_one_prefix() {
     let pattern = PathPattern::resolve("/", Path::new("/")).unwrap();
 
-    assert_eq!(pattern, PathPattern::Prefix(PathBuf::from("/")));
+    assert_eq!(pattern, PathPattern::prefix("/"));
     assert!(pattern.covers(Path::new("/")));
     assert!(pattern.covers(Path::new("/etc/hosts")));
 }

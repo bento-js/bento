@@ -33,10 +33,11 @@ pub(crate) struct LoaderFactory {
 }
 
 impl LoaderFactory {
-    fn create(&self, permissions: PermissionsContainer) -> CreateModuleLoaderResult {
+    fn create(&self, permissions: PermissionsContainer, worker: bool) -> CreateModuleLoaderResult {
         let loader = Rc::new(Loader {
             node: self.node.clone(),
             permissions,
+            worker,
             cwd: self.cwd.clone(),
             modules: self.modules.clone(),
             sources: self.sources.clone(),
@@ -59,7 +60,7 @@ impl LoaderFactory {
 
 impl ModuleLoaderFactory for LoaderFactory {
     fn create_for_main(&self, permissions: PermissionsContainer) -> CreateModuleLoaderResult {
-        self.create(permissions)
+        self.create(permissions, false)
     }
     fn create_for_worker(
         &self,
@@ -67,13 +68,16 @@ impl ModuleLoaderFactory for LoaderFactory {
         permissions: PermissionsContainer,
         _blob: Option<(ModuleSpecifier, Arc<Blob>)>,
     ) -> CreateModuleLoaderResult {
-        self.create(permissions)
+        self.create(permissions, true)
     }
 }
 
 struct Loader {
     node: NodeServices,
     permissions: PermissionsContainer,
+    /// Whether the loader serves a worker, whose failed loads reach the guest's `'error'`
+    /// event rather than Bento's report.
+    worker: bool,
     resolver: Resolver,
     cwd: PathBuf,
     modules: HostModules,
@@ -191,7 +195,9 @@ impl Loader {
             Some("module import"),
         ) {
             Ok(_) => Ok(()),
-            Err(PermissionCheckError::PermissionDenied(_)) => Err(read_denial(path, dynamic)),
+            Err(PermissionCheckError::PermissionDenied(_)) => {
+                Err(read_denial(path, dynamic, self.worker))
+            }
             Err(error) => Err(JsErrorBox::from_err(error)),
         }
     }
@@ -242,6 +248,7 @@ impl ModuleLoader for Loader {
         let permissions = self.permissions.clone();
         let sources = self.sources.clone();
         let dynamic = options.is_dynamic_import;
+        let worker = self.worker;
         let watch_failure = self.application_resolutions.borrow().contains(&specifier)
             || referrer
                 .and_then(|referrer| referrer.specifier.to_file_path().ok())
@@ -261,7 +268,7 @@ impl ModuleLoader for Loader {
             ) {
                 Ok(checked) => checked,
                 Err(PermissionCheckError::PermissionDenied(_)) => {
-                    return Err(read_denial(&path, dynamic));
+                    return Err(read_denial(&path, dynamic, worker));
                 }
                 Err(error) => return Err(JsErrorBox::from_err(error)),
             };
@@ -355,16 +362,18 @@ fn source(
 
 /// Node's read denial for `path`. Within a dynamic `import()` or `import.meta.resolve()` it is a
 /// `NotCapable` in Deno's form, which the runtime raises to the guest as Node's
-/// `ERR_ACCESS_DENIED`; a static import fails the launch with Node's text.
-fn read_denial(path: &Path, dynamic: bool) -> JsErrorBox {
+/// `ERR_ACCESS_DENIED`. A static import fails the load: in a worker with Node's message, which
+/// the `Worker`'s `'error'` event carries, and in the main isolate with Node's text and the
+/// path, for Bento's report.
+fn read_denial(path: &Path, dynamic: bool, worker: bool) -> JsErrorBox {
+    const RESTRICTED: &str =
+        "Access to this API has been restricted. Use --allow-fs-read to manage permissions.";
     let message = if dynamic {
         format!("Requires read access to \"{}\", run again with --allow-read", path.display())
+    } else if worker {
+        RESTRICTED.to_owned()
     } else {
-        format!(
-            "Access to this API has been restricted. Use --allow-fs-read to manage permissions. \
-             (ERR_ACCESS_DENIED: FileSystemRead {})",
-            path.display()
-        )
+        format!("{RESTRICTED} (ERR_ACCESS_DENIED: FileSystemRead {})", path.display())
     };
     JsErrorBox::new("NotCapable", message)
 }

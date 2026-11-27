@@ -6,7 +6,7 @@ use bento_host::{EnvPattern, Excess, PathPattern, Permission, PermissionSet, Per
 use proptest::prelude::*;
 
 fn prefix(path: &str) -> PathPattern {
-    PathPattern::Prefix(PathBuf::from(path))
+    PathPattern::prefix(path)
 }
 
 fn exact(path: &str) -> PathPattern {
@@ -162,8 +162,8 @@ fn path_pattern() -> impl Strategy<Value = PathPattern> {
     (path_text(), 0..3u8, prop::sample::select(vec!["", "a"])).prop_map(|(text, kind, partial)| {
         match kind {
             0 => PathPattern::Exact(PathBuf::from(text)),
-            1 => PathPattern::Prefix(PathBuf::from(format!("{text}/"))),
-            _ => PathPattern::Prefix(PathBuf::from(format!("{text}{partial}"))),
+            1 => PathPattern::prefix(format!("{text}/")),
+            _ => PathPattern::prefix(format!("{text}{partial}")),
         }
     })
 }

@@ -4,7 +4,7 @@
 mod support;
 
 use std::os::unix::fs::symlink;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 
 use serde_json::json;
@@ -61,7 +61,7 @@ fn rejected(temp: &TempProject, arguments: &[&str]) -> String {
 
 /// The prefix pattern a directory's value names: the directory and everything beneath it.
 fn beneath(directory: &Path) -> PathPattern {
-    PathPattern::Prefix(PathBuf::from(format!("{}/", directory.display())))
+    PathPattern::prefix(format!("{}/", directory.display()))
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn path_values_resolve_from_the_invocation_directory_to_real_locations() {
         ]),
         fs_write: Scope::only([
             beneath(&temp.path("build")),
-            PathPattern::Prefix(temp.path("dist-")),
+            PathPattern::Prefix { prefix: temp.path("dist-"), ignored: "ignored".into() },
         ]),
         ..PermissionSet::default()
     };

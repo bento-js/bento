@@ -241,14 +241,17 @@ fn main_worker(
 }
 
 /// Installs Bento's guest-facing behavior that needs a bootstrapped isolate: `node:module`
-/// loads only after bootstrap has initialized `process.platform` and `process.arch`, and the
-/// permission layer replaces what bootstrap defined. Workers run this too.
+/// loads only after bootstrap has initialized `process.platform` and `process.arch`, the
+/// permission layer replaces what bootstrap defined, and a worker takes its copy of the
+/// environment as its own once bootstrap has made it. Workers run this too.
 pub(crate) fn load_instance_modules(runtime: &mut deno_core::JsRuntime) -> Result<(), CoreError> {
     runtime.lazy_load_es_module_with_code(
         "ext:bento_instance/initialize.mjs",
         "import { install as watchRequires } from 'ext:bento_instance/require_watch.mjs';\n\
+         import { install as ownEnvironment } from 'ext:bento_instance/worker_environment.mjs';\n\
          import { install as enforcePermissions } from 'ext:bento_instance/permission.mjs';\n\
          watchRequires();\n\
+         ownEnvironment();\n\
          enforcePermissions();",
     )?;
     Ok(())

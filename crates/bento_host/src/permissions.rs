@@ -38,6 +38,23 @@ impl Permissions {
         Permissions { restricted: true, allowed, denied: PermissionSet::default() }
     }
 
+    /// These permissions, able to read what `pattern` covers besides, as Node lets the main
+    /// thread read its entry script and a worker read its working directory. Only restricted
+    /// permissions gain anything: unrestricted ones read every path they do not deny already.
+    pub fn reading(mut self, pattern: PathPattern) -> Permissions {
+        if !self.restricted {
+            return self;
+        }
+        match &mut self.allowed.fs_read {
+            Scope::All => {}
+            Scope::None => self.allowed.fs_read = Scope::only([pattern]),
+            Scope::Only(patterns) => {
+                patterns.insert(pattern);
+            }
+        }
+        self
+    }
+
     /// Whether this instance holds only what it was allowed.
     pub fn is_restricted(&self) -> bool {
         self.restricted

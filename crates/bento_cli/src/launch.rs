@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::error::CliError;
 use crate::permission_flags::{PermissionError, PermissionFlags};
 use crate::process_environment;
 use bento_host::{
-    CEILING_ENV, PathPattern, Permission, PermissionSet, Permissions, Scope, canonical_path,
+    CEILING_ENV, PathPattern, Permission, PermissionSet, Permissions, canonical_path,
 };
 use bento_workspace::{LaunchEnvironment, LaunchKind, Project};
 
@@ -54,7 +54,7 @@ fn take_ceiling(
 /// The permissions of a launch restricted to `allowed` under `ceiling`, which must hold all of
 /// them. The launch may also read `entry`, the script it runs, unless its ceiling may not.
 fn restricted(
-    mut allowed: PermissionSet,
+    allowed: PermissionSet,
     ceiling: Option<&Permissions>,
     entry: Option<&Path>,
 ) -> Result<Permissions, PermissionError> {
@@ -64,25 +64,16 @@ fn restricted(
         let limit = ceiling.describe(excess.permission);
         return Err(PermissionError::Excess { excess, limit });
     }
-    if let Some(entry) = entry {
-        let entry = canonical_path(entry)
-            .map_err(|source| PermissionError::Entry { path: entry.to_owned(), source })?;
-        if ceiling.is_none_or(|ceiling| ceiling.holds_path(Permission::FsRead, &entry)) {
-            allow_reading(&mut allowed.fs_read, entry);
-        }
+    let permissions = Permissions::restricted(allowed);
+    let Some(entry) = entry else {
+        return Ok(permissions);
+    };
+    let entry = canonical_path(entry)
+        .map_err(|source| PermissionError::Entry { path: entry.to_owned(), source })?;
+    if ceiling.is_none_or(|ceiling| ceiling.holds_path(Permission::FsRead, &entry)) {
+        return Ok(permissions.reading(PathPattern::Exact(entry)));
     }
-    Ok(Permissions::restricted(allowed))
-}
-
-fn allow_reading(paths: &mut Scope<PathPattern>, path: PathBuf) {
-    let pattern = PathPattern::Exact(path);
-    match paths {
-        Scope::All => {}
-        Scope::None => *paths = Scope::only([pattern]),
-        Scope::Only(patterns) => {
-            patterns.insert(pattern);
-        }
-    }
+    Ok(permissions)
 }
 
 /// The environment a runtime instance of `environment`'s launch starts with under

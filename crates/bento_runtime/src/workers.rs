@@ -19,7 +19,7 @@ use deno_runtime::{BootstrapOptions, WorkerExecutionMode};
 use deno_tls::RootCertStoreProvider;
 use sys_traits::impls::RealSys;
 
-use bento_host::Permissions;
+use bento_host::{PathPattern, Permissions};
 use bento_prompt::deno::Cleanup;
 
 use crate::environment::InstanceEnvironment;
@@ -67,9 +67,15 @@ impl WorkerFactory {
     }
 
     fn create(self: &Arc<Self>, args: CreateWebWorkerArgs) -> (WebWorker, SendableWebWorkerHandle) {
-        // As in Node, each worker holds permissions of its own, starting from the launch's:
-        // drops its creator made do not apply to it, and drops it makes apply to it alone.
-        let authority = Authority::new(self.launch.clone(), self.environment.cwd.clone());
+        // As in Node, each worker holds permissions of its own: the launch's, and reading
+        // everything beneath the working directory. Drops its creator made do not apply to it,
+        // and drops it makes apply to it alone.
+        let cwd = &self.environment.cwd;
+        let launch = match PathPattern::resolve("*", cwd) {
+            Ok(beneath) => self.launch.clone().reading(beneath),
+            Err(_) => self.launch.clone(),
+        };
+        let authority = Authority::new(launch, cwd.clone());
         let permissions = authority.container().clone();
         let loaders = self.loader.create_for_worker(
             args.parent_permissions,

@@ -151,7 +151,7 @@ fn path_descriptor(pattern: &PathPattern) -> PathDescriptor {
         PathPattern::Exact(path) => {
             PathDescriptor::new_with_coverage(path.clone(), PathCoverage::Exact)
         }
-        PathPattern::Prefix(prefix) => {
+        PathPattern::Prefix { prefix, .. } => {
             PathDescriptor::new_with_coverage(prefix.clone(), PathCoverage::Prefix)
         }
     }

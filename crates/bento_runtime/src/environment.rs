@@ -10,7 +10,8 @@ use parking_lot::Mutex;
 
 use bento_host::Permissions;
 
-/// The environment every isolate of one instance reads and writes.
+/// The environment an isolate reads and writes: the instance's, which the main isolate and
+/// workers created to share it use, or a worker's own copy.
 #[derive(Clone)]
 pub(crate) struct InstanceEnvironment {
     pub values: Arc<Mutex<BTreeMap<String, String>>>,
@@ -54,6 +55,16 @@ pub(crate) fn op_bento_register_env_warning(
     warn: v8::Local<v8::Function>,
 ) {
     state.put(RemovedVariableWarning(v8::Global::new(scope, warn)));
+}
+
+/// Gives the calling worker an environment of its own, holding `values`, its copy of its
+/// creator's environment.
+#[op2]
+pub(crate) fn op_bento_own_environment(
+    state: &mut OpState,
+    #[serde] values: BTreeMap<String, String>,
+) {
+    state.borrow_mut::<InstanceEnvironment>().values = Arc::new(Mutex::new(values));
 }
 
 #[op2(reentrant)]

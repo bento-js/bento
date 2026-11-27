@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use bento_host::{EnvPattern, PathPattern, Permission, PermissionSet, Permissions, Scope};
 
 fn prefix(path: &str) -> PathPattern {
-    PathPattern::Prefix(PathBuf::from(path))
+    PathPattern::prefix(path)
 }
 
 fn exact(path: &str) -> PathPattern {

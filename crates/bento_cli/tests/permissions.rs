@@ -3,7 +3,7 @@
 
 mod support;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Output;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ fn recorded(temp: &TempProject) -> Permissions {
 }
 
 fn beneath(directory: &Path) -> PathPattern {
-    PathPattern::Prefix(PathBuf::from(format!("{}/", directory.display())))
+    PathPattern::prefix(format!("{}/", directory.display()))
 }
 
 fn succeeded(output: &Output) {
