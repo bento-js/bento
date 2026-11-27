@@ -72,6 +72,6 @@
 # - github.token    → use GITHUB_TOKEN env var instead
 
 sync:
-    remote: "git+https://github.com/markmals/bento.git"
+    remote: "git+https://github.com/bento-js/bento.git"
 export:
     auto: true

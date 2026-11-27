@@ -1,87 +1,75 @@
 /// hk owns every git hook in this repository.
 ///
-/// Install them with `mise run setup` (which runs `hk install --mise`). Never run
-/// `bd hooks install`: it points `core.hooksPath` at `.beads/hooks`, which disables
-/// every hook hk installed. Beads instead runs as hk steps below, calling the same
-/// `bd hooks run <hook>` entry point beads' own shims call.
+/// Install them with `hk install --mise` (from `mise run setup`). Never run `bd hooks install`:
+/// it points `core.hooksPath` at `.beads/hooks`, which disables every hook hk installed. Beads
+/// instead runs as hk steps below, calling the same `bd hooks run <hook>` entry point beads' own
+/// shims call.
 ///
 /// The hk version here must match the `hk` pin in mise.toml. Bump both together.
 amends "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Config.pkl"
 
 import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.pkl"
 
-/// Files another tool owns and rewrites, and files kept byte-exact on purpose. `bd`
-/// regenerates `.beads/metadata.json` and `.beads/issues.jsonl`, and it writes
-/// `metadata.json` with no trailing newline, which `newlines` would otherwise fail on
-/// after every `mise run setup`. `fixtures/` is an independent project with its own
-/// toolchain and lockfile; `bench/results/` holds recorded benchmark output and
-/// `bench/src/samples/` recorded HTTP documents, both kept exactly as they were
-/// captured; `napi-symbols-macos.def` is a linker symbol list taken verbatim from
-/// upstream.
+/// Files another tool owns and rewrites, and files kept byte-exact on purpose. `bd` regenerates
+/// `.beads/metadata.json` and `.beads/issues.jsonl`. `fixtures/` is an independent project with
+/// its own toolchain and lockfile; `bench/results/` holds recorded benchmark output and
+/// `bench/src/samples/` recorded HTTP documents, both kept exactly as they were captured;
+/// `napi-symbols-macos.def` is a linker symbol list taken verbatim from upstream. `docs/public/`
+/// and `docs/resources/` are the site build's output.
 exclude = List(
     ".beads/**",
     "fixtures/**",
     "bench/results/**",
     "bench/src/samples/**",
     "crates/bento_runtime/napi-symbols-macos.def",
+    "docs/public/**",
+    "docs/resources/**",
     "target/**"
 )
 
-/// Formatters and linters. `check`, `fix` and `pre-commit` all share this set, so a
+/// The project's formatters and linters. `check`, `fix`, and `pre-commit` share this set, so a
 /// clean `hk check --all` in CI means a clean pre-commit locally.
+///
+/// Ownership never overlaps: dprint formats Markdown, JSON, YAML, and TOML (dprint.json); Oxfmt
+/// formats TypeScript and JavaScript (.oxfmtrc.jsonc); Oxlint and tsrs lint and type-check them;
+/// rustfmt owns Rust.
 local linters = new Mapping<String, Step> {
     ["trailing_whitespace"] = Builtins.trailing_whitespace
     ["newlines"] = Builtins.newlines
     ["check_merge_conflict"] = Builtins.check_merge_conflict
 
-    // The workflows are part of the gate: `actionlint` is pinned in mise.toml, so
-    // the hook, `mise run check` and CI all check them with the same version. The
-    // builtin globs `.github/workflows/*.yml` and `*.yaml`.
+    // `actionlint` is pinned in mise.toml, so the hook, `mise run check` and CI all check the
+    // workflows with the same version.
     ["actionlint"] = Builtins.actionlint
 
-    // Oxfmt formats far more than TypeScript — it also owns JSON, JSONC, YAML,
-    // TOML, Markdown and CSS in this repository, including fenced code blocks
-    // inside Markdown. Settings live in .oxfmtrc.jsonc.
+    ["dprint"] = Builtins.dprint
+
     ["oxfmt"] = (Builtins.oxfmt) {
-        exclude = List(
-            "**/pnpm-lock.yaml",
-            "**/package-lock.json",
-            // Built by `mise run docs:build`.
-            "docs/.vitepress/dist/**",
-            "docs/.vitepress/cache/**"
-        )
+        glob = List("**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}")
     }
 
-    // `--deny-warnings` is the builtin's default, so a rule set to "warn" in
-    // .oxlintrc.jsonc still blocks a commit. If you add a rule you only want
-    // advisory, make it advisory for the hook too rather than leaving the hook red.
+    // `--deny-warnings` is the builtin's default, so a rule set to "warn" in .oxlintrc.jsonc
+    // still blocks a commit.
     ["oxlint"] = (Builtins.ox_lint) {
-        exclude = List(
-            "docs/.vitepress/dist/**",
-            "docs/.vitepress/cache/**",
-            // An independent project whose types come from its own install.
-            "examples/direct-source/**"
-        )
+        // An independent project whose types come from its own install.
+        exclude = List("examples/direct-source/**")
     }
 
-    // Type checking runs through the mise task rather than `tsrs` directly, so there
-    // is one definition of how to type-check this project, used by the hook, CI, and
-    // a person at a terminal.
+    // One definition of type checking for the hook, CI, and a person at a terminal.
     ["tsrs"] {
-        glob = List("**/*.ts", "**/*.tsx", "tsconfig.json")
-        exclude = List("docs/.vitepress/dist/**", "docs/.vitepress/cache/**")
+        glob = List("**/*.ts", "**/*.tsx", "**/tsconfig.json")
         check = "mise run typecheck"
         exclusive = true
     }
 
-    // Only rustfmt runs here. Clippy, rustdoc and the crate tests need macOS with the
-    // SDK the native build targets and take minutes; `mise run rust` owns them and CI
-    // runs it on its macOS runners. `cargo fmt --check` builds nothing, so every
-    // platform can afford it on every commit.
+    // Only rustfmt runs here. Clippy, rustdoc and the crate tests need macOS with the SDK the
+    // native build targets and take minutes; `mise run rust` owns them and CI runs it on its
+    // macOS runners. `cargo fmt --check` builds nothing, so every platform can afford it on
+    // every commit, the Linux `check` job included.
     ["cargo-fmt"] = (Builtins.cargo_fmt) {
-        // The builtin omits `--all`. The root manifest here is virtual, so `cargo fmt`
-        // already covers every member, but the house verification command is
-        // `cargo fmt --all --check`; spelling it out keeps them the same command.
+        // The builtin omits `--all`. The root manifest is virtual, so `cargo fmt` already covers
+        // every member, but `cargo fmt --all --check` is the house verification command;
+        // spelling it out keeps them the same command.
         check {
             command = "cargo fmt --all --check --manifest-path {{workspace_indicator}}"
         }
@@ -94,9 +82,17 @@ local linters = new Mapping<String, Step> {
     }
 }
 
-/// `bd hooks run` exits 3 when the beads database is not initialized. Beads' own
-/// shims treat that as success so a fresh clone can commit before `mise run setup`
-/// has run; these steps do the same.
+/// Syncs this machine's Beads replica where work crosses machines: before a push, and after a
+/// pull, merge, or rebase. A sync that does not succeed prints its outcome and never blocks git.
+local beadsSync: Step = new {
+    check = "mise run beads:sync"
+    allow_failure = true
+    output_summary = "combined"
+}
+
+/// `bd hooks run` exits 3 when the beads database is not initialized. Beads' own shims treat
+/// that as success so a fresh clone can commit before `mise run setup` has run; these steps do
+/// the same.
 hooks {
     ["check"] {
         steps = linters
@@ -119,10 +115,11 @@ hooks {
         }
     }
 
+    // Every commit subject follows Scoped Commits, with the scopes `workbench` accepts.
     ["commit-msg"] {
         steps {
             ["scoped-commit"] {
-                check = "node tools/check-scoped-commit.ts {{commit_msg_file}}"
+                check = "workbench commits check --output text --message-file {{commit_msg_file}}"
             }
         }
     }
@@ -135,12 +132,13 @@ hooks {
         }
     }
 
+    // No hook runs `mise run check`: CI runs it on every push, and agents wait for CI before
+    // marking a pull request ready or merging it.
     ["pre-push"] {
         steps {
-            ["check"] {
-                check = "mise run check"
-            }
+            ["beads-sync"] = beadsSync
             ["beads"] {
+                depends = "beads-sync"
                 check = "bd hooks run pre-push {{hook_args}} || [ $? -eq 3 ]"
             }
         }
@@ -158,6 +156,19 @@ hooks {
         steps {
             ["beads"] {
                 check = "bd hooks run post-merge {{hook_args}} || [ $? -eq 3 ]"
+            }
+            ["beads-sync"] = (beadsSync) {
+                depends = "beads"
+            }
+        }
+    }
+
+    // `git pull --rebase` runs `post-rewrite`, not `post-merge`. Git passes `rebase` or `amend`;
+    // an amend rewrites only local work, so it skips the sync.
+    ["post-rewrite"] {
+        steps {
+            ["beads-sync"] = (beadsSync) {
+                check = "[ \"{{hook_args}}\" != rebase ] || mise run beads:sync"
             }
         }
     }
