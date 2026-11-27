@@ -1,29 +1,16 @@
-# Allowed commit scopes, one per line. Blank lines and # comments are ignored.
+# This project's commit scopes, one per line. Blank lines and # comments are ignored.
 #
-# `tools/check-scoped-commit.ts` also accepts the name of a real proposal file —
-# `proposals/<NNNN>-<slug>.md` is the scope `<NNNN>-<slug>` — so feature work
-# needs no entry here.
+# `workbench commits check` also accepts Workbench's process scopes (agents, ci, decision, deps,
+# docs, guides, policy, proposal, release, rules, skills, templates, treewide, vision) and the
+# name of any proposal file: `proposals/<NNNN>-<slug>.md` is the scope `<NNNN>-<slug>`, so
+# feature work needs no entry here.
 #
-# Add product scopes below the process scopes as the project grows. Prefer the
-# narrowest scope that accurately describes the change.
+# Prefer the narrowest scope that accurately describes the change.
 
-agents
-ci
-decision
-deps
-docs
-guides
-hooks
-policy
-proposal
+# The README.
 readme
-release
-rules
-skills
-templates
+# The repository's own tooling: mise tasks, hk hooks, formatter and linter settings, tools/.
 tools
-treewide
-vision
 
 # Code areas introduced by proposal.0001.
 bench
@@ -35,4 +22,3 @@ fixtures
 host
 runtime
 tasks
-workflows

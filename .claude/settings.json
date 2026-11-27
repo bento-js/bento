@@ -1,0 +1,13 @@
+{
+    "extraKnownMarketplaces": {
+        "workbench": {
+            "source": {
+                "path": "./.workbench",
+                "source": "directory"
+            }
+        }
+    },
+    "enabledPlugins": {
+        "workbench@workbench": true
+    }
+}
