@@ -1,10 +1,10 @@
 mod support;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use bento_host::{CEILING_ENV, GrantRequest, Grants, Scope};
+use bento_host::{CEILING_ENV, EnvPattern, PathPattern, PermissionSet, Permissions, Scope};
 use bento_task::{Cancellation, Plan};
 use bento_workspace::{FILE_KEYS_ENV, LaunchEnvironment, LaunchKind};
 use support::{SYSTEM_PATH, TempProject, parse_env_dump};
@@ -20,10 +20,10 @@ fn nested_bento_environment(
     temp: &TempProject,
     task: &str,
     inherited: &[(&str, &str)],
-    grants: &Grants,
+    permissions: &Permissions,
 ) -> BTreeMap<String, String> {
     let plan = Plan::new(temp.project().manifest(), task, &[]).unwrap();
-    temp.runner(inherited, grants).run(&plan, &Cancellation::new()).unwrap();
+    temp.runner(inherited, permissions).run(&plan, &Cancellation::new()).unwrap();
     parse_env_dump(&temp.read("bento.env"))
 }
 
@@ -81,26 +81,44 @@ fn local_programs_run(temp: &TempProject) -> String {
 fn nested_launch_in(temp: &TempProject) -> LaunchEnvironment {
     temp.write(".env", "DATABASE_URL=base\n");
     temp.write(".env.development", "DATABASE_URL=dev\n");
-    let child = nested_bento_environment(temp, "dev", &[("PATH", SYSTEM_PATH)], &Grants::none());
+    let child = nested_bento_environment(
+        temp,
+        "dev",
+        &[("PATH", SYSTEM_PATH)],
+        &Permissions::unrestricted(),
+    );
     nested_watch_launch(temp, child)
 }
 
 #[test]
-fn task_children_receive_the_launch_grants_as_their_ceiling() {
+fn task_children_receive_a_restricted_launch_s_permissions_as_their_ceiling() {
     let temp = TempProject::with_tasks(json!({ "dev": NESTED_WATCH }));
-    let grants = GrantRequest {
-        read: Some(Scope::Only(BTreeSet::from([temp.root().to_path_buf()]))),
-        env: Some(Scope::Only(BTreeSet::from(["DATABASE_URL".to_string()]))),
-        language_model: Some(true),
-        ..GrantRequest::default()
-    }
-    .resolve(None)
-    .unwrap();
+    let permissions = Permissions::restricted(PermissionSet {
+        fs_read: Scope::only([PathPattern::resolve(".", temp.root()).unwrap()]),
+        env: Scope::only([EnvPattern::parse("DATABASE_URL").unwrap()]),
+        language_model: true,
+        ..PermissionSet::default()
+    });
 
-    let child = nested_bento_environment(&temp, "dev", &[("PATH", SYSTEM_PATH)], &grants);
+    let child = nested_bento_environment(&temp, "dev", &[("PATH", SYSTEM_PATH)], &permissions);
 
-    assert_eq!(Grants::from_ceiling_value(&child[CEILING_ENV]).unwrap(), grants);
+    assert_eq!(Permissions::from_ceiling_value(&child[CEILING_ENV]).unwrap(), permissions);
     assert!(child.contains_key(FILE_KEYS_ENV));
+}
+
+#[test]
+fn task_children_of_an_unrestricted_launch_receive_an_unrestricted_ceiling() {
+    let temp = TempProject::with_tasks(json!({ "dev": NESTED_WATCH }));
+
+    let child = nested_bento_environment(
+        &temp,
+        "dev",
+        &[("PATH", SYSTEM_PATH), (CEILING_ENV, "stale")],
+        &Permissions::unrestricted(),
+    );
+
+    let ceiling = Permissions::from_ceiling_value(&child[CEILING_ENV]).unwrap();
+    assert_eq!(ceiling, Permissions::unrestricted());
 }
 
 #[test]
@@ -109,7 +127,12 @@ fn nested_watch_command_uses_its_own_mode_file() {
     temp.write(".env", "DATABASE_URL=base\n");
     temp.write(".env.development", "DATABASE_URL=dev\n");
 
-    let child = nested_bento_environment(&temp, "dev", &[("PATH", SYSTEM_PATH)], &Grants::none());
+    let child = nested_bento_environment(
+        &temp,
+        "dev",
+        &[("PATH", SYSTEM_PATH)],
+        &Permissions::unrestricted(),
+    );
     let nested = nested_watch_launch(&temp, child.clone());
 
     assert_eq!(child["DATABASE_URL"], "base");
@@ -125,7 +148,7 @@ fn exported_value_still_wins_in_the_nested_launch() {
     temp.write(".env.development", "DATABASE_URL=dev\n");
 
     let inherited = [("PATH", SYSTEM_PATH), ("DATABASE_URL", "exported")];
-    let child = nested_bento_environment(&temp, "dev", &inherited, &Grants::none());
+    let child = nested_bento_environment(&temp, "dev", &inherited, &Permissions::unrestricted());
     let nested = nested_watch_launch(&temp, child.clone());
 
     assert_eq!(child["DATABASE_URL"], "exported");
@@ -141,7 +164,12 @@ fn inline_assignment_in_the_task_wins_in_the_nested_launch() {
     temp.write(".env.development", "DATABASE_URL=dev\n");
     temp.write(".env.test", "TEST_ONLY=1\n");
 
-    let child = nested_bento_environment(&temp, "dev", &[("PATH", SYSTEM_PATH)], &Grants::none());
+    let child = nested_bento_environment(
+        &temp,
+        "dev",
+        &[("PATH", SYSTEM_PATH)],
+        &Permissions::unrestricted(),
+    );
     let nested = nested_watch_launch(&temp, child);
 
     assert_eq!(value(&nested, "DATABASE_URL"), Some("inline"));

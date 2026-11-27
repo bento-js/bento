@@ -1,23 +1,34 @@
 mod support;
 
-use std::collections::BTreeSet;
 use std::net::TcpListener;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-use bento_host::Scope;
-use bento_runtime::{RunOutcome, ShutdownOutcome, start};
+use bento_host::{PermissionSet, Permissions, Scope};
+use bento_runtime::{RunOutcome, RuntimeConfig, ShutdownOutcome, start};
 
-use support::{completed, config, fixture, run};
+use support::{completed, config_with, fixture, project_access, run};
+
+/// An instance for the fixture at `root` that may read every file, load native addons, and,
+/// when `net`, use the network.
+fn native_access(root: &Path, net: bool) -> RuntimeConfig {
+    config_with(
+        root,
+        Permissions::restricted(PermissionSet {
+            fs_read: Scope::All,
+            addons: true,
+            net,
+            ..project_access(root)
+        }),
+    )
+}
 
 #[test]
 fn pnpm_exports_imports_commonjs_and_real_native_assets() {
     let directory = fixture();
     let root = directory.path();
     std::fs::write(root.join("app/runtime-probe.mjs"), "export const probe = 'imports';").unwrap();
-    let mut settings = config(root);
-    settings.grants.read = Scope::All;
-    settings.grants.addons =
-        Scope::Only(BTreeSet::from([settings.project_root.join("node_modules")]));
+    let settings = native_access(root, false);
     completed(run(
         settings,
         "native.mjs",
@@ -90,11 +101,7 @@ fn native_addons_and_large_heaps_shutdown_and_recreate_on_the_same_port() {
     let root = directory.path();
     let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
     for cycle in 0..3 {
-        let mut settings = config(root);
-        settings.grants.net = Scope::All;
-        settings.grants.read = Scope::All;
-        settings.grants.addons =
-            Scope::Only(BTreeSet::from([settings.project_root.join("node_modules")]));
+        let mut settings = native_access(root, true);
         settings.shutdown_deadline = Duration::from_millis(200);
         let entry = root.join(format!("native-shutdown-{cycle}.mjs"));
         let marker = format!("native-ready-{cycle}");

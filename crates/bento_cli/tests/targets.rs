@@ -2,7 +2,7 @@ mod support;
 
 use serde_json::json;
 
-use bento_host::Grants;
+use bento_host::{CEILING_ENV, PermissionSet, Permissions};
 use support::{SYSTEM_PATH, TempProject, stderr, stdout};
 
 #[test]
@@ -25,7 +25,7 @@ fn an_unknown_target_is_an_error_and_never_a_shell_command() {
 fn usage_errors_exit_with_status_1_and_help_with_0() {
     let temp = TempProject::with_tasks(json!({}));
 
-    let missing_target = temp.bento(&["run", "--allow-read"]).output().unwrap();
+    let missing_target = temp.bento(&["run", "--permission"]).output().unwrap();
     let help = temp.bento(&["run", "--help"]).output().unwrap();
 
     assert_eq!(missing_target.status.code(), Some(1));
@@ -63,7 +63,7 @@ fn a_script_runs_in_bento_without_trying_another_runtime() {
 
     for target in ["./server.mjs", "server.mjs"] {
         let output = temp
-            .bento(&["run", "--allow-read=.", target, "--port", "3000"])
+            .bento(&["run", target, "--port", "3000"])
             .env("PATH", &search_path)
             .output()
             .unwrap();
@@ -75,13 +75,13 @@ fn a_script_runs_in_bento_without_trying_another_runtime() {
 }
 
 #[test]
-fn script_grants_are_validated_before_the_script_runs() {
+fn script_permissions_are_validated_before_the_script_runs() {
     let (temp, _) = script_project();
-    let ceiling = Grants::none().to_ceiling_value().unwrap();
+    let ceiling = Permissions::restricted(PermissionSet::default()).to_ceiling_value().unwrap();
 
     let output = temp
-        .bento(&["run", "--allow-net", "./server.mjs"])
-        .env("BENTO_GRANT_CEILING", ceiling)
+        .bento(&["run", "--permission", "--allow-net", "./server.mjs"])
+        .env(CEILING_ENV, ceiling)
         .output()
         .unwrap();
 

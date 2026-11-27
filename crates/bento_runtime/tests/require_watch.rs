@@ -2,12 +2,12 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
+use bento_host::{PermissionSet, Permissions, Scope};
 use bento_runtime::{RunOutcome, start};
-use support::{completed, config, project, run};
+use support::{completed, config_with, project, read_access, run};
 
 fn watch_inputs(app: &Path, entry: &str) -> Vec<PathBuf> {
-    let mut settings = config(app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(app);
     let runtime = start(settings, &app.join(entry)).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());
@@ -101,9 +101,14 @@ fn source_loaded_after_a_failed_require_records_its_package_scope() {
         "try { require('../shared/later.cjs'); } catch {} require('node:fs').writeFileSync(require('node:path').join(__dirname, '../shared/later.cjs'), 'module.exports = 42;'); require('../shared/later.cjs');",
     )
     .unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
-    settings.grants.write = bento_host::Scope::All;
+    let settings = config_with(
+        &app,
+        Permissions::restricted(PermissionSet {
+            fs_read: Scope::All,
+            fs_write: Scope::All,
+            ..PermissionSet::default()
+        }),
+    );
     let runtime = start(settings, &app.join("main.cjs")).unwrap();
     let handle = runtime.handle();
     assert!(matches!(runtime.wait(), RunOutcome::Completed));
@@ -135,8 +140,7 @@ fn wrapped_require_inputs(hook: &str) -> (tempfile::TempDir, Vec<PathBuf>) {
     let recorded = watch_inputs(&app, "main.cjs");
     std::fs::create_dir(root.path().join("shared")).unwrap();
     std::fs::write(root.path().join("shared/missing.cjs"), "module.exports = 42;").unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(&app);
     completed(run(
         settings,
         "main.cjs",

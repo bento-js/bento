@@ -49,29 +49,33 @@ fn files_beneath(directory: &Path) -> BTreeSet<PathBuf> {
     files
 }
 
-/// `bento run` with the README's grant, checking that running wrote nothing to the project.
-fn run_main(path: &str) -> Output {
+/// `bento run <words> main.ts` in the installed example, checking that running wrote nothing to
+/// the project.
+fn run_main(words: &[&str], path: &str) -> Output {
     let root = installed_example();
     let before = files_beneath(root);
 
-    let output =
-        bento_in(root, &["run", "--allow-read=.", "main.ts"]).env("PATH", path).output().unwrap();
+    let arguments = [&["run"], words, &["main.ts"]].concat();
+    let output = bento_in(root, &arguments).env("PATH", path).output().unwrap();
 
     assert_eq!(files_beneath(root), before, "running created or removed files");
     output
 }
 
+/// The README runs the example unrestricted, and restricted to reading the project.
 #[test]
 fn the_example_runs_from_typescript_and_tsx_without_emitting_javascript() {
-    let output = run_main(support::SYSTEM_PATH);
+    for words in [&[][..], &["--permission", "--allow-fs-read=."]] {
+        let output = run_main(words, support::SYSTEM_PATH);
 
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert_eq!(stdout(&output), RENDERED_MENU);
+        assert!(output.status.success(), "{words:?}: {}", stderr(&output));
+        assert_eq!(stdout(&output), RENDERED_MENU, "{words:?}");
+    }
 }
 
 #[test]
 fn the_example_runs_without_node_bun_deno_or_pnpm_on_path() {
-    let output = run_main(&path_without_other_runtimes());
+    let output = run_main(&[], &path_without_other_runtimes());
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(stdout(&output), RENDERED_MENU);

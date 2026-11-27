@@ -8,7 +8,7 @@ use crate::ending::{self, Stop};
 use crate::error::CliError;
 use crate::events::{Event, next_event, send_signals};
 use crate::instance::Instance;
-use crate::launch::Launch;
+use crate::launch::{self, Launch};
 
 /// Runs the script at `entry` in a runtime instance until it ends, and returns the exit code
 /// it ended with. The first SIGINT or SIGTERM goes to the script; a second ends `bento` at once.
@@ -45,18 +45,20 @@ pub(crate) fn run(
     }
 }
 
-/// The runtime configuration for running the script `launch` prepared: its grants and
+/// The runtime configuration for running the script `launch` prepared: its permissions and
 /// environment, the directory `bento` runs in, and the words after the script.
 pub(crate) fn runtime_config(
     launch: Launch,
     invocation_directory: &Path,
     arguments: &[String],
 ) -> RuntimeConfig {
+    let Launch { project, permissions, environment } = launch;
+    let (env, kept_env) = launch::guest_environment(environment, &permissions);
     RuntimeConfig {
         cwd: invocation_directory.to_owned(),
-        grants: launch.grants,
-        env: launch.environment.into_vars(),
+        env,
+        kept_env,
         argv: arguments.to_vec(),
-        ..RuntimeConfig::new(launch.project.root())
+        ..RuntimeConfig::new(project.root(), permissions)
     }
 }

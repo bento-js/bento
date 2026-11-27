@@ -10,12 +10,9 @@ use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
-use bento_host::Scope;
-use bento_runtime::{
-    ErrorKind, RunOutcome, RunningRuntime, ShutdownOutcome, package_lookup_paths, start,
-};
+use bento_runtime::{ErrorKind, RunOutcome, RunningRuntime, ShutdownOutcome, start};
 use bento_test_support::{ChildLimit, isolated_fixture_test};
-use support::{completed, config, fixture, run};
+use support::{completed, config, run};
 
 #[test]
 fn real_fixture_renders_assets_validates_persists_and_restarts_in_both_modes() {
@@ -26,11 +23,8 @@ fn real_fixture_renders_assets_validates_persists_and_restarts_in_both_modes() {
         return;
     }
     let started = Instant::now();
-    let (mut settings, _fixture_directory, _database_directory, port) = guestbook::prepare();
+    let (mut settings, _fixture_directory, _database_directory, port) = guestbook::prepare(true);
     let root = settings.project_root.clone();
-    settings.grants.read = Scope::Only(
-        std::iter::once(root.clone()).chain(package_lookup_paths(&root).unwrap()).collect(),
-    );
     completed(run(
         settings.clone(),
         "seed.mjs",
@@ -84,13 +78,18 @@ fn project_only_reads_preserve_asset_lookup_permission_error_and_location() {
     ) {
         return;
     }
-    let (settings, _fixture_directory, _database_directory, _) = guestbook::prepare();
+    let (settings, _fixture_directory, _database_directory, _) = guestbook::prepare(false);
     let runtime = start(settings.clone(), &settings.project_root.join("server.ts")).unwrap();
     let RunOutcome::Failed(error) = runtime.wait() else {
         panic!("project-only reads unexpectedly allowed asset lookup");
     };
     assert_eq!(error.kind, ErrorKind::Permission, "{error}");
-    assert!(error.message.contains("NotCapable"), "{error}");
+    assert!(
+        error.message.contains(
+            "Access to this API has been restricted. Use --allow-fs-read to manage permissions."
+        ),
+        "{error}"
+    );
     let location = error.location().expect("permission denial must identify asset code");
     assert!(location.path.starts_with(settings.project_root.join("node_modules")), "{location:?}");
     assert!(location.path.ends_with("dist/lib/access.js"), "{location:?}");

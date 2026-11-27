@@ -34,6 +34,7 @@ impl LaunchKind {
 pub struct LaunchEnvironment {
     vars: BTreeMap<String, String>,
     file_keys: BTreeSet<String>,
+    prepared: BTreeMap<String, String>,
     mode: Option<String>,
 }
 
@@ -82,13 +83,18 @@ impl LaunchEnvironment {
         let mut layers = Layers::default();
         layers.add_file_values(inherited.forwarded);
         if let Some(default) = mode.name.as_ref().filter(|_| mode.is_default) {
-            layers.add_value(NODE_ENV.to_owned(), default.clone());
+            layers.add_default_mode(default.clone());
         }
         layers.add_file_values(base.into_iter().chain(mode_file).chain(local));
         for (name, value) in inherited.actual {
-            layers.add_value(name, value);
+            layers.add_inherited_value(name, value);
         }
-        Ok(LaunchEnvironment { vars: layers.vars, file_keys: layers.file_keys, mode: mode.name })
+        Ok(LaunchEnvironment {
+            vars: layers.vars,
+            file_keys: layers.file_keys,
+            prepared: layers.prepared,
+            mode: mode.name,
+        })
     }
 
     pub fn vars(&self) -> &BTreeMap<String, String> {
@@ -107,6 +113,15 @@ impl LaunchEnvironment {
     /// Variables whose values came from environment files rather than from the user.
     pub fn file_keys(&self) -> &BTreeSet<String> {
         &self.file_keys
+    }
+
+    /// The values Bento prepared for this launch itself: what each variable holds in the
+    /// environment files, those an outer launch forwarded from its own included, and the
+    /// watch-mode `NODE_ENV` default, as if no inherited value overrode them. These are Bento's
+    /// counterpart of Node's `--env-file` values, which a restricted runtime instance keeps
+    /// whatever its permissions say.
+    pub fn prepared_values(&self) -> &BTreeMap<String, String> {
+        &self.prepared
     }
 
     /// The [`crate::FILE_KEYS_ENV`] value to hand a nested launch alongside [`Self::vars`].
@@ -150,18 +165,27 @@ impl Mode {
 struct Layers {
     vars: BTreeMap<String, String>,
     file_keys: BTreeSet<String>,
+    prepared: BTreeMap<String, String>,
 }
 
 impl Layers {
     fn add_file_values(&mut self, assignments: impl IntoIterator<Item = (String, String)>) {
         for (name, value) in assignments {
             self.file_keys.insert(name.clone());
+            self.prepared.insert(name.clone(), value.clone());
             self.vars.insert(name, value);
         }
     }
 
-    /// Adds a value that did not come from an environment file.
-    fn add_value(&mut self, name: String, value: String) {
+    /// Adds the mode a launch falls back to, which Bento prepared rather than read from a file.
+    fn add_default_mode(&mut self, mode: String) {
+        self.file_keys.remove(NODE_ENV);
+        self.prepared.insert(NODE_ENV.to_owned(), mode.clone());
+        self.vars.insert(NODE_ENV.to_owned(), mode);
+    }
+
+    /// Adds a value the user or the command starting the launch set.
+    fn add_inherited_value(&mut self, name: String, value: String) {
         self.file_keys.remove(&name);
         self.vars.insert(name, value);
     }

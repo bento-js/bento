@@ -3,11 +3,10 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use bento_runtime::start;
-use support::{completed, config, project, run};
+use support::{completed, project, read_access, run};
 
 fn watch_inputs(app: &Path, entry: &str) -> Vec<PathBuf> {
-    let mut settings = config(app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(app);
     let runtime = start(settings, &app.join(entry)).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());
@@ -115,8 +114,7 @@ fn application_dynamic_file_url_failure_retains_target_and_recovers() {
         } else {
             "import assert from 'node:assert/strict'; assert.equal((await import(new URL('../optional-plugin.mjs', import.meta.url).href)).default, 'RECOVERED');"
         };
-        let mut settings = config(&app);
-        settings.grants.read = bento_host::Scope::All;
+        let settings = read_access(&app);
         completed(run(settings, entry, repaired));
     }
 }

@@ -21,15 +21,22 @@ pub(crate) fn run(arguments: &RunArguments) -> Result<ExitCode, CliError> {
             let task_arguments = task::arguments(&name, arguments.arguments())?;
             let launch = Launch::prepare(
                 project,
-                &arguments.grants,
+                &arguments.permissions,
                 &invocation_directory,
                 LaunchKind::Run,
+                None,
             )?;
             task::run(&launch, &name, task_arguments)
         }
         Target::Script(entry) => {
             let kind = if arguments.watch { LaunchKind::Watch } else { LaunchKind::Run };
-            let launch = Launch::prepare(project, &arguments.grants, &invocation_directory, kind)?;
+            let launch = Launch::prepare(
+                project,
+                &arguments.permissions,
+                &invocation_directory,
+                kind,
+                Some(&entry),
+            )?;
             let script_arguments = arguments.arguments();
             if arguments.watch {
                 watch::run(launch, &entry, &invocation_directory, script_arguments)

@@ -59,6 +59,7 @@ libc = "0.2.190"
 oxc = "=0.153.0"
 oxc_resolver = "=11.24.3"
 parking_lot = "0.12.5"
+proptest = "1.9.0"
 serde = { version = "1.0.149", features = ["derive"] }
 serde_json = "1.0.85"
 signal-hook = "0.3.18"
@@ -66,11 +67,15 @@ tempfile = "3"
 thiserror = "2.0.12"
 tokio = { version = "1.47.1", features = ["full"] }
 
-# deno_core 0.412.0 with one fix: require() of an ES module rethrows the module's original
-# exception instead of a serialized copy. The fork imports the published crate unmodified and
-# carries the change as separate commits; see PATCHES.md there.
+# Both forks import the published crate unmodified and carry Bento's changes as separate
+# commits; see PATCHES.md in each.
+# - deno_core 0.412.0: require() of an ES module rethrows the module's original exception
+#   instead of a serialized copy.
+# - deno_permissions 0.118.0: path descriptors that cover exactly one path or a text prefix,
+#   as Node's file system permissions do, and replacing a container's permissions.
 [patch.crates-io]
 deno_core = { git = "https://github.com/bento-js/deno_core", rev = "825264984ee3945d3713fb2bc6b224b491a82478" }
+deno_permissions = { git = "https://github.com/bento-js/deno_permissions", rev = "8c9737117224be7ad7f19a7c69b64e4613f41693" }
 
 # rusty_v8 miscompiles below -O1.
 [profile.dev.package.v8]

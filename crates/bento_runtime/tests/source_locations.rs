@@ -1,7 +1,7 @@
 mod support;
 
 use bento_runtime::{ErrorKind, RunOutcome};
-use support::{config, run};
+use support::{config, run, workspace_access};
 
 #[test]
 fn typescript_syntax_error_uses_original_diagnostic_position() {
@@ -60,11 +60,7 @@ fn an_external_non_dependency_throw_keeps_its_source_mapped_location() {
         "enum Answer { Yes = 42 }\n\nthrow new Error('external source failure');\n",
     )
     .unwrap();
-    let mut config = config(&root);
-    config.grants.read = bento_host::Scope::Only(std::collections::BTreeSet::from([workspace
-        .path()
-        .canonicalize()
-        .unwrap()]));
+    let config = workspace_access(&root, workspace.path());
     let RunOutcome::Failed(error) = run(config, "main.ts", "import '../external/error.ts';\n")
     else {
         panic!("external source succeeded");
@@ -91,11 +87,7 @@ fn dependency_throw_frames_are_skipped_in_favor_of_the_application_caller() {
             "export function fail() {\n  throw new Error('dependency failure');\n}\n",
         )
         .unwrap();
-        let mut config = config(&root);
-        config.grants.read = bento_host::Scope::Only(std::collections::BTreeSet::from([workspace
-            .path()
-            .canonicalize()
-            .unwrap()]));
+        let config = workspace_access(&root, workspace.path());
         let source = format!("import {{ fail }} from '{import}';\n\nfail();\n");
         let RunOutcome::Failed(error) = run(config, "main.ts", &source) else {
             panic!("dependency source succeeded");

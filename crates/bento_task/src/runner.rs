@@ -13,7 +13,7 @@ use crate::assignments::assigned_names;
 use crate::cancellation::{Cancellation, Signal};
 use crate::plan::{Plan, Step};
 use crate::process_group::{Outcome, ProcessGroup};
-use bento_host::{CEILING_ENV, Grants, UnencodableCeiling};
+use bento_host::{CEILING_ENV, Permissions, UnencodableCeiling};
 use bento_workspace::{FILE_KEYS_ENV, LaunchEnvironment, Project};
 
 /// How long a command's process group may take to exit after a forwarded cancellation
@@ -40,8 +40,8 @@ pub enum TaskError {
     UnrepresentablePath(PathBuf),
     #[error("cannot put the running bento on task commands' PATH: {0}")]
     BentoLink(#[source] io::Error),
-    #[error("cannot pass the grant ceiling to task commands: {0}")]
-    GrantCeiling(#[source] UnencodableCeiling),
+    #[error("cannot pass the permission ceiling to task commands: {0}")]
+    PermissionCeiling(#[source] UnencodableCeiling),
     #[error("task `{task}` could not run `{command}`: {source}")]
     Process { task: String, command: String, source: io::Error },
     #[error("task `{task}` failed: `{command}` {}", describe(.status))]
@@ -64,18 +64,19 @@ impl TaskError {
 
 impl TaskRunner {
     /// `executable` is the absolute path of the running `bento` executable, which task
-    /// commands reach by the name `bento`.
+    /// commands reach by the name `bento`. `permissions` are the launch's own, which every
+    /// nested `bento` launch receives as its ceiling.
     ///
     /// # Errors
     ///
     /// [`TaskError::BentoLink`] when that link cannot be made,
     /// [`TaskError::UnrepresentablePath`] when a directory going on `PATH` is not UTF-8 or
-    /// contains `:`, and [`TaskError::GrantCeiling`] when `grants` cannot be encoded for
-    /// nested launches.
+    /// contains `:`, and [`TaskError::PermissionCeiling`] when `permissions` cannot be encoded
+    /// for nested launches.
     pub fn new(
         project: &Project,
         launch: &LaunchEnvironment,
-        grants: &Grants,
+        permissions: &Permissions,
         executable: &Path,
     ) -> Result<TaskRunner, TaskError> {
         let bento_link = link_bento(executable).map_err(TaskError::BentoLink)?;
@@ -87,7 +88,7 @@ impl TaskRunner {
             environment.get("PATH").map(String::as_str),
         )?;
         environment.insert("PATH".to_owned(), search_path);
-        let ceiling = grants.to_ceiling_value().map_err(TaskError::GrantCeiling)?;
+        let ceiling = permissions.to_ceiling_value().map_err(TaskError::PermissionCeiling)?;
         environment.insert(CEILING_ENV.to_owned(), ceiling);
         Ok(TaskRunner {
             root: project.root().to_owned(),

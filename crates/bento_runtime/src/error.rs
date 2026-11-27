@@ -18,7 +18,7 @@ pub enum ErrorKind {
     /// A module's TypeScript or JSX could not be transformed, or the project's
     /// `tsconfig.json` could not be loaded.
     Transform,
-    /// The guest attempted an operation outside its grants.
+    /// The guest attempted an operation its permissions withhold.
     Permission,
     /// The guest threw and nothing handled it.
     Uncaught,
@@ -102,13 +102,7 @@ impl RuntimeError {
             CoreErrorKind::Js(error) => deno_runtime::fmt_errors::format_js_error(error, None),
             _ => format!("{error:#}"),
         };
-        let mut message = plain_message(format!("{}: {message}", entry.display()));
-        if kind == ErrorKind::Permission && message.contains("--allow-ffi") {
-            message = message.replace("Requires ffi access", "Requires addons access").replace(
-                "run again with the --allow-ffi flag",
-                "the host must grant addons access (--allow-addons for the Bento CLI)",
-            );
-        }
+        let message = plain_message(format!("{}: {message}", entry.display()));
         Self { kind, message, location }
     }
 }
@@ -176,10 +170,18 @@ fn classify(error: &CoreError) -> ErrorKind {
     ErrorKind::Uncaught
 }
 
-// `NotAllowedError` is the web Prompt API's name for a denied host grant; an uncaught one is
-// a permission failure like any other, not an ordinary guest exception.
+// Node's codes for a refused permission, the web Prompt API's `NotAllowedError` for a refused
+// language model, and the names of errors Deno throws itself: an uncaught one is a permission
+// failure like any other, not an ordinary guest exception.
 fn has_permission_cause(error: &JsError) -> bool {
-    matches!(error.name.as_deref(), Some("NotCapable" | "PermissionDenied" | "NotAllowedError"))
+    let node_denial = error.additional_properties.iter().any(|(key, value)| {
+        key == "code" && matches!(value.as_str(), "ERR_ACCESS_DENIED" | "ERR_DLOPEN_DISABLED")
+    });
+    node_denial
+        || matches!(
+            error.name.as_deref(),
+            Some("NotCapable" | "PermissionDenied" | "NotAllowedError")
+        )
         || error.cause.as_deref().is_some_and(has_permission_cause)
         || error.aggregated.as_ref().is_some_and(|errors| errors.iter().any(has_permission_cause))
 }

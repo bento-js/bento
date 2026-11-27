@@ -1,17 +1,15 @@
 mod support;
 
-use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
-use bento_host::{NetTarget, Scope};
-use support::{completed, config, run};
+use support::{completed, network_access, run};
 
 #[test]
-fn fetch_performs_a_granted_http_request() {
+fn fetch_performs_an_allowed_http_request() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -37,10 +35,8 @@ fn fetch_performs_a_granted_http_request() {
             .unwrap();
     });
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.net = Scope::Only(BTreeSet::from([NetTarget::new("127.0.0.1", Some(port))]));
     let outcome = run(
-        settings,
+        network_access(root.path()),
         "fetch.mjs",
         &format!(
             r#"

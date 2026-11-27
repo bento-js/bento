@@ -1,11 +1,9 @@
 mod support;
 
-use std::collections::BTreeSet;
 use std::fs;
 
-use bento_host::Scope;
 use bento_runtime::{ErrorKind, RunOutcome, Severity};
-use support::{completed, config, run};
+use support::{completed, config, run, workspace_access};
 
 #[test]
 fn settings_are_loaded_once_and_warnings_are_returned_to_the_host() {
@@ -110,8 +108,7 @@ export const view = <section>external</section>;
 "#,
     )
     .unwrap();
-    let mut launch = config(&root);
-    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    let launch = workspace_access(&root, workspace.path());
     run(
         launch,
         "entry.ts",
@@ -141,8 +138,7 @@ fn external_node_modules_typescript_uses_default_class_field_settings() {
         "class Base { set field(value: string) { throw new Error('dependency inherited project settings'); } } class Derived extends Base { field = 'own'; } export default new Derived().field;",
     )
     .unwrap();
-    let mut launch = config(&root);
-    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    let launch = workspace_access(&root, workspace.path());
     completed(run(
         launch,
         "entry.ts",
@@ -173,8 +169,7 @@ fn node_modules_tsx_does_not_inherit_the_project_jsx_settings() {
         )
         .unwrap();
     }
-    let mut launch = config(&root);
-    launch.grants.read = Scope::Only(BTreeSet::from([workspace.path().canonicalize().unwrap()]));
+    let launch = workspace_access(&root, workspace.path());
     for import in ["./node_modules/view/entry.tsx", "../node_modules/view/entry.tsx"] {
         let source = format!("import view from '{import}'; void view;");
         let RunOutcome::Failed(error) = run(launch.clone(), "entry.ts", &source) else {

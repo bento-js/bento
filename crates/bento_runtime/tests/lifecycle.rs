@@ -7,17 +7,15 @@ use std::time::{Duration, Instant};
 
 use tempfile::{TempDir, tempdir};
 
-use bento_host::Scope;
 use bento_runtime::{RunOutcome, RunningRuntime, ShutdownOutcome, Signal, start};
-use support::{completed, config, run};
+use support::{completed, config, network_access, run};
 
 fn port() -> u16 {
     TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
 fn launch(root: &Path, source: &str) -> RunningRuntime {
-    let mut settings = config(root);
-    settings.grants.net = Scope::All;
+    let mut settings = network_access(root);
     settings.shutdown_deadline = Duration::from_millis(200);
     let entry = root.join("entry.mjs");
     std::fs::write(&entry, source).unwrap();

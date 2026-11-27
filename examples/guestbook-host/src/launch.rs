@@ -7,15 +7,15 @@ use std::path::{Path, PathBuf};
 use clap::ValueEnum;
 use thiserror::Error;
 
-use bento_host::{Grants, Scope, canonical_path};
+use bento_host::{EnvPattern, PathPattern, PermissionSet, Permissions, Scope, canonical_path};
 use bento_runtime::{RuntimeConfig, package_lookup_paths};
 
 use crate::module::guest_book_module;
 use crate::store::GuestBookStore;
 
-// `DATABASE_URL` is granted because the application's environment schema declares it; the host
+// `DATABASE_URL` is allowed because the application's environment schema declares it; the host
 // never sets it, so the database location stays on the Rust side.
-const GRANTED_ENV: [&str; 3] = ["PORT", "NODE_ENV", "DATABASE_URL"];
+const ALLOWED_ENV: [&str; 3] = ["PORT", "NODE_ENV", "DATABASE_URL"];
 
 /// The `NODE_ENV` the guest sees.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -57,12 +57,11 @@ pub enum LaunchError {
     DatabaseReadable { database: PathBuf, readable: PathBuf },
 }
 
-/// A located guest book project, the paths its guest may read, the store's location outside
-/// them, and what the guest is told: the port and the mode.
+/// A located guest book project, the directories its guest may read, the store's location
+/// outside them, and what the guest is told: the port and the mode.
 #[derive(Clone, Debug)]
 pub struct Launch {
     project: PathBuf,
-    node_modules: PathBuf,
     readable: BTreeSet<PathBuf>,
     database: PathBuf,
     port: u16,
@@ -70,9 +69,9 @@ pub struct Launch {
 }
 
 impl Launch {
-    /// Resolves `project` to the canonical directory grants are checked against and `database`
-    /// to the path the store will open, refusing a database that would fall under the guest's
-    /// read grant.
+    /// Resolves `project` to the canonical directory permissions are checked against and
+    /// `database` to the path the store will open, refusing a database that would fall under a
+    /// directory the guest may read.
     ///
     /// # Errors
     ///
@@ -87,20 +86,19 @@ impl Launch {
     ) -> Result<Launch, LaunchError> {
         let project_error = |source| LaunchError::Project { path: project.to_owned(), source };
         let project = std::fs::canonicalize(project).map_err(project_error)?;
-        let node_modules = canonical_path(&project.join("node_modules")).map_err(project_error)?;
         let readable = std::iter::once(project.clone())
             .chain(package_lookup_paths(&project).map_err(project_error)?)
             .collect();
         let database = database_outside(database, &readable)?;
-        Ok(Launch { project, node_modules, readable, database, port, mode })
+        Ok(Launch { project, readable, database, port, mode })
     }
 
     pub fn project(&self) -> &Path {
         &self.project
     }
 
-    /// Where the store lives: resolved like a grant path, so it names the file the store will
-    /// actually open, and never under a path the guest may read.
+    /// Where the store lives: resolved like a permission path, so it names the file the store
+    /// will actually open, and never under a directory the guest may read.
     pub fn database(&self) -> &Path {
         &self.database
     }
@@ -110,28 +108,42 @@ impl Launch {
         self.port
     }
 
-    /// The configuration for one instance: read access to the project and to Node's package
+    /// The configuration for one restricted instance: reading the project and Node's package
     /// lookup locations above it (`<ancestor>/node_modules`, which the application's package
-    /// tooling probes), network access, the granted environment names, native addons under the
-    /// project's `node_modules`, and `host:guestbook` over `store`. There is no write grant;
-    /// the host owns the only state.
+    /// tooling probes, whether or not they exist yet), the network, the allowed environment
+    /// names, native addons, and `host:guestbook` over `store`. It may write nothing; the host
+    /// owns the only state.
+    ///
+    /// # Panics
+    ///
+    /// Never: every allowed environment name is a constant, valid variable name.
     pub fn runtime_config(&self, store: GuestBookStore) -> RuntimeConfig {
-        let mut config = RuntimeConfig::new(self.project.clone());
-        config.grants = Grants {
-            read: Scope::Only(self.readable.clone()),
-            write: Scope::None,
-            net: Scope::All,
-            env: Scope::Only(GRANTED_ENV.map(str::to_owned).into()),
-            addons: Scope::Only(BTreeSet::from([self.node_modules.clone()])),
-            language_model: false,
-        };
-        config.env = BTreeMap::from([
-            ("PORT".to_owned(), self.port.to_string()),
-            ("NODE_ENV".to_owned(), self.mode.node_env().to_owned()),
-        ]);
-        config.host_modules = vec![guest_book_module(store)];
-        config
+        let permissions = Permissions::restricted(PermissionSet {
+            fs_read: Scope::only(self.readable.iter().map(|directory| beneath(directory))),
+            env: Scope::only(
+                ALLOWED_ENV.map(|name| EnvPattern::parse(name).expect("a variable name")),
+            ),
+            net: true,
+            addons: true,
+            ..PermissionSet::default()
+        });
+        RuntimeConfig {
+            env: BTreeMap::from([
+                ("PORT".to_owned(), self.port.to_string()),
+                ("NODE_ENV".to_owned(), self.mode.node_env().to_owned()),
+            ]),
+            host_modules: vec![guest_book_module(store)],
+            ..RuntimeConfig::new(self.project.clone(), permissions)
+        }
     }
+}
+
+/// The canonical `directory` and everything beneath it, as `--allow-fs-read=<directory>/*`
+/// covers it even before it exists.
+fn beneath(directory: &Path) -> PathPattern {
+    let mut prefix = directory.as_os_str().to_owned();
+    prefix.push("/");
+    PathPattern::Prefix(PathBuf::from(prefix))
 }
 
 /// The guest may read anything under `readable`, so the store it must not see has to resolve

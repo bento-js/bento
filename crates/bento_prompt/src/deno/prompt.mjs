@@ -212,7 +212,7 @@ class LanguageModel extends EventTarget {
         }
         if (!op_bento_prompt_allowed()) {
             return Promise.reject(
-                domError("NotAllowedError", "The host has not granted language-model access"),
+                domError("NotAllowedError", "The host has not allowed language-model access"),
             );
         }
         let monitor = null;

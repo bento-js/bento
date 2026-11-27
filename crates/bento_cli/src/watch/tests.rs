@@ -5,6 +5,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
+use bento_host::Permissions;
 use tempfile::TempDir;
 
 use super::SourceWatcher;
@@ -455,8 +456,8 @@ fn successful_commonjs_and_dependency_probes_do_not_register_ancestor_watches() 
             "require('../shared');"
         };
         let entry = workspace.write("app/main.cjs", source);
-        let mut settings = bento_runtime::RuntimeConfig::new(workspace.root());
-        settings.grants.read = bento_host::Scope::All;
+        let settings =
+            bento_runtime::RuntimeConfig::new(workspace.root(), Permissions::unrestricted());
         let runtime = bento_runtime::start(settings, &entry).unwrap();
         let handle = runtime.handle();
         assert!(matches!(runtime.wait(), bento_runtime::RunOutcome::Completed));
@@ -486,8 +487,7 @@ fn failed_require_of_esm_does_not_watch_successful_nested_resolution_ancestors()
     );
     workspace.write("shared/esm.mjs", "import value from './cjs.cjs'; throw new Error('boom');");
     let entry = workspace.write("app/main.cjs", "try { require('../shared/esm.mjs'); } catch {}");
-    let mut settings = bento_runtime::RuntimeConfig::new(workspace.root());
-    settings.grants.read = bento_host::Scope::All;
+    let settings = bento_runtime::RuntimeConfig::new(workspace.root(), Permissions::unrestricted());
     let runtime = bento_runtime::start(settings, &entry).unwrap();
     let handle = runtime.handle();
     assert!(matches!(runtime.wait(), bento_runtime::RunOutcome::Completed));

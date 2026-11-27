@@ -88,7 +88,7 @@ impl<T> Outcome<T> {
     fn denied() -> Self {
         Self::Failed(Failure::named(
             "NotAllowedError",
-            "The host has not granted language-model access",
+            "The host has not allowed language-model access",
         ))
     }
 
@@ -207,7 +207,7 @@ impl PromptInput {
 }
 
 fn access(state: &Rc<RefCell<OpState>>) -> bool {
-    state.borrow().borrow::<Access>().0
+    state.borrow().borrow::<Access>().is_granted()
 }
 
 fn cleanup(state: &Rc<RefCell<OpState>>) -> Cleanup {
@@ -262,7 +262,7 @@ async fn settle<T>(ticket: Ticket, outcome: Outcome<T>) -> Outcome<T> {
 /// again on this side.
 #[op2(fast)]
 fn op_bento_prompt_allowed(state: &mut OpState) -> bool {
-    state.borrow::<Access>().0
+    state.borrow::<Access>().is_granted()
 }
 
 /// Decides a response constraint by the translation a generation would use, so the subset
@@ -317,7 +317,7 @@ fn op_bento_prompt_availability(
 }
 
 /// Reserves a creation, refusing in Rust before the model is touched when the host has not
-/// granted access.
+/// allowed access.
 fn start_create(
     state: &Rc<RefCell<OpState>>,
     options: CreateInput,

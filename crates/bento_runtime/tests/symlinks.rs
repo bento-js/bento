@@ -2,9 +2,9 @@ mod support;
 
 use std::os::unix::fs::symlink;
 
-use bento_host::Scope;
+use bento_host::{PermissionSet, Permissions, Scope};
 use bento_runtime::{ErrorKind, RunOutcome, start};
-use support::{completed, config, project, run};
+use support::{completed, config, config_with, project, project_access, read_access, run};
 
 #[test]
 fn no_follow_operations_act_on_the_link_not_its_target() {
@@ -55,15 +55,15 @@ fn outside_symlink_targets_remain_denied_but_link_operations_are_allowed() {
 import fs from 'node:fs';
 for (const operation of [() => fs.readFileSync('link'), () => fs.writeFileSync('link', 'changed'), () => fs.statSync('link'), () => fs.chmodSync('link', 0o777), () => fs.truncateSync('link')]) {
   let denied = false;
-  try { operation(); } catch (error) { denied = error.name === 'NotCapable'; }
+  try { operation(); } catch (error) { denied = error.code === 'ERR_ACCESS_DENIED'; }
   if (!denied) throw Error('following operation accessed outside target');
 }
 if (!fs.lstatSync('link').isSymbolicLink()) throw Error('link not accessible');
 fs.lchownSync('link', process.getuid(), process.getgid());
 for (const operation of [() => fs.symlinkSync(fs.readlinkSync('link'), 'created'), () => fs.symlinkSync('secret', 'created')]) {
   let denied = false;
-  try { operation(); } catch (error) { denied = error.name === 'NotCapable'; }
-  if (!denied) throw Error('scoped grants allowed symlink creation');
+  try { operation(); } catch (error) { denied = error.code === 'ERR_ACCESS_DENIED'; }
+  if (!denied) throw Error('scoped permissions allowed symlink creation');
 }
 fs.renameSync('link', 'moved');
 fs.unlinkSync('moved');
@@ -73,7 +73,7 @@ fs.unlinkSync('moved');
 }
 
 #[test]
-fn parent_after_symlink_obeys_os_semantics_and_scoped_grants() {
+fn parent_after_symlink_obeys_os_semantics_and_scoped_permissions() {
     let root = project();
     let outside = project();
     std::fs::create_dir(outside.path().join("child")).unwrap();
@@ -83,9 +83,7 @@ fn parent_after_symlink_obeys_os_semantics_and_scoped_grants() {
     let source = "import {readFileSync} from 'node:fs'; if (readFileSync('./link/../secret.txt','utf8') !== 'outside') throw Error('lexical path replaced OS path');";
     let outcome = run(config(root.path()), "entry.mjs", source);
     assert!(matches!(outcome, RunOutcome::Failed(error) if error.kind == ErrorKind::Permission));
-    let mut settings = config(root.path());
-    settings.grants.read = Scope::All;
-    completed(start(settings, &root.path().join("entry.mjs")).unwrap().wait());
+    completed(start(read_access(root.path()), &root.path().join("entry.mjs")).unwrap().wait());
 }
 
 #[test]
@@ -184,13 +182,15 @@ fn symlink_creation_requires_unscoped_read_and_write_for_every_api() {
     let root = project();
     let outside = project();
     for (read_all, write_all) in [(false, false), (true, false), (false, true)] {
-        let mut settings = config(root.path());
-        if read_all {
-            settings.grants.read = Scope::All;
-        }
-        if write_all {
-            settings.grants.write = Scope::All;
-        }
+        let scoped = project_access(root.path());
+        let settings = config_with(
+            root.path(),
+            Permissions::restricted(PermissionSet {
+                fs_read: if read_all { Scope::All } else { scoped.fs_read },
+                fs_write: if write_all { Scope::All } else { scoped.fs_write },
+                ..scoped
+            }),
+        );
         completed(run(
             settings,
             "entry.mjs",
@@ -206,8 +206,8 @@ for (const operation of [
   () => Deno.symlink(target, 'evil'),
 ]) {{
   let denied = false;
-  try {{ await operation(); }} catch (error) {{ denied = error.name === 'NotCapable'; }}
-  if (!denied) throw Error('scoped grants created an outside symlink');
+  try {{ await operation(); }} catch (error) {{ denied = error.code === 'ERR_ACCESS_DENIED'; }}
+  if (!denied) throw Error('scoped permissions created an outside symlink');
 }}
 "#,
                 serde_json::to_string(&outside.path().join("pwned")).unwrap()
@@ -216,9 +216,14 @@ for (const operation of [
         assert!(std::fs::symlink_metadata(root.path().join("evil")).is_err());
         assert!(!outside.path().join("pwned").exists());
     }
-    let mut settings = config(root.path());
-    settings.grants.read = Scope::All;
-    settings.grants.write = Scope::All;
+    let settings = config_with(
+        root.path(),
+        Permissions::restricted(PermissionSet {
+            fs_read: Scope::All,
+            fs_write: Scope::All,
+            ..PermissionSet::default()
+        }),
+    );
     completed(run(
         settings,
         "unrestricted.mjs",
@@ -254,7 +259,7 @@ for (const operation of [
   () => promises.mkdir('directory/'),
 ]) {
   let denied = false;
-  try { await operation(); } catch (error) { denied = error.name === 'NotCapable'; }
+  try { await operation(); } catch (error) { denied = error.code === 'ERR_ACCESS_DENIED'; }
   if (!denied) throw Error('following dangling link created outside target');
 }
 "#,

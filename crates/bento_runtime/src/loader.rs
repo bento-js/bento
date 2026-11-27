@@ -13,7 +13,7 @@ use deno_error::JsErrorBox;
 use deno_lib::worker::{CreateModuleLoaderResult, ModuleLoaderFactory};
 use deno_media_type::MediaType;
 use deno_node::NodeRequireLoader;
-use deno_runtime::deno_permissions::{OpenAccessKind, PermissionsContainer};
+use deno_runtime::deno_permissions::{OpenAccessKind, PermissionCheckError, PermissionsContainer};
 use deno_runtime::deno_web::Blob;
 use node_resolver::errors::PackageJsonLoadError;
 use oxc_resolver::{ResolveContext, ResolveOptions, Resolver};
@@ -41,6 +41,7 @@ impl LoaderFactory {
             modules: self.modules.clone(),
             sources: self.sources.clone(),
             application_resolutions: RefCell::default(),
+            dynamic_roots: RefCell::default(),
             resolver: Resolver::new(ResolveOptions {
                 condition_names: vec!["node".into(), "import".into(), "default".into()],
                 fully_specified: true,
@@ -79,10 +80,12 @@ struct Loader {
     modules: HostModules,
     sources: Arc<Sources>,
     application_resolutions: RefCell<HashSet<ModuleSpecifier>>,
+    /// Modules a dynamic `import()` named directly, whose namespace is all the importer sees.
+    dynamic_roots: RefCell<HashSet<ModuleSpecifier>>,
 }
 
-impl ModuleLoader for Loader {
-    fn resolve(
+impl Loader {
+    fn resolve_specifier(
         &self,
         specifier: &str,
         referrer: &str,
@@ -164,6 +167,21 @@ impl ModuleLoader for Loader {
         }
         Ok(url)
     }
+}
+
+impl ModuleLoader for Loader {
+    fn resolve(
+        &self,
+        specifier: &str,
+        referrer: &str,
+        kind: ResolutionKind,
+    ) -> Result<ModuleSpecifier, JsErrorBox> {
+        let url = self.resolve_specifier(specifier, referrer, kind)?;
+        if kind == ResolutionKind::DynamicImport {
+            self.dynamic_roots.borrow_mut().insert(url.clone());
+        }
+        Ok(url)
+    }
 
     fn load(
         &self,
@@ -192,6 +210,7 @@ impl ModuleLoader for Loader {
         let node = self.node.clone();
         let permissions = self.permissions.clone();
         let sources = self.sources.clone();
+        let dynamic_root = self.dynamic_roots.borrow().contains(&specifier);
         let watch_failure = self.application_resolutions.borrow().contains(&specifier)
             || referrer
                 .and_then(|referrer| referrer.specifier.to_file_path().ok())
@@ -204,9 +223,24 @@ impl ModuleLoader for Loader {
                     "only local source files can be loaded",
                 )
             })?;
-            let checked = permissions
-                .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
-                .map_err(JsErrorBox::from_err)?;
+            let checked = match permissions.check_open(
+                Cow::Borrowed(&path),
+                OpenAccessKind::Read,
+                Some("module import"),
+            ) {
+                Ok(checked) => checked,
+                // A failed load reaches the guest only as a generic `TypeError`, so a module a
+                // dynamic `import()` names directly loads as a stand-in that throws Node's
+                // denial; its namespace is all the importer sees. A static import has to link
+                // against real exports, so there the denial fails the load.
+                Err(PermissionCheckError::PermissionDenied(_)) if dynamic_root => {
+                    return Ok(source(&specifier, denied_module(&path), ModuleType::JavaScript));
+                }
+                Err(PermissionCheckError::PermissionDenied(_)) => {
+                    return Err(JsErrorBox::new("NotCapable", denied_message(&path)));
+                }
+                Err(error) => return Err(JsErrorBox::from_err(error)),
+            };
             let text = match std::fs::read_to_string(checked) {
                 Ok(text) => {
                     node.inputs.record(&path);
@@ -293,4 +327,21 @@ fn source(
     kind: ModuleType,
 ) -> ModuleSource {
     ModuleSource::new(kind, ModuleSourceCode::String(code.into()), specifier, None)
+}
+
+/// A module that throws Node's read denial for `path` when it is evaluated.
+fn denied_module(path: &Path) -> String {
+    let resource = serde_json::to_string(&path.to_string_lossy()).expect("string serialization");
+    format!(
+        "throw globalThis[Symbol.for('bento.accessDenied')]('FileSystemRead', '--allow-fs-read', {resource});"
+    )
+}
+
+/// Node's read denial for `path`, for a load that fails outright.
+fn denied_message(path: &Path) -> String {
+    format!(
+        "Access to this API has been restricted. Use --allow-fs-read to manage permissions. \
+         (ERR_ACCESS_DENIED: FileSystemRead {})",
+        path.display()
+    )
 }

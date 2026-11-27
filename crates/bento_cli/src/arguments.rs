@@ -1,6 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 
-use crate::grant_flags::GrantFlags;
+use crate::permission_flags::PermissionFlags;
 
 /// Run TypeScript applications and project tasks.
 #[derive(Debug, Parser)]
@@ -27,7 +27,7 @@ pub(crate) struct RunArguments {
     #[arg(value_name = "TARGET", required = true, num_args = 1.., trailing_var_arg = true)]
     target_and_arguments: Vec<String>,
     #[command(flatten)]
-    pub grants: GrantFlags,
+    pub permissions: PermissionFlags,
 }
 
 impl RunArguments {

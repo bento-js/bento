@@ -3,11 +3,10 @@ mod support;
 use std::path::{Path, PathBuf};
 
 use bento_runtime::{RunOutcome, start};
-use support::{completed, config, project, run};
+use support::{completed, project, read_access, run};
 
 fn inputs(app: &Path, entry: &str) -> (RunOutcome, Vec<PathBuf>) {
-    let mut settings = config(app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(app);
     let runtime = start(settings, &app.join(entry)).unwrap();
     let handle = runtime.handle();
     (runtime.wait(), handle.watch_inputs())
@@ -51,8 +50,7 @@ fn esm_package_map_targets_remain_watch_inputs_when_missing() {
         );
         std::fs::create_dir_all(expected.parent().unwrap()).unwrap();
         std::fs::write(expected, "export const message = 'repaired';").unwrap();
-        let mut settings = config(&app);
-        settings.grants.read = bento_host::Scope::All;
+        let settings = read_access(&app);
         completed(run(settings, entry, source));
     }
 }

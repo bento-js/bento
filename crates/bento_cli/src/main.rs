@@ -5,10 +5,10 @@ mod diagnostic;
 mod ending;
 mod error;
 mod events;
-mod grant_flags;
 mod install;
 mod instance;
 mod launch;
+mod permission_flags;
 mod process_environment;
 mod run;
 mod runtime_report;
@@ -22,14 +22,12 @@ use std::process::ExitCode;
 use clap::Parser;
 
 use crate::arguments::{Cli, Command};
+use crate::error::CliError;
 
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
-        Err(usage) => {
-            let _ = usage.print();
-            return if usage.use_stderr() { ExitCode::FAILURE } else { ExitCode::SUCCESS };
-        }
+        Err(usage) => return usage_error(&usage),
     };
     let outcome = match cli.command {
         Command::Run(arguments) => run::run(&arguments),
@@ -42,4 +40,15 @@ fn main() -> ExitCode {
             error.exit_code()
         }
     }
+}
+
+/// Reports a command line clap rejected, or the help or version it asked for. A value flag
+/// without its value is reported in Node's words.
+fn usage_error(usage: &clap::Error) -> ExitCode {
+    if let Some(missing) = permission_flags::missing_argument(usage) {
+        CliError::from(missing).report();
+        return ExitCode::FAILURE;
+    }
+    let _ = usage.print();
+    if usage.use_stderr() { ExitCode::FAILURE } else { ExitCode::SUCCESS }
 }

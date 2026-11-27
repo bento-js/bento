@@ -10,13 +10,14 @@ use tempfile::TempDir;
 
 use super::{bento_in, stderr};
 
-/// The grants the fixture's README runs the guest book with.
-pub(crate) const README_GRANTS: [&str; 5] = [
-    "--allow-read",
-    "--allow-write=./db",
+/// The permission flags the fixture's README runs the guest book restricted with.
+pub(crate) const README_PERMISSIONS: [&str; 6] = [
+    "--permission",
+    "--allow-fs-read=*",
+    "--allow-fs-write=./db",
     "--allow-net",
     "--allow-env=PORT,DATABASE_URL,NODE_ENV",
-    "--allow-addons=./node_modules",
+    "--allow-addons",
 ];
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/remix-guest-book/");
 const SCRATCH: &str = "/tmp/bento-cli/guest-book";
@@ -105,7 +106,7 @@ pub(crate) fn tool_path() -> String {
     env::var("PATH").unwrap()
 }
 
-/// `bento run` with the README's grants and `target`.
-pub(crate) fn run_with_readme_grants(target: &str) -> Vec<&str> {
-    [&["run"][..], &README_GRANTS[..], &[target]].concat()
+/// `bento run` restricted to the README's permissions, with `target`.
+pub(crate) fn run_with_readme_permissions(target: &str) -> Vec<&str> {
+    [&["run"][..], &README_PERMISSIONS[..], &[target]].concat()
 }

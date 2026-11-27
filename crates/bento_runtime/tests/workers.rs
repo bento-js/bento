@@ -1,14 +1,12 @@
 mod support;
 
-use std::collections::BTreeSet;
-
 use parking_lot::Mutex;
 use serde_json::Value;
 use tempfile::tempdir;
 
-use bento_host::Scope;
+use bento_host::{EnvPattern, PermissionSet, Permissions, Scope};
 use bento_runtime::{RunOutcome, start};
-use support::{completed, config, run};
+use support::{completed, config_with, project_access, run};
 
 static SIGNAL_CHECK: Mutex<()> = Mutex::new(());
 
@@ -59,8 +57,14 @@ child.onmessage = event => { child.terminate(); postMessage(event.data); };
         };
         std::fs::write(root.path().join("outer.mjs"), wrapper).unwrap();
     }
-    let mut settings = config(root.path());
-    settings.grants.env = Scope::Only(BTreeSet::from([key.into()]));
+    let mut settings = config_with(
+        root.path(),
+        Permissions::restricted(PermissionSet {
+            worker: true,
+            env: Scope::only([EnvPattern::parse(key).unwrap()]),
+            ..project_access(root.path())
+        }),
+    );
     settings.env.insert(key.into(), "configured".into());
     let source = if node {
         r#"
@@ -135,8 +139,14 @@ setInterval(() => {}, 1000);
 "#,
     )
     .unwrap();
-    let mut settings = config(root.path());
-    settings.grants.net = Scope::All;
+    let mut settings = config_with(
+        root.path(),
+        Permissions::restricted(PermissionSet {
+            worker: true,
+            net: true,
+            ..project_access(root.path())
+        }),
+    );
     settings.shutdown_deadline = std::time::Duration::from_millis(200);
     let runtime = start(settings, &entry).unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);

@@ -1,8 +1,15 @@
 mod support;
 
-use bento_host::Scope;
+use std::path::Path;
+
+use bento_host::{PermissionSet, Permissions, Scope};
 use bento_runtime::start;
-use support::{completed, config, project, run};
+use support::{completed, config_with, project, project_access, run};
+
+/// What [`support::config`] allows, and starting workers.
+fn worker_access(app: &Path) -> PermissionSet {
+    PermissionSet { worker: true, ..project_access(app) }
+}
 
 fn worker_entry(node: bool, target: &str, expected: &str) -> String {
     let launch = if node {
@@ -35,8 +42,10 @@ fn missing_worker_recovers(node: bool, target: &str) {
     std::fs::create_dir_all(worker.parent().unwrap()).unwrap();
     let entry = app.join("main.mjs");
     std::fs::write(&entry, worker_entry(node, target, "WORKER FAILED")).unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = Scope::All;
+    let settings = config_with(
+        &app,
+        Permissions::restricted(PermissionSet { fs_read: Scope::All, ..worker_access(&app) }),
+    );
     let runtime = start(settings.clone(), &entry).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());
@@ -85,7 +94,8 @@ fn missing_worker_in_node_modules_is_excluded() {
             worker_entry(node, "./node_modules/workers/worker.mjs", "WORKER FAILED"),
         )
         .unwrap();
-        let runtime = start(config(&app), &entry).unwrap();
+        let runtime =
+            start(config_with(&app, Permissions::restricted(worker_access(&app))), &entry).unwrap();
         let handle = runtime.handle();
         completed(runtime.wait());
         let target = app.canonicalize().unwrap().join("node_modules/workers/worker.mjs");

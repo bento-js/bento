@@ -1,24 +1,59 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use bento_host::{Grants, Scope};
+use bento_host::{PathPattern, PermissionSet, Permissions, Scope};
 use bento_runtime::{RunOutcome, RuntimeConfig, start};
 
-pub(crate) fn config(root: &Path) -> RuntimeConfig {
+/// What [`config`] allows: reading and writing the project root and everything beneath it.
+pub(crate) fn project_access(root: &Path) -> PermissionSet {
     let root = std::fs::canonicalize(root).unwrap();
-    RuntimeConfig {
-        project_root: root.to_owned(),
-        cwd: root.to_owned(),
-        grants: Grants {
-            read: Scope::Only(BTreeSet::from([root.to_owned()])),
-            write: Scope::Only(BTreeSet::from([root.to_owned()])),
-            ..Grants::default()
-        },
-        env: BTreeMap::new(),
-        argv: Vec::new(),
-        host_modules: Vec::new(),
-        shutdown_deadline: std::time::Duration::from_secs(5),
+    let project = PathPattern::resolve(&root, &root).unwrap();
+    PermissionSet {
+        fs_read: Scope::only([project.clone()]),
+        fs_write: Scope::only([project]),
+        ..PermissionSet::default()
     }
+}
+
+/// An instance for `root` holding `permissions`, with the root as its working directory.
+pub(crate) fn config_with(root: &Path, permissions: Permissions) -> RuntimeConfig {
+    let root = std::fs::canonicalize(root).unwrap();
+    RuntimeConfig::new(root, permissions)
+}
+
+/// A restricted instance allowed only to read and write its project root.
+#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
+pub(crate) fn config(root: &Path) -> RuntimeConfig {
+    config_with(root, Permissions::restricted(project_access(root)))
+}
+
+/// Like [`config`], also allowed to read every file.
+#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
+pub(crate) fn read_access(root: &Path) -> RuntimeConfig {
+    config_with(
+        root,
+        Permissions::restricted(PermissionSet { fs_read: Scope::All, ..project_access(root) }),
+    )
+}
+
+/// Like [`config`], also allowed the network.
+#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
+pub(crate) fn network_access(root: &Path) -> RuntimeConfig {
+    config_with(root, Permissions::restricted(PermissionSet { net: true, ..project_access(root) }))
+}
+
+/// Like [`config`], reading all of `workspace`, a directory that contains the project root,
+/// instead of only the root.
+#[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
+pub(crate) fn workspace_access(root: &Path, workspace: &Path) -> RuntimeConfig {
+    let workspace = std::fs::canonicalize(workspace).unwrap();
+    let readable = PathPattern::resolve(&workspace, &workspace).unwrap();
+    config_with(
+        root,
+        Permissions::restricted(PermissionSet {
+            fs_read: Scope::only([readable]),
+            ..project_access(root)
+        }),
+    )
 }
 
 pub(crate) fn run(config: RuntimeConfig, name: &str, source: &str) -> RunOutcome {
@@ -27,13 +62,13 @@ pub(crate) fn run(config: RuntimeConfig, name: &str, source: &str) -> RunOutcome
     start(config, &entry).unwrap().wait()
 }
 
-/// Like [`config`], with the language-model capability granted. Grants nothing else beyond
-/// the project root's read and write scopes.
+/// Like [`config`], also allowed the language model.
 #[allow(dead_code, reason = "shared helper is used by other integration test binaries")]
 pub(crate) fn model_access(root: &Path) -> RuntimeConfig {
-    let mut settings = config(root);
-    settings.grants.language_model = true;
-    settings
+    config_with(
+        root,
+        Permissions::restricted(PermissionSet { language_model: true, ..project_access(root) }),
+    )
 }
 
 #[allow(dead_code, reason = "shared helper is used by other integration test binaries")]

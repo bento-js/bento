@@ -1,20 +1,8 @@
+// Guest imports of `node:child_process` resolve here, so the named exports are the functions
+// Bento's permission layer wrapped on the module object rather than the originals the module
+// namespace binds.
 import childProcess from "node:child_process";
 
-function denied() {
-    throw new Deno.errors.NotCapable("Guest subprocess execution is unavailable in Bento");
-}
-
-for (let name of ["spawn", "spawnSync", "exec", "execFile", "execSync", "execFileSync", "fork"]) {
-    childProcess[name] = denied;
-}
-childProcess.ChildProcess.prototype.spawn = denied;
-
-export const spawn = denied;
-export const spawnSync = denied;
-export const exec = denied;
-export const execFile = denied;
-export const execSync = denied;
-export const execFileSync = denied;
-export const fork = denied;
-export const ChildProcess = childProcess.ChildProcess;
+export const { ChildProcess, exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } =
+    childProcess;
 export default childProcess;
