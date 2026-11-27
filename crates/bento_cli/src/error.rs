@@ -10,13 +10,10 @@ use crate::grant_flags::GrantError;
 use crate::runtime_report;
 use bento_package::InstallError;
 use bento_runtime::RuntimeError;
-use bento_task::{PlanError, TaskError};
-use bento_workspace::{EnvironmentError, ManifestError, ProjectError, TargetError};
+use bento_workspace::{EnvironmentError, ManifestError, ProjectError};
 
 #[derive(Debug, Error)]
 pub(crate) enum CliError {
-    #[error(transparent)]
-    Target(#[from] TargetError),
     #[error(transparent)]
     Project(#[from] ProjectError),
     #[error(transparent)]
@@ -24,27 +21,13 @@ pub(crate) enum CliError {
     #[error(transparent)]
     Environment(#[from] EnvironmentError),
     #[error(transparent)]
-    Plan(#[from] PlanError),
-    #[error(transparent)]
-    Task(#[from] TaskError),
-    #[error(transparent)]
     Install(#[from] InstallError),
     #[error("environment variable `{0}` is not valid UTF-8")]
     NonUnicodeVariable(String),
     #[error("cannot determine the current directory: {0}")]
     CurrentDirectory(#[source] io::Error),
-    #[error("cannot locate the running bento executable: {0}")]
-    Executable(#[source] io::Error),
     #[error("cannot listen for interrupt and termination signals: {0}")]
     Signals(#[source] io::Error),
-    #[error(
-        "task `{task}` takes arguments only after `--`, as in `bento run {task} -- <arguments>`; bento options go before the task name"
-    )]
-    TaskArgumentsWithoutSeparator { task: String },
-    #[error(
-        "--watch restarts a script when its source changes, so it cannot run task `{0}`; give the task a command that runs `bento run --watch <script>`"
-    )]
-    WatchedTask(String),
     #[error("{}: {}", runtime_report::describe(.0.kind), runtime_report::plain_text(&.0.message))]
     Script(RuntimeError),
     #[error(
@@ -70,18 +53,15 @@ impl CliError {
     /// The place in a source file this error points at, if it points at one.
     fn diagnostic(&self) -> Option<Diagnostic<'_>> {
         match self {
-            CliError::Target(TargetError::Project(ProjectError::Manifest(error)))
-            | CliError::Project(ProjectError::Manifest(error)) => manifest_diagnostic(error),
+            CliError::Project(ProjectError::Manifest(error)) => manifest_diagnostic(error),
             CliError::Script(error) => runtime_report::diagnostic(error),
             _ => None,
         }
     }
 
-    /// The failing child's status when a task command or pnpm failed, and `1` for everything
-    /// else.
+    /// pnpm's status when it failed, and `1` for everything else.
     pub(crate) fn exit_code(&self) -> ExitCode {
         match self {
-            CliError::Task(TaskError::Failed { status, .. }) => shell_status(status),
             CliError::Install(InstallError::Failed(status)) => shell_status(status),
             _ => ExitCode::FAILURE,
         }
@@ -90,7 +70,7 @@ impl CliError {
 
 /// A child's status as a shell reports it: its exit code, or 128 plus the signal that ended it.
 /// `FAILURE` stands in for a status that reports neither.
-pub(crate) fn shell_status(status: &ExitStatus) -> ExitCode {
+fn shell_status(status: &ExitStatus) -> ExitCode {
     let code = status.code().or_else(|| status.signal().map(|signal| 128 + signal));
     code.map_or(ExitCode::FAILURE, process_exit_code)
 }

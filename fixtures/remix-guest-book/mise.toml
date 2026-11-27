@@ -1,0 +1,40 @@
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+
+[tasks.dev]
+depends = ["db:migrate"]
+run = "bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules --watch server.ts"
+
+[tasks.start]
+run = "bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts"
+
+[tasks.test]
+run = "NODE_ENV=test remix test"
+
+[tasks.fmt]
+run = "oxfmt"
+
+[tasks.lint]
+run = "oxlint --fix"
+
+[tasks.typecheck]
+run = "tsc"
+
+[tasks.check]
+run = ["oxfmt --check", "oxlint", "tsc"]
+
+# Sequential rather than parallel `depends`: oxfmt and oxlint --fix rewrite the same files.
+[tasks."check:fix"]
+run = ["oxfmt", "oxlint --fix", "tsc"]
+
+[tasks."db:migrate"]
+run = "remix db migrate"
+
+[tasks."db:reset"]
+run = "remix db reset --force"
+
+[tasks."db:rollback"]
+run = "remix db rollback"
+
+[tasks."db:status"]
+run = "remix db status"

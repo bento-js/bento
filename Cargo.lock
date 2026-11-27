@@ -461,7 +461,6 @@ dependencies = [
  "bento_host",
  "bento_package",
  "bento_runtime",
- "bento_task",
  "bento_test_support",
  "bento_workspace",
  "clap",
@@ -578,19 +577,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
-]
-
-[[package]]
-name = "bento_task"
-version = "0.1.0"
-dependencies = [
- "bento_host",
- "bento_test_support",
- "bento_workspace",
- "libc",
- "serde_json",
- "tempfile",
- "thiserror 2.0.21",
 ]
 
 [[package]]

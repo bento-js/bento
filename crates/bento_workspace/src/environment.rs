@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::dotenv::{self, DotenvError};
-use crate::provenance::{self, InvalidFileKeys};
 
 const NODE_ENV: &str = "NODE_ENV";
 
@@ -45,8 +44,6 @@ pub enum EnvironmentError {
     Read { path: PathBuf, source: io::Error },
     #[error("NODE_ENV `{mode}` cannot select an environment file because it contains `/`")]
     InvalidMode { mode: String },
-    #[error(transparent)]
-    FileKeys(#[from] InvalidFileKeys),
 }
 
 impl LaunchEnvironment {
@@ -54,25 +51,21 @@ impl LaunchEnvironment {
     /// `inherited`, the environment the launch was started with.
     ///
     /// The mode is the inherited `NODE_ENV`, else `.env`'s, else `kind`'s default, and it
-    /// is chosen once. Later files override earlier ones; inherited values override all
-    /// files, except values an outer launch forwarded from its own files (recorded in
-    /// [`crate::FILE_KEYS_ENV`]), which this launch may load again for its own mode.
+    /// is chosen once. Later files override earlier ones, and every inherited variable
+    /// overrides all of them.
     ///
     /// # Errors
     ///
     /// [`EnvironmentError::Read`] when an environment file exists but cannot be read,
-    /// [`EnvironmentError::Dotenv`] when one cannot be parsed,
-    /// [`EnvironmentError::InvalidMode`] when the selected `NODE_ENV` contains `/`, and
-    /// [`EnvironmentError::FileKeys`] when the inherited [`crate::FILE_KEYS_ENV`] entry is
-    /// malformed.
+    /// [`EnvironmentError::Dotenv`] when one cannot be parsed, and
+    /// [`EnvironmentError::InvalidMode`] when the selected `NODE_ENV` contains `/`.
     pub fn load(
         project_root: &Path,
         inherited: BTreeMap<String, String>,
         kind: LaunchKind,
     ) -> Result<LaunchEnvironment, EnvironmentError> {
-        let inherited = provenance::split(inherited)?;
         let base = read_optional(&project_root.join(".env"))?;
-        let mode = Mode::select(&inherited.actual, &base, kind)?;
+        let mode = Mode::select(&inherited, &base, kind)?;
         let mode_file = match &mode.name {
             Some(name) => read_optional(&project_root.join(format!(".env.{name}")))?,
             None => Vec::new(),
@@ -80,12 +73,11 @@ impl LaunchEnvironment {
         let local = read_optional(&project_root.join(".env.local"))?;
 
         let mut layers = Layers::default();
-        layers.add_file_values(inherited.forwarded);
         if let Some(default) = mode.name.as_ref().filter(|_| mode.is_default) {
             layers.add_value(NODE_ENV.to_owned(), default.clone());
         }
         layers.add_file_values(base.into_iter().chain(mode_file).chain(local));
-        for (name, value) in inherited.actual {
+        for (name, value) in inherited {
             layers.add_value(name, value);
         }
         Ok(LaunchEnvironment { vars: layers.vars, file_keys: layers.file_keys, mode: mode.name })
@@ -108,15 +100,6 @@ impl LaunchEnvironment {
     pub fn file_keys(&self) -> &BTreeSet<String> {
         &self.file_keys
     }
-
-    /// The [`crate::FILE_KEYS_ENV`] value to hand a nested launch alongside [`Self::vars`].
-    ///
-    /// `reassigned` names the variables the command starting the nested launch assigns
-    /// itself. They are left out, so the nested launch treats them as explicit values even
-    /// when they repeat a value loaded from a file.
-    pub fn file_keys_value(&self, reassigned: &BTreeSet<String>) -> String {
-        provenance::encode(self.file_keys.difference(reassigned), &self.vars)
-    }
 }
 
 struct Mode {
@@ -126,11 +109,11 @@ struct Mode {
 
 impl Mode {
     fn select(
-        actual: &BTreeMap<String, String>,
+        inherited: &BTreeMap<String, String>,
         base: &[(String, String)],
         kind: LaunchKind,
     ) -> Result<Mode, EnvironmentError> {
-        let explicit = actual.get(NODE_ENV).map(String::as_str).or_else(|| {
+        let explicit = inherited.get(NODE_ENV).map(String::as_str).or_else(|| {
             base.iter().rev().find(|(name, _)| name == NODE_ENV).map(|(_, value)| value.as_str())
         });
         let mode = match explicit {

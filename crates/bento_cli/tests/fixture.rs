@@ -1,16 +1,14 @@
 //! The guest-book fixture run through the `bento` command, as its README describes.
 
-#[path = "fixture/dev_watch.rs"]
-mod dev_watch;
 mod support;
+#[path = "fixture/watch_steps.rs"]
+mod watch_steps;
 
 use std::process::Command;
 use std::time::Duration;
 
 use bento_test_support::ports::{loopback, port_is_taken};
-use support::guest_book::{
-    GuestBook, README_GRANTS, fixture_file, run_with_readme_grants, tool_path,
-};
+use support::guest_book::{GuestBook, README_GRANTS, fixture_file, run_with_readme_grants};
 use support::guest_book_page::{
     assert_development_assets, assert_guest_book_page, assert_production_assets, assert_signing,
     first_page,
@@ -18,11 +16,10 @@ use support::guest_book_page::{
 use support::running::Background;
 use support::{SYSTEM_PATH, path_without_other_runtimes, stderr, stdout};
 
-const START_PORT: u16 = 17901;
 const SERVER_PORT: u16 = 17902;
 const DENIED_ADDONS_PORT: u16 = 17903;
 const EMBEDDED_PORT: u16 = 17904;
-const DEV_PORT: u16 = 17905;
+const WATCH_PORT: u16 = 17905;
 const ENVIRONMENT_FILE_PORT: u16 = 17906;
 const PROJECT_READS_PORT: u16 = 17907;
 
@@ -38,7 +35,7 @@ fn seeded_guest_book() -> GuestBook {
     guest_book
 }
 
-/// `command` serving on `port` from the seeded database.
+/// `command` serving on `port` from the database at `DATABASE`.
 fn serving(guest_book: &GuestBook, mut command: Command, port: u16) -> Background {
     command.env("PORT", port.to_string()).env("DATABASE_URL", guest_book.path(DATABASE));
     Background::spawn(command)
@@ -67,33 +64,21 @@ fn a_frozen_install_adds_dependencies_and_dev_tools_and_keeps_the_lockfile() {
     assert_eq!(modules["packageManager"], "pnpm@12.11.2");
 }
 
-/// `start` runs `bento run server.ts`, which serves production assets. Interrupting the task
+/// Without `NODE_ENV=development`, `server.ts` serves production assets. Interrupting it
 /// reaches the server's own SIGINT listener, which closes it and exits 0, and so does `bento`.
 #[test]
-fn the_start_task_serves_the_guest_book_with_no_other_runtime_on_path() {
+fn server_ts_serves_the_guest_book_with_no_other_runtime_on_path() {
     let guest_book = seeded_guest_book();
     let command =
-        guest_book.bento(&run_with_readme_grants("start"), &path_without_other_runtimes());
-    let mut bento = serving(&guest_book, command, START_PORT);
-
-    let page = first_page(START_PORT);
-
-    assert_guest_book_page(&page, &SEEDED_ENTRY);
-    assert_production_assets(START_PORT, &page.body);
-    assert_signing(START_PORT);
-    assert_eq!(interrupt(&mut bento, START_PORT), Some(0), "{}", bento.stderr.text());
-    bento.wait_for_stderr("task `start` was cancelled by SIGINT");
-}
-
-#[test]
-fn server_ts_runs_with_the_readme_grants_and_ends_with_its_own_exit_code() {
-    let guest_book = seeded_guest_book();
-    let command = guest_book.bento(&run_with_readme_grants("server.ts"), SYSTEM_PATH);
+        guest_book.bento(&run_with_readme_grants(&["server.ts"]), &path_without_other_runtimes());
     let mut bento = serving(&guest_book, command, SERVER_PORT);
 
-    assert_guest_book_page(&first_page(SERVER_PORT), &SEEDED_ENTRY);
-    bento.wait_for_stdout(&format!("Server running at http://localhost:{SERVER_PORT}"), 1);
+    let page = first_page(SERVER_PORT);
 
+    assert_guest_book_page(&page, &SEEDED_ENTRY);
+    assert_production_assets(SERVER_PORT, &page.body);
+    assert_signing(SERVER_PORT);
+    bento.wait_for_stdout(&format!("Server running at http://localhost:{SERVER_PORT}"), 1);
     assert_eq!(interrupt(&mut bento, SERVER_PORT), Some(0), "{}", bento.stderr.text());
 }
 
@@ -144,7 +129,7 @@ fn reading_only_the_project_denies_the_asset_pipeline_s_package_search() {
 #[test]
 fn the_stock_cli_cannot_resolve_the_embedding_host_s_module() {
     let guest_book = GuestBook::install();
-    let arguments = run_with_readme_grants("server.embedded.ts");
+    let arguments = run_with_readme_grants(&["server.embedded.ts"]);
 
     let report = failed_startup(&guest_book, &arguments, EMBEDDED_PORT);
 
@@ -152,77 +137,55 @@ fn the_stock_cli_cannot_resolve_the_embedding_host_s_module() {
     assert!(report.contains("host:guestbook"), "{report}");
 }
 
-/// With neither a `NODE_ENV` nor any environment file, the watch launch that `dev` starts
-/// still serves development assets.
+/// With neither a `NODE_ENV` nor any environment file, the watch launch still serves
+/// development assets.
 #[test]
-fn dev_migrates_once_and_restarts_the_server_when_its_source_changes() {
+fn watching_server_ts_restarts_the_server_when_its_source_changes() {
     let guest_book = GuestBook::install();
-    let command = guest_book.bento(&run_with_readme_grants("dev"), &tool_path());
-    let mut bento = serving(&guest_book, command, DEV_PORT);
-    let page = first_page(DEV_PORT);
+    guest_book.migrate(DATABASE);
+    let command = guest_book.bento(&run_with_readme_grants(&["--watch", "server.ts"]), SYSTEM_PATH);
+    let mut bento = serving(&guest_book, command, WATCH_PORT);
+    let page = first_page(WATCH_PORT);
     assert_guest_book_page(&page, &[]);
-    assert_development_assets(DEV_PORT, &page.body);
+    assert_development_assets(WATCH_PORT, &page.body);
 
-    dev_watch::sign_without_restarting(&bento, DEV_PORT);
-    dev_watch::edit_server_source(&guest_book, &bento, DEV_PORT);
-    dev_watch::edit_browser_source(&guest_book, &bento, DEV_PORT);
-    dev_watch::break_and_repair(&guest_book, &bento, DEV_PORT);
+    watch_steps::sign_without_restarting(&bento, WATCH_PORT);
+    watch_steps::edit_server_source(&guest_book, &bento, WATCH_PORT);
+    watch_steps::edit_browser_source(&guest_book, &bento, WATCH_PORT);
+    watch_steps::break_and_repair(&guest_book, &bento, WATCH_PORT);
 
-    assert_eq!(bento.stdout.count("applied 20260414120000_create_guest_book"), 1);
-    assert_eq!(interrupt(&mut bento, DEV_PORT), Some(0), "{}", bento.stderr.text());
+    assert_eq!(interrupt(&mut bento, WATCH_PORT), Some(0), "{}", bento.stderr.text());
 }
 
-/// The outer launch has no mode, so only `.env` applies to it and to the migration `dev` runs;
-/// the watch launch it starts selects `development` and so also reads `.env.development`. The
-/// database named there is migrated first with that mode, as the README says.
+/// The watch launch selects the `development` mode, so it reads `.env.development` after
+/// `.env`: it serves on the `.env` port from the database `.env.development` names.
 #[test]
-fn dev_serves_on_the_env_port_from_the_development_file_s_database() {
+fn watching_server_ts_serves_on_the_env_port_from_the_development_file_s_database() {
     let guest_book = GuestBook::install();
     guest_book.write(".env", &format!("PORT={ENVIRONMENT_FILE_PORT}\n"));
     guest_book.write(".env.development", "DATABASE_URL=db/development.db\n");
-    let migrated = guest_book
-        .bento(&["run", "db:migrate"], &tool_path())
-        .env("NODE_ENV", "development")
-        .output()
-        .unwrap();
-    assert!(migrated.status.success(), "{}", stderr(&migrated));
-    assert!(!guest_book.path("db/data.db").exists(), "the mode file's database was not used");
+    guest_book.migrate("db/development.db");
     guest_book.add_entry("db/development.db", "Development visitor", "From the mode file");
-    let mut bento =
-        Background::spawn(guest_book.bento(&run_with_readme_grants("dev"), &tool_path()));
+    let arguments = run_with_readme_grants(&["--watch", "server.ts"]);
+    let mut bento = Background::spawn(guest_book.bento(&arguments, SYSTEM_PATH));
 
     let page = first_page(ENVIRONMENT_FILE_PORT);
 
     assert_guest_book_page(&page, &["Development visitor", "From the mode file"]);
     assert!(!page.body.contains(".@"), "fingerprinted assets in development: {}", page.body);
-    assert!(guest_book.path("db/data.db").exists(), "dev's own migration read the mode file");
     assert_eq!(interrupt(&mut bento, ENVIRONMENT_FILE_PORT), Some(0));
 }
 
+/// The fixture coordinates its own workflow with Mise, which runs the package tools from
+/// `node_modules/.bin` under Node. `db:migrate` creates the database the app defaults to.
 #[test]
-fn check_stops_at_formatting_and_check_fix_repairs_it() {
+fn the_fixture_s_mise_tasks_check_and_migrate_the_installed_copy() {
     let guest_book = GuestBook::install();
-    let run = |task: &str| guest_book.bento(&["run", task], &tool_path()).output().unwrap();
-    let source = guest_book.read("app/env.ts");
-    let clean = run("check");
-    assert!(clean.status.success(), "{}{}", stdout(&clean), stderr(&clean));
 
-    // Misformatted, and declared with a `const` the lint rules reject, so oxlint would say so
-    // had it run.
-    guest_book.write("app/env.ts", &format!("{source}const   unformatted = 1;\n"));
-    let failed = run("check");
-    assert_eq!(failed.status.code(), Some(1));
-    assert!(stdout(&failed).contains("Format issues found"), "{}", stdout(&failed));
-    assert!(stderr(&failed).contains("`oxfmt --check`"), "{}", stderr(&failed));
-    assert!(!format!("{}{}", stdout(&failed), stderr(&failed)).contains("prefer-let"));
+    let checked = guest_book.mise(&["run", "check"]).output().unwrap();
+    let migrated = guest_book.mise(&["run", "db:migrate"]).output().unwrap();
 
-    guest_book.write("app/env.ts", &source.replace("let Env = ", "let   Env = "));
-    let fixed = run("check:fix");
-    assert!(fixed.status.success(), "{}{}", stdout(&fixed), stderr(&fixed));
-    let output = stdout(&fixed);
-    let formatted = output.find("Finished in").expect("oxfmt ran");
-    let linted = output.find("Found 0 warnings and 0 errors.").expect("oxlint ran");
-    assert!(formatted < linted, "{output}");
-    assert_eq!(guest_book.read("app/env.ts"), source);
-    assert!(run("check").status.success());
+    assert!(checked.status.success(), "{}{}", stdout(&checked), stderr(&checked));
+    assert!(migrated.status.success(), "{}{}", stdout(&migrated), stderr(&migrated));
+    assert!(guest_book.path("db/data.db").exists(), "db:migrate created no database");
 }

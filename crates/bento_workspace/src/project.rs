@@ -7,8 +7,8 @@ use crate::manifest::{Manifest, ManifestError};
 
 const MANIFEST_FILE: &str = "package.json";
 
-/// A directory holding `package.json`. Tasks run here, and environment files,
-/// `node_modules`, and configuration are read relative to it.
+/// A directory holding `package.json`. Environment files, `node_modules`, and
+/// configuration are read relative to it.
 #[derive(Clone, Debug)]
 pub struct Project {
     root: PathBuf,
@@ -52,7 +52,7 @@ impl Project {
         Project::nearest(resolved.parent().expect("a file path has a parent directory"))
     }
 
-    /// The project for a task or installation started from `directory`.
+    /// The project for an installation started from `directory`.
     ///
     /// # Errors
     ///

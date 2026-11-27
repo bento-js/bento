@@ -203,23 +203,6 @@ fn a_script_that_finishes_keeps_watching_in_development_mode() {
 }
 
 #[test]
-fn interrupt_to_a_task_stops_the_watch_server_its_nested_bento_runs() {
-    let temp = server_project("nested message");
-    let manifest = json!({ "type": "module", "tasks": { "dev": "bento run --watch server.mjs" } });
-    temp.write("package.json", &manifest.to_string());
-    let port = free_port();
-    let mut command = temp.bento(&[&["run"], &GRANTS[..], &["dev"]].concat());
-    command.env("PORT", port.to_string());
-    let mut bento = Background::spawn(command);
-    wait_for_response(port, "nested message");
-
-    bento.signal(libc::SIGINT);
-
-    assert_eq!(bento.wait(Duration::from_secs(20)).code(), Some(130));
-    assert!(!port_is_taken(loopback(port)), "the nested server's port is still bound");
-}
-
-#[test]
 fn interrupt_stops_a_watched_script_still_running_at_the_deadline() {
     let temp = server_project("message one");
     let stuck = "process.on('SIGINT', () => console.log('never runs'));\n\

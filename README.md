@@ -12,9 +12,8 @@ Bento is pre-release. There are no published binaries or packages: you build it 
 
 The first feature set, [proposal 0001](proposals/0001-embeddable-typescript-runtime.md), was implemented and merged on 2026-10-12. Its acceptance target is a real application: a Remix 3 guest book, pinned to `remix@3.0.0`, that runs from its TypeScript source through the `bento` CLI and through a Rust program embedding the runtime in-process. What works today:
 
-- `bento run` executes a source file directly. Oxc transforms honor the project's `tsconfig.json`, resolution follows Node's rules (`package.json` `imports`, `exports`, and `type`, CommonJS and ESM interop, pnpm layouts), and Node-API addons load for real, so Remix's native asset pipeline runs unmodified.
+- `bento run` executes a source file directly. Oxc transforms honor the project's `tsconfig.json`, resolution follows Node's rules (`package.json` `imports`, `exports`, and `type`, CommonJS and ESM interop, pnpm layouts), and Node-API addons load for real, so Remix's native asset pipeline runs unmodified. `.env` files are layered by mode beneath the environment `bento` starts with.
 - Grants are explicit: scoped `--allow-read`, `--allow-write`, `--allow-net`, `--allow-env`, and `--allow-addons`, plus the boolean `--allow-language-model` capability. Nothing is granted by default and nothing prompts.
-- `bento run <task>` runs the top-level `tasks` in `package.json`, with dependencies, argument forwarding, and cancellation of the whole process group. `.env` files are layered by mode.
 - `bento run --watch` restarts when the loaded source graph or its configuration changes, and recovers when a broken file is fixed.
 - `bento install` installs dependencies through the project's declared pnpm.
 - The `bento_runtime` crate lets a Rust program start an instance, expose its own `host:` modules, deliver signals, shut down within a deadline, and interrupt JavaScript that will not stop.
@@ -22,7 +21,7 @@ The first feature set, [proposal 0001](proposals/0001-embeddable-typescript-runt
 
 On an Apple M4, the guest book handles persisted form submissions at 3978 requests per second under Bento and 4154 under Node, and cold-starts in 341 ms against Node's 220 ms. Rendered pages run at 31.5 requests per second against Node's 120, because Brotli compression is slow under Bento ([#14](https://github.com/bento-js/bento/issues/14)). The [recorded results](bench/results/2026-10-12T00-04-54Z/ANALYSIS.md) include Bun, which cannot render the app yet ([#2](https://github.com/bento-js/bento/issues/2)).
 
-Most guides end with a section on limits. Open defects from the first feature set are [#14](https://github.com/bento-js/bento/issues/14), [#18](https://github.com/bento-js/bento/issues/18), [#242](https://github.com/bento-js/bento/issues/242), [#243](https://github.com/bento-js/bento/issues/243), and [#244](https://github.com/bento-js/bento/issues/244), the last a 55 ms cold-start regression.
+Most guides end with a section on limits. Open defects from the first feature set are [#14](https://github.com/bento-js/bento/issues/14), [#18](https://github.com/bento-js/bento/issues/18), and [#244](https://github.com/bento-js/bento/issues/244), the last a 55 ms cold-start regression.
 
 ## Try it
 
@@ -32,16 +31,15 @@ The default CLI build needs macOS 27.0 or newer on Apple silicon, Xcode with SDK
 cargo install --locked --path crates/bento_cli
 ```
 
-Run the guest book with the grants it needs:
+Run the guest book. Its `mise.toml` defines the project's tasks, which call `bento` and the app's package tools:
 
 ```sh
 cd fixtures/remix-guest-book
 bento install --frozen-lockfile
-env -u NODE_PATH bento run --allow-read --allow-write=./db --allow-net \
-  --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
+env -u NODE_PATH mise run dev
 ```
 
-Open <http://localhost:1612>. The `dev` task migrates the SQLite database once and then runs `bento run --watch server.ts`, so editing `app/actions/guest-book/page.tsx` restarts the server. `NODE_PATH` is unset because the native Oxc resolver reads it from the process and would look for packages outside the project.
+Open <http://localhost:1612>. The `dev` task migrates the SQLite database with `remix db migrate` and then runs `bento run --watch server.ts` with the grants the app needs, so editing `app/actions/guest-book/page.tsx` restarts the server. Bento itself reads no task configuration; any task runner, or the same two commands typed by hand, works the same way. `NODE_PATH` is unset because the native Oxc resolver reads it from the process and would look for packages outside the project.
 
 A smaller example runs TypeScript and TSX with an npm import and top-level await:
 
@@ -56,7 +54,7 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 ## Documentation
 
 - [Running with Bento](guides/running-with-bento.md): `bento run`, grants, watch mode, exit codes, and error reports.
-- [Tasks and environment](guides/tasks-and-environment.md): `package.json` tasks, `.env` files, and nested `bento` launches.
+- [Environment files](guides/environment-files.md): `.env`, `.env.<mode>`, and `.env.local`, the mode, and precedence.
 - [Installing dependencies](guides/installing-dependencies.md): `bento install` and pnpm.
 - [TypeScript and JSX](guides/typescript-and-jsx.md): which `tsconfig.json` settings Bento honors.
 - [Node compatibility](guides/node-compatibility.md): the Node and Web surface exercised so far, and how grants apply to it.
@@ -74,8 +72,7 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 | `crates/bento_cli` | The `bento` command |
 | `crates/bento_host` | Grants, scopes, canonical paths, and network targets |
 | `crates/bento_compiler` | Oxc transforms and `tsconfig.json` settings |
-| `crates/bento_workspace` | Project discovery, targets, and `.env` loading |
-| `crates/bento_task` | Task graphs, nested launches, and process-group cancellation |
+| `crates/bento_workspace` | Project discovery, the `package.json` model, and `.env` loading |
 | `crates/bento_package` | Installation through pnpm |
 | `examples/guestbook-host` | A Rust host embedding the guest book |
 | `examples/direct-source` | A TypeScript and TSX example |
@@ -95,7 +92,7 @@ The [Bento Roadmap](https://github.com/orgs/bento-js/projects/1) project holds 2
 - The rest of the MVP that proposal 0001 began: the [Rust embedding API](https://github.com/bento-js/bento/issues/238), [host capability grants](https://github.com/bento-js/bento/issues/239), and a [self-contained production process](https://github.com/bento-js/bento/issues/241) are in progress. [Feature-selected builds](https://github.com/bento-js/bento/issues/240) have not started.
 - [Web API compatibility](https://github.com/bento-js/bento/issues/19) and [Node compatibility](https://github.com/bento-js/bento/issues/64): 27 Web APIs and 32 Node modules are scheduled now, 28 of them already in progress. Still to start are items such as WebSocket, Web Crypto, `node:crypto`, `node:child_process`, and `node:stream`.
 - Compilation: lowering and minification for [ECMAScript](https://github.com/bento-js/bento/issues/134) and [CSS](https://github.com/bento-js/bento/issues/143), CSS import resolution, and a built-in [dynamic asset server](https://github.com/bento-js/bento/issues/167).
-- [Package management](https://github.com/bento-js/bento/issues/182): npm and jsr support, on-demand `npm:` and `jsr:` imports, monorepo workspaces, and modern `.npmrc` options, with [workspace-aware tasks](https://github.com/bento-js/bento/issues/179).
+- [Package management](https://github.com/bento-js/bento/issues/182): npm and jsr support, on-demand `npm:` and `jsr:` imports, monorepo workspaces, and modern `.npmrc` options.
 - The WinterTC [Functions API](https://github.com/bento-js/bento/issues/133), and defects [#2](https://github.com/bento-js/bento/issues/2), [#14](https://github.com/bento-js/bento/issues/14), and [#18](https://github.com/bento-js/bento/issues/18).
 
 ### Next
@@ -104,7 +101,7 @@ The [Bento Roadmap](https://github.com/orgs/bento-js/projects/1) project holds 2
 - [Type checking](https://github.com/bento-js/bento/issues/139) and [bundling](https://github.com/bento-js/bento/issues/141), plus [HTML](https://github.com/bento-js/bento/issues/151), [Markdown](https://github.com/bento-js/bento/issues/157), and [MDX](https://github.com/bento-js/bento/issues/161) tooling.
 - A [formatter](https://github.com/bento-js/bento/issues/209), with 18 of its 25 languages and features scheduled next, among them JavaScript, TypeScript, CSS, HTML, Markdown, JSON, YAML, and import sorting.
 - [Cloudflare Workers compatibility](https://github.com/bento-js/bento/issues/111) (Durable Objects, KV, Queues, D1, R2, Cron Triggers, static assets, HTMLRewriter) and the rest of [WinterTC](https://github.com/bento-js/bento/issues/127).
-- [Environment variables and secrets](https://github.com/bento-js/bento/issues/180), [toolchain self-management](https://github.com/bento-js/bento/issues/181), [task caching](https://github.com/bento-js/bento/issues/175), [package catalogs](https://github.com/bento-js/bento/issues/187), and [HMR for Remix JSX](https://github.com/bento-js/bento/issues/204).
+- [Environment variables and secrets](https://github.com/bento-js/bento/issues/180), [toolchain self-management](https://github.com/bento-js/bento/issues/181), [package catalogs](https://github.com/bento-js/bento/issues/187), and [HMR for Remix JSX](https://github.com/bento-js/bento/issues/204).
 
 ### Later
 

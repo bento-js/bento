@@ -172,3 +172,6 @@ fn describe<T: Ord + Covers>(scope: &Scope<T>) -> String {
         Scope::Only(items) => items.iter().map(Covers::describe).collect::<Vec<_>>().join(", "),
     }
 }
+
+#[cfg(test)]
+mod tests;

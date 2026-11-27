@@ -9,7 +9,7 @@ fn a_malformed_package_json_is_shown_with_its_source_at_the_error() {
     let temp = TempProject::new(json!({}));
     temp.write(
         "package.json",
-        "{\n  \"name\": \"guests\",\n  \"type\": \"module\"\n  \"tasks\": {}\n}\n",
+        "{\n  \"name\": \"guests\",\n  \"type\": \"module\"\n  \"private\": true\n}\n",
     );
     temp.write("server.mjs", "console.log('never runs');\n");
 
@@ -19,7 +19,7 @@ fn a_malformed_package_json_is_shown_with_its_source_at_the_error() {
     let report = stderr(&output);
     assert!(report.contains("is not valid JSON"), "{report}");
     assert!(report.contains("package.json:4:3"), "{report}");
-    assert!(report.contains("  \"tasks\": {}"), "{report}");
+    assert!(report.contains("  \"private\": true"), "{report}");
     assert!(report.contains("expected `,` or `}`"), "{report}");
     assert!(!report.contains('\u{1b}'), "styled output when stderr is not a terminal: {report}");
 }

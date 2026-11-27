@@ -29,7 +29,7 @@ pub(crate) fn free_port() -> u16 {
     port
 }
 
-pub(crate) fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
+fn wait_for_exit(child: &mut Child, deadline: Duration) -> ExitStatus {
     let start = Instant::now();
     loop {
         if let Some(status) = child.try_wait().unwrap() {

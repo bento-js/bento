@@ -1,6 +1,6 @@
 [package]
 name = "bento_workspace"
-description = "Project discovery, package.json model, launch targets, and environment files"
+description = "Project discovery, the package.json model, and environment files"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true

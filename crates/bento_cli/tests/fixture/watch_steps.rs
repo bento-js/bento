@@ -1,4 +1,4 @@
-//! The steps of the `dev` test, each changing the project of the guest book it runs.
+//! The steps of the watch test, each changing the project of the guest book it runs.
 
 use std::thread;
 use std::time::Duration;

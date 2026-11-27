@@ -1,7 +1,7 @@
 ---
 id: guide.prompt-api
 title: Using the Prompt API
-describes: [proposal.0002]
+describes: [proposal.0002, proposal.0004]
 ---
 
 # Using the Prompt API
@@ -23,7 +23,7 @@ bento run --allow-read=. --allow-language-model prompt.ts
 
 `--allow-language-model` grants access to the model. It grants no file, network, environment, or native-addon access. Without it, `LanguageModel.availability()` resolves to `"unavailable"` and `LanguageModel.create()` rejects with a `NotAllowedError` DOMException before probing the native model. No interactive permission prompt appears.
 
-Nested Bento task launches inherit this capability as a ceiling. An omitted flag inherits the ceiling, `--allow-language-model=false` denies it explicitly, and requesting it under a denying ceiling fails before running the guest. An older serialized ceiling without the capability denies it. Native programs started by a trusted task retain the task's operating-system authority; Bento grants are not an OS sandbox.
+A launch under an inherited grant ceiling (`BENTO_GRANT_CEILING`) inherits this capability from it. An omitted flag inherits the ceiling, `--allow-language-model=false` denies it explicitly, and requesting it under a denying ceiling fails before running the guest. An older serialized ceiling without the capability denies it. Bento grants are not an operating-system sandbox: programs outside the `bento` process keep their own operating-system authority.
 
 To build without the native dependency or new SDK requirement:
 

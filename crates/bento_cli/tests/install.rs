@@ -40,7 +40,7 @@ fn bento_install(temp: &TempProject, arguments: &[&str]) -> Command {
     command
         .envs(caller)
         .env("CI", "false")
-        .env("pnpm_config_store_dir", "/tmp/bento-cli-tasks/pnpm-store")
+        .env("pnpm_config_store_dir", "/tmp/bento-cli-projects/pnpm-store")
         .env("NODE_ENV", "production");
     command
 }

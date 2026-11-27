@@ -1,7 +1,7 @@
 ---
 id: guide.typescript-and-jsx
 title: TypeScript and JSX
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0004]
 ---
 
 # TypeScript and JSX
@@ -10,7 +10,7 @@ describes: [proposal.0001]
 
 Bento runs TypeScript, TSX, and JSX source files directly. Before a module is evaluated, Bento removes type syntax and compiles JSX natively with Oxc, inside the Bento process, using the execution-relevant settings from the project's `tsconfig.json`. There is no build step, no emitted `.js` files, and no `--import remix/node-tsx` loader.
 
-Transforming is not type checking. Bento never reports type errors: a file with a type error that is still valid syntax runs, and the mistake surfaces only when the type checker runs. Keep the project's type checker as a task (for example `"typecheck": "tsc --noEmit"` in `package.json#tasks`) and run it with `bento run typecheck`.
+Transforming is not type checking. Bento never reports type errors: a file with a type error that is still valid syntax runs, and the mistake surfaces only when the type checker runs. Run the project's type checker separately, for example `tsc --noEmit` from a `package.json` script or your task runner.
 
 Every transformed module carries a source map, so stack traces and error locations point at the original line and column of the TypeScript or TSX source rather than at generated JavaScript.
 
