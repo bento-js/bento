@@ -12,7 +12,7 @@ supersedes: []
 
 ## Summary
 
-Make the `bento` executable explain itself to coding agents. One Rust registry generates the parser, help, `bento cli search`, `bento schema`, and the CLI reference. `bento docs` serves the guides built into the binary. `bento context show` and `bento run --dry-run` report what a launch would use without running it.
+Make the `bento` executable explain itself to coding agents, and define Bento's one CLI wire contract. A Rust registry generates the parser, help, `bento cli search`, `bento schema`, and the CLI reference. `bento docs` serves built-in guides. `bento context show` and `bento run --dry-run` preview a launch without running it.
 
 ## Motivation
 
@@ -46,6 +46,7 @@ Today's workaround is to read the guides from a checkout, read the source, or ru
 - Cloudflare built its `cf` CLI for agents that have never used it. Its launch post says Wrangler's years of documentation were absorbed into model training, so changing Wrangler "goes against learned behavior"; `cf` instead makes JSON the default output and tells the agent about `cf cli search` the first time it runs `--help`. ([Introducing cf](https://blog.cloudflare.com/cloudflare-cf-cli-launch/))
 - `cf`'s agent documentation: commands "return JSON and describe their own inputs". `cf cli search` runs locally without credentials and returns up to five matches, best first. `cf schema` describes a command. `--dry-run` previews a change. Results go to standard output as JSON, and messages and errors go to standard error, so when standard output is not a terminal it holds only the result. An unknown command lists the closest matches. `cf docs search` searches the live documentation site and needs a network connection. ([Use cf with coding agents](https://developers.cloudflare.com/cf/agents/))
 - The Command Line Interface Guidelines: primary and machine-readable output goes to stdout, messages and errors to stderr; exit zero on success and non-zero on failure; decide whether a person is reading by checking whether each stream is a terminal, separately. ([clig.dev](https://clig.dev/))
+- JSON Lines, also called NDJSON, puts one UTF-8 JSON value on each line and ends each line with `\n`, so a consumer can process a stream line by line. ([JSON Lines](https://jsonlines.org/))
 - A runtime leaves the program's output to the program. Node writes a script's output to its own stdout and stderr and exits with the script's exit code. ([Node `process`](https://nodejs.org/api/process.html))
 - A preview is only as faithful as the validation it shares with the real operation. Kubernetes added server-side dry run because `kubectl apply --dry-run` ran locally, "doesn't have server validation and doesn't go through validating admission controllers", and so could approve requests the server would reject. ([APIServer dry-run and kubectl diff](https://kubernetes.io/blog/2019/01/14/apiserver-dry-run-and-kubectl-diff/))
 - Established tools validate or inspect without running. `node --check` parses a script without executing it ([Node command-line API](https://nodejs.org/api/cli.html)). `tsc --showConfig` prints the final configuration after `extends` instead of building ([tsc options](https://www.typescriptlang.org/docs/handbook/compiler-options.html)).
@@ -71,7 +72,8 @@ Observed in this repository on `main` (`d9b00e0`):
 
 - An agent that has never seen Bento gets from `bento --help` to a correct, previewed `bento run` command using only the installed binary.
 - Nothing advertised can drift. Every flag, default, accepted value, and example in help, `bento schema`, `bento cli search`, and the CLI reference comes from one declaration, and tests fail when the parser or the runtime defaults disagree with it.
-- A structured invocation writes exactly one JSON document: the result on stdout, or the failure on stderr. Nothing else.
+- A structured invocation writes only what its format promises: one JSON document with `json`, one per line with `ndjson`, or on failure one failure document on stderr. Nothing else.
+- Every command, including those later proposals add, reports through the same `--output` formats, failure document, and error codes.
 - A launch by `bento run` or `bento install` without `--dry-run` writes exactly the bytes it writes today and exits with the same status. Only help and usage-error text change.
 - A dry run executes no guest code, starts no JavaScript engine, subprocess, or network connection, and writes nothing. Every failure it reports is one the real launch would hit before guest code runs, and it states what it does not check.
 - No environment variable's value appears in any output, except the environment mode Bento derives from `NODE_ENV`.
@@ -102,7 +104,7 @@ Worth keeping: all of that. Different for Bento:
 
 ## Proposed solution
 
-Bento's command line becomes self-describing. Each command is declared once in Rust, and everything that describes the command line is generated from that declaration and tested against it. Commands that answer questions write JSON; commands that run programs leave the program's output alone, exactly as today.
+Bento's command line becomes self-describing. Each command is declared once in Rust, and everything that describes the command line is generated from that declaration and tested against it. Commands that answer questions write JSON; commands that run programs leave the program's output alone, exactly as today. One wire contract covers both: `--output` means the same thing on every command, every failure has the same envelope, and every error code comes from one table.
 
 ```text
 bento                                              → orientation: what Bento is, its commands, how to discover them
@@ -121,74 +123,127 @@ An agent follows one loop: discover a command, inspect it, preview the launch, r
 ### Vocabulary
 
 - A **command** is one operation the `bento` executable performs. Its **path** is the words after `bento` (`run`, `cli search`), and its **id** is the path joined with dots (`run`, `cli.search`).
-- An **invocation** is one use of a command with its arguments. Its **output contract** is either **structured** or **pass-through**. Each command declares one, and `--dry-run` makes an invocation structured.
+- An **invocation** is one use of a command with its arguments.
+- An invocation's **output format** is its `--output` value: `json`, `ndjson`, or `text`. Each command declares the formats it accepts and its default.
+- An invocation's **output contract** is **structured** when Bento writes JSON documents for it, and **pass-through** when the program Bento runs owns stdout and stderr. [Deciding the contract](#deciding-the-contract) is the one rule that chooses.
+- A pass-through invocation's **error format** is its `--error-format` value: whether Bento reports its own failures as human text or as failure documents.
 - The **registry** is the set of command declarations compiled into `bento`.
-- A **result** is the JSON document a structured invocation writes to stdout. A **failure document** is the JSON document it writes to stderr instead.
+- A **result** is what a structured invocation writes to stdout: one JSON document with `json`, or a stream of them with `ndjson`.
+- A **failure document** is the JSON document `{ "error": body }` that reports one failure. Its `error` object is the **failure body**, and the body's `code` is an **error code** from the one table in [Error codes](#error-codes).
 - A **guide** is a Markdown file from `guides/` compiled into the binary. A **section** is a heading and the text below it, up to the next heading of the same or a higher level.
 - The **context** of a directory is what a `bento run` started there without flags would use: its project, configuration, environment files, and permissions.
 - A **launch preview** is what one `bento run` command line would use, computed by `bento run --dry-run` without running anything.
 
-### Output contracts
+### The wire contract
 
-#### Structured output
+This section is Bento's whole command-line wire contract: the output formats, the two output contracts and the rule between them, the failure document, and the error codes. Every command reports through it, including the commands and options later proposals add; proposals 0006 ([PR #274](https://github.com/bento-js/bento/pull/274)) and 0007 ([PR #277](https://github.com/bento-js/bento/pull/277)) adopt it rather than restating it.
 
-Every invocation of `bento cli search`, `bento schema`, `bento docs search`, `bento docs show`, and `bento context show`, and every `bento run --dry-run`, is structured:
+#### Output formats
 
-- On success, stdout receives exactly one JSON document followed by a newline: compact on one line when stdout is not a terminal, and indented with two spaces when it is. Nothing is written to stderr, and the exit status is 0.
-- `--output text` renders the same result for people instead. Text rendering is not a contract and may change between versions. The default is `--output json`.
-- Keys are camelCase. Enumerated values are lowercase kebab-case strings. Paths are absolute, and canonical wherever Bento resolves them. JSON never contains color or terminal escape sequences.
-- Adding a field is a compatible change; consumers ignore fields they do not know. Removing or renaming a field, or changing its type, is a breaking change and is recorded in a changeset.
+`--output <format>` is one option with one meaning on every command: how Bento reports the command's result. Every command declares it, with the formats it accepts and its default. A format the command does not accept fails with `INVALID_ARGUMENT`. On `bento run`, like every Bento option, it goes before the script.
+
+- `json`: the result is exactly one JSON document on stdout.
+- `ndjson`: the result is a stream of JSON documents on stdout, one per line.
+- `text`: the result is rendered for people. Text is not a contract and may change between versions. On a pass-through command, `text` means pass-through: the program Bento runs owns stdout and stderr.
+
+The formats this proposal defines for each command:
+
+| Command | Accepts | Default |
+| --- | --- | --- |
+| `bento cli search`, `bento schema`, `bento docs search`, `bento docs show`, `bento context show` | `json`, `text` | `json` |
+| `bento run` | `text`; with `--dry-run`, `json` and `text` | `text` (pass-through); `json` with `--dry-run` |
+| `bento install` | `text` | `text` (pass-through) |
+
+- `bento run --dry-run --output text` renders the launch preview for people. A dry run never passes anything through.
+- Proposal 0007 adds two results to `bento run` without `--dry-run`, under these rules: `--output json`, a receipt for the run, and `--output ndjson`, a stream of the run's events. `--output json` on `bento run` therefore always means a structured result instead of pass-through.
+- Until proposal 0007 lifts it, `bento run --output json` without `--dry-run` fails with `INVALID_ARGUMENT` and the message `--output json requires --dry-run`. `--output ndjson` is not a format `bento run` accepts in this proposal, and a dry run never accepts it.
+
+#### Structured invocations
+
+- A JSON document is UTF-8. Keys are camelCase. Enumerated values are lowercase kebab-case strings. Paths are absolute, and canonical wherever Bento resolves them.
+- Bento never colors or styles JSON. A control character inside a string, including the escape character that begins a terminal sequence, is written as a JSON escape such as `\u001b`, so a document never contains a raw control character.
+- With `json`, stdout receives exactly one document followed by a newline: compact on one line when stdout is not a terminal, and indented with two spaces when it is.
+- With `ndjson`, stdout receives one document per line: each compact, followed by a newline, and written whole, never interleaved with another, whether or not stdout is a terminal. A consumer can parse each line as it arrives.
+- With `text`, stdout receives the rendering for people. Failures are still failure documents.
+- On success, Bento writes nothing to stderr and exits with the status the command declares. Every structured result in this proposal exits with 0.
+- A failure before the first document writes nothing to stdout, writes one failure document to stderr, and exits with status 1. A command that streams defines how a failure after its first document appears in its stream; proposal 0007's event stream reports it in the run's last event.
 - A structured invocation never prompts and never reads stdin.
-- When stdout's reader has gone away (`EPIPE`), the invocation ends with status 0 and writes nothing to stderr: the reader chose to stop. Any other failure to write stdout is an `INTERNAL` failure.
+- When stdout's reader has gone away (`EPIPE`), Bento stops writing to stdout, ends the command as it declares for a reader that left (every command in this proposal simply ends), writes nothing to stderr, and exits with status 0: the reader chose to stop. Any other failure to write stdout is an `INTERNAL` failure.
+- Adding a field, an enumerated value, a kind of stream document, or an error code is a compatible change; consumers ignore values they do not know. Removing or renaming any of them, or changing a field's type or meaning, is a breaking change and is recorded in a changeset. This rule covers results, failure documents, and the code table alike.
 
-#### Pass-through output
+#### Pass-through invocations
 
-`bento run` without `--dry-run`, and `bento install`, are pass-through:
-
-- stdout and stderr belong to the script or to pnpm. Bento's own messages, such as `tsconfig.json` diagnostics, watch restarts, and failure reports, go to stderr as human text, as today. Exit statuses are unchanged.
+- stdout and stderr belong to the script, or to pnpm. Bento's own messages that are not failures, such as `tsconfig.json` diagnostics and watch restarts, go to stderr as human text, as today. Exit statuses are unchanged.
 - This proposal changes none of these bytes once a launch has parsed. Help and usage errors change as described below and in [Help](#help).
-- A usage error in a pass-through invocation stays a human-readable message on stderr with status 1. Its last line, in place of clap's `For more information, try '--help'.`, names the command's schema: for `bento run`, ``See `bento schema run` for its arguments.``
+- `--error-format <format>`, declared on `bento run`, decides how Bento reports its own failures and usage errors on stderr:
+    - `text`, the default: a human report, as today. A usage error's last line, in place of clap's `For more information, try '--help'.`, names the command's schema: for `bento run`, ``See `bento schema run` for its arguments.``
+    - `json`: every failure report and usage error Bento writes is a failure document, compact on one line unless stderr is a terminal. That includes each failed load or reload under `--watch`, and a run whose work did not settle by the shutdown deadline. A run failure's document is written after its instance has ended, so it is the last thing Bento writes to stderr for that run. Messages that are not failures stay text. Exit statuses are unchanged.
+- `--error-format` goes before the script. Bento reads it from the words before parsing, so a malformed command line is a failure document when `--error-format json` or `--error-format=json` appears before the script.
+- On a structured invocation every failure is a failure document: `--error-format json` is accepted and changes nothing, and `--error-format text` fails with `INVALID_ARGUMENT`.
+- `bento install` does not declare `--error-format`; its failure reports stay text.
+- A run's failures after its instance starts, such as an uncaught exception, an unresolvable import, a failed startup, or incomplete disposal, take codes proposals 0006 and 0007 add. `--error-format` is therefore delivered with proposal 0007's codes: this proposal defines it, and proposal 0007's implementation adds it to `bento run`'s registry entry, so the registry never advertises an option that cannot report every failure.
 
 #### Deciding the contract
 
-The contract is decided from the words before parsing, so a malformed dry run still fails with a failure document:
+This is the one rule every command uses. Later proposals rely on it rather than restating it. Bento applies it to the words before parsing, so a malformed command line is reported in its own contract:
 
-- Words that select a structured command are structured.
-- Words that select `bento run` are structured when `--dry-run` appears among the words before the first word that is not an option or an option's value, and pass-through otherwise.
-- Words that select `bento install` are pass-through.
+- An invocation is **structured** when its words select a command whose default output format is `json` or `ndjson`, or when its options include `--dry-run` or an `--output` value other than `text`; for `bento run`, those options count only before the script. `bento run --dry-run …` and `bento run --output json …` are structured, and so is `bento install --output json`, which fails because `bento install` accepts only `text`.
 - Words that select no command, such as `bento frobnicate` or `bento docs`, are structured.
+- Every other invocation is **pass-through**. It reports its own failures as failure documents when `--error-format json` appears before the script.
+- "Before the script" means before the first word that is neither an option nor an option's value. `--output json` and `--output=json` are read alike. After the script, every word belongs to the script.
+- `--help` and `--version` print text in every contract.
 
 #### Failure documents
 
 ```json
 {
     "error": {
-        "code": "NOT_FOUND",
-        "message": "no script file at /Users/you/app/srv.ts",
+        "code": "SYNTAX_ERROR",
+        "message": "/Users/you/app/server.ts:12:7: Expected `;` but found `:`",
         "retryable": false,
-        "details": { "path": "/Users/you/app/srv.ts" },
-        "suggestions": []
+        "details": {},
+        "suggestions": [],
+        "location": { "path": "/Users/you/app/server.ts", "line": 12, "column": 7 }
     }
 }
 ```
 
-- A failing structured invocation writes nothing to stdout, writes one failure document to stderr, and exits with status 1. The document is indented when stderr is a terminal and compact otherwise. It stays JSON whatever `--output` asks for, so stderr always parses.
-- `code` is stable; consumers branch on it. `message` is one sentence for a person and not a contract. `retryable` says whether running the same command again, unchanged, can succeed; every code below is `false`, because each failure depends only on local files and arguments. `details` holds the facts below. `suggestions` lists commands or changes that recover, most useful first, and may be empty.
-- No environment variable's value appears in `message`, `details`, or `suggestions`, except the environment mode.
+- `{ "error": body }` is the only envelope Bento uses for a failure, in every command and both contracts. Anywhere else a failure appears, such as the `error` of a proposal 0007 receipt, it is the same body.
+- A failure document goes to stderr, indented when stderr is a terminal and compact otherwise. It stays JSON whatever `--output` asks for, so stderr always parses.
+- `code` is an error code; consumers branch on it. `message` is one sentence for a person and not a contract. `retryable` says whether running the same command again, unchanged, can succeed. `details` holds the facts the code's row lists. `suggestions` lists commands or changes that recover, most useful first, and may be empty.
+- `location` is `{ "path", "line", "column" }`, one-based, or null. Every failure that points at a place in a file sets it: a `package.json` or `tsconfig.json` that is not valid JSON, a malformed environment file, a syntax error, or syntax that cannot be transformed. `column` is null when Bento knows only the line, as for an environment file. `details` never carries `line` or `column`.
+- Other proposals add fields to the body as compatible additions under the rule in [Structured invocations](#structured-invocations). Proposal 0007 adds `exception`, the JavaScript value an uncaught failure carried.
+- No environment variable's value appears in `message`, `details`, `suggestions`, or `location`, except the environment mode.
+
+#### Error codes
+
+There is one code table, and it is defined here. The registry holds it as one `ErrorCode` enum: every failure Bento reports is built from a variant, so no command can report a code outside the table, and the CLI reference's code table and `bento schema`'s meanings are generated from the enum. A command's registry entry lists the codes it can report. One kind of failure has one code in every command, so a dry run and a real run report the same code for the same failure.
 
 | Code | Meaning | `details` |
 | --- | --- | --- |
-| `INVALID_ARGUMENT` | The command line is malformed or inconsistent: an unknown command or option, a missing or extra value, a value outside its accepted values or bounds, or an argument without one it requires. | `command` (such as `bento run`), and `argument` when one argument is at fault. For words that select no command, `commands`: every command path. |
+| `INVALID_ARGUMENT` | The command line is malformed or inconsistent: an unknown command or option, a missing or extra value, a value outside its accepted values or bounds, a format the command does not accept, or an argument without one it requires. | `command` (such as `bento run`), and `argument` when one argument is at fault. For words that select no command, `commands`: every command path. |
 | `NOT_FOUND` | A named command, guide, section, or script does not exist, or no `package.json` encloses the script. | One of `command`, `guide` (with `guides`), `section` (with `sections`), or `path`. For a missing project, `missing: "package.json"` and `searchedFrom`. |
-| `PRECONDITION_FAILED` | A file Bento must read exists but cannot be read, or the current directory cannot be determined. | `path`, when a file is at fault. |
-| `INVALID_CONFIGURATION` | Something Bento reads is malformed: `package.json`, `tsconfig.json` or a file it extends, an environment file, a `NODE_ENV` containing `/`, `BENTO_PERMISSION_CEILING`, or an inherited variable that is not UTF-8. | `path`, with `line` and `column` when known, or `variable` (a name). |
-| `PERMISSION_DENIED` | A permission flag asks for more than the inherited ceiling allows, or the launch's permissions would not let it read its own script. | `argument` and `limit`, or `path` and `permission`. |
-| `TRANSFORM_FAILED` | The script cannot be transformed: a syntax error, or syntax the project's settings leave untransformed. | `path`, `line`, `column`. |
+| `PRECONDITION_FAILED` | A file Bento must read exists but cannot be read, the current directory cannot be determined, or something else the command needs from its environment is unavailable. | `path`, when a file is at fault. |
+| `INVALID_CONFIGURATION` | Something Bento reads is malformed: `package.json`, `tsconfig.json` or a file it extends, an environment file, a `NODE_ENV` containing `/`, `BENTO_PERMISSION_CEILING`, or an inherited variable that is not UTF-8. | `path`, the file at fault, or `variable`, a name. |
+| `PERMISSION_DENIED` | A permission flag asks for more than the inherited ceiling allows; the launch's permissions would not let it read its own script; or a running script was denied an operation and did not handle the denial. | `argument` and `limit`, or `path` and `permission`. Proposal 0007 defines the details of a denial during a run. |
+| `SYNTAX_ERROR` | A module's source cannot be parsed. | None; `location` is the syntax error. |
+| `TRANSFORM_FAILED` | A module parses but cannot be made executable: syntax the project's settings leave untransformed, such as JSX without a usable `jsx` setting or decorators without `experimentalDecorators`, or another error from the transformer. | None; `location` is the syntax. |
 | `INTERNAL` | A defect in Bento, or stdout could not take the result. | `stream` when writing failed. |
 
-Every structured command can report `INVALID_ARGUMENT` and `INTERNAL`. An `INTERNAL` failure suggests reporting the defect, naming the Bento version and command id.
+- `retryable` is `false` for every code in this table: each failure repeats when the same command runs unchanged. A row that can succeed on retry says so.
+- Every structured command can report `INVALID_ARGUMENT` and `INTERNAL`. An `INTERNAL` failure suggests reporting the defect, naming the Bento version and command id.
+- For words that select no command, the message names the unknown word, `details.commands` lists every command path, and the suggestions are `bento cli search "<what you want to do>"` followed by up to three commands whose path is closest to the unknown words.
+- A later proposal adds a row by giving its code, meaning, `retryable`, `details`, and suggestions. Adding a row is compatible; a row is never removed or renamed without a breaking change.
 
-For words that select no command, the message names the unknown word, `details.commands` lists every command path, and the suggestions are `bento cli search "<what you want to do>"` followed by up to three commands whose path is closest to the unknown words.
+These rows are named here and defined by the proposals that add them:
+
+| Code | Added by |
+| --- | --- |
+| `RESOLUTION_FAILED` | Proposals 0006 and 0007 both use it, and whichever is implemented first adds it: a module specifier could not be resolved. |
+| `MODULE_LOAD_FAILED` | Proposal 0006. |
+| `STARTUP_FAILED` | Proposal 0007. |
+| `UNCAUGHT_EXCEPTION` | Proposal 0007. |
+| `DISPOSAL_INCOMPLETE` | Proposal 0007. |
 
 ### The command registry
 
@@ -202,16 +257,16 @@ Each command is declared once, in `crates/bento_cli`, with these fields:
 | `summary` | One line, shown in help listings and search results. |
 | `description` | Everything an agent needs to use the command correctly, in prose. |
 | `arguments` | The command's arguments, below. |
-| `output` | `structured` or `pass-through`. |
+| `output` | Its default output format. Every command accepts `text`; the other formats it accepts are those of its `results`. |
 | `effect` | `reads` (reads files, changes nothing), `executes` (runs guest code, whose effects belong to the guest within its permissions), or `modifies` with what it modifies. |
 | `requires` | What it needs besides `bento`: `project` (a `package.json` in the directory or an ancestor) and `pnpm` (on `PATH`, and declared by the project). |
 | `dryRun` | Whether it accepts `--dry-run`. |
 | `idempotent` | Whether running it twice with the same input leaves the same state as running it once. |
-| `errors` | The failure codes a structured invocation can report, besides `INVALID_ARGUMENT` and `INTERNAL`. |
+| `errors` | The `ErrorCode` variants a structured invocation can report, besides `INVALID_ARGUMENT` and `INTERNAL`. |
 | `exitStatuses` | Each exit status and what it means. |
 | `examples` | At least one: a summary and the words after `bento`. |
 | `synonyms` | Words an agent might use for the command that its path and summary do not contain. |
-| `resultSchema` | The JSON Schema of its result, generated from the Rust result type. For `bento run`, the launch preview's. None for `bento install`. |
+| `results` | Each structured result it can write: its format (`json` or `ndjson`), whether it requires `--dry-run`, and the JSON Schema of the document, generated from the Rust result type (for `ndjson`, of one line). With `--dry-run`, the default format is the dry-run result's. `bento run` has one, the launch preview; `bento install` has none. |
 
 Each argument declares:
 
@@ -227,56 +282,56 @@ Each argument declares:
 | `heading` | The help section that lists it, such as `Permissions`. |
 | `summary` | One line. |
 
-Validation that the parser cannot express, such as proposal 0003's messages for permission flags and the ceiling check, stays in Bento's code; `requires` and `errors` declare it.
+Validation that the parser cannot express, such as proposal 0003's messages for permission flags, the ceiling check, and a format accepted only with `--dry-run`, stays in Bento's code; `requires`, `results`, and `errors` declare it.
 
 #### What the registry generates
 
 - The clap parser, built with clap's builder API. The derive declarations in `arguments.rs` and `grant_flags.rs` are removed.
 - `bento --help`, and each `bento <command> --help`.
 - The `bento cli search` index and every `bento schema` answer.
-- The CLI reference, `guides/cli-reference.md`, which `mise run cli:reference` regenerates.
+- The CLI reference, `guides/cli-reference.md`, which `mise run cli:reference` regenerates, including its code table, which comes from the `ErrorCode` enum.
 - `details.commands` and the closest-command suggestions in failure documents.
 
 #### Parity
 
 Tests in `bento_cli`, run by `mise run rust`, fail when any of these is false:
 
-1. Every declaration is complete: its id is its path joined with dots and is unique; its summary and description are not empty; it has at least one example and declares its exit statuses; every argument name is kebab-case; every structured command has a result schema.
-2. The parser's commands are exactly the registry's, and each command parses exactly the arguments it declares, besides `--help` (and `--version` at the root).
+1. Every declaration is complete: its id is its path joined with dots and is unique; its summary and description are not empty; it has at least one example and declares its exit statuses; every argument name is kebab-case; every command whose default format is not `text` declares at least one result.
+2. The parser's commands are exactly the registry's, and each command parses exactly the arguments it declares, besides `--help` (and `--version` at the root). Every command declares `--output`.
 3. Every example parses as the command it belongs to.
-4. Every declared default is the value the parser yields when the argument is absent.
-5. Every example of a structured command, and every `--dry-run` example of `bento run`, succeeds in a fixture project, and its stdout validates against the command's result schema.
-6. For every declared `requires`, giving the argument without the one it requires fails with `INVALID_ARGUMENT`, or with status 1 in a pass-through invocation.
+4. Every declared default is the value the parser yields when the argument is absent. Without `--output`, an invocation uses the command's declared default format, and with `--dry-run` the dry-run result's format.
+5. Every example of a structured command, and every `--dry-run` example of `bento run`, succeeds in a fixture project, and its stdout validates against the schema of the result it produces.
+6. For every declared `requires`, giving the argument without the one it requires fails with `INVALID_ARGUMENT` in a structured invocation, and with status 1 in a pass-through one. Every format a command does not accept, and every format it accepts only with `--dry-run` given without it, fails with `INVALID_ARGUMENT`.
 7. `bento --help` names every command.
-8. `guides/cli-reference.md` is exactly what the registry renders.
+8. `guides/cli-reference.md` is exactly what the registry renders, and its code table lists exactly the `ErrorCode` variants, each with its meaning and `details`.
 9. Every Markdown file in `guides/` except `README.md` is compiled into the binary.
 
 ### Commands
 
-| Command | Id | Summary | Output | Effect | Requires | `dryRun` |
+| Command | Id | Summary | `--output` | Effect | Requires | `dryRun` |
 | --- | --- | --- | --- | --- | --- | --- |
-| `bento run` | `run` | Run a JavaScript or TypeScript source file | pass-through; structured with `--dry-run` | `executes` | `project` | yes |
-| `bento install` | `install` | Install dependencies and devDependencies with the project's pnpm | pass-through | `modifies` `node_modules` and `pnpm-lock.yaml` | `project`, `pnpm` | no |
-| `bento cli search` | `cli.search` | Find the bento command for a task described in plain words | structured | `reads` | nothing | no |
-| `bento schema` | `schema` | Show a command's arguments, effects, errors, exit statuses, examples, and result schema | structured | `reads` | nothing | no |
-| `bento docs search` | `docs.search` | Search the guides built into this bento | structured | `reads` | nothing | no |
-| `bento docs show` | `docs.show` | Print one built-in guide, or one of its sections | structured | `reads` | nothing | no |
-| `bento context show` | `context.show` | Show the project, configuration, environment files, and permissions a launch from here would use | structured | `reads` | nothing | no |
+| `bento run` | `run` | Run a JavaScript or TypeScript source file | `text` (pass-through); with `--dry-run`, `json` (default) or `text` | `executes` | `project` | yes |
+| `bento install` | `install` | Install dependencies and devDependencies with the project's pnpm | `text` (pass-through) | `modifies` `node_modules` and `pnpm-lock.yaml` | `project`, `pnpm` | no |
+| `bento cli search` | `cli.search` | Find the bento command for a task described in plain words | `json` (default), `text` | `reads` | nothing | no |
+| `bento schema` | `schema` | Show a command's arguments, effects, errors, exit statuses, examples, and result schemas | `json` (default), `text` | `reads` | nothing | no |
+| `bento docs search` | `docs.search` | Search the guides built into this bento | `json` (default), `text` | `reads` | nothing | no |
+| `bento docs show` | `docs.show` | Print one built-in guide, or one of its sections | `json` (default), `text` | `reads` | nothing | no |
+| `bento context show` | `context.show` | Show the project, configuration, environment files, and permissions a launch from here would use | `json` (default), `text` | `reads` | nothing | no |
 
 `bento run` is not idempotent; every other command is.
 
 Arguments:
 
-- `bento run`: `script` (positional path, required); `arguments` (trailing); `--watch`, `--dry-run` (flags); `--output` (choice of `json` or `text`, no default, requires `dry-run`); and under the heading `Permissions`, the flags proposal 0003 defines: `--permission`, `--allow-fs-read` and `--allow-fs-write` (repeatable path options), `--allow-env` (repeatable option), and the flags `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-addons`, `--allow-wasi`, `--allow-ffi`, `--allow-inspector`, `--allow-openssl-store`, `--allow-fs-vfs`, and `--allow-language-model`. Every `--allow-*` argument requires `permission`.
-- `bento install`: `--frozen-lockfile` (flag).
-- `bento cli search` and `bento docs search`: `query` (positional string, required, multiple; the words are joined with spaces, so quoting is optional), `--limit` (integer from 1 to 20, default 5), `--output` (default `json`).
+- `bento run`: `script` (positional path, required); `arguments` (trailing); `--watch` and `--dry-run` (flags); `--output` (choice, as above); `--error-format` (choice of `text` or `json`, default `text`, delivered with proposal 0007 as [Pass-through invocations](#pass-through-invocations) says); and under the heading `Permissions`, the flags proposal 0003 defines: `--permission`, `--allow-fs-read` and `--allow-fs-write` (repeatable path options), `--allow-env` (repeatable option), and the flags `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-addons`, `--allow-wasi`, `--allow-ffi`, `--allow-inspector`, `--allow-openssl-store`, `--allow-fs-vfs`, and `--allow-language-model`. Every `--allow-*` argument requires `permission`.
+- `bento install`: `--frozen-lockfile` (flag), `--output` (`text` only).
+- `bento cli search` and `bento docs search`: `query` (positional string, required, multiple; the words are joined with spaces, so quoting is optional), `--limit` (integer from 1 to 20, default 5), `--output`.
 - `bento schema`: `command` (positional string, optional, multiple), `--output`.
 - `bento docs show`: `guide` (positional string, required), `--section` (option), `--output`.
 - `bento context show`: `--output`.
 
 Exit statuses:
 
-- Structured commands: `0` on success; `1` on failure, with a failure document.
+- Structured results in this proposal: `0` on success; `1` on failure, with a failure document.
 - `bento run`: `0` when the script finishes; the script's own code when it calls `process.exit(code)`; `130` and `143` when an interrupt or termination signal stops it; `1` for every Bento failure, which a script exiting with 1 also produces. With `--dry-run`, the structured statuses.
 - `bento install`: `0` on success; pnpm's status when pnpm fails; `1` for every Bento failure.
 
@@ -284,7 +339,7 @@ Exit statuses:
 
 ### Help
 
-- `bento --help`, `bento -h`, and `bento` alone print the orientation to stdout and exit with status 0. It is at most 30 lines and contains: one sentence on what Bento is; the usage line; the commands in two groups, "Run" (`run`, `install`) and "Discover" (`cli search`, `schema`, `docs search`, `docs show`, `context show`), each with its summary; one sentence on the two output contracts; and the discovery loop, ending with `bento docs show bento-for-agents`.
+- `bento --help`, `bento -h`, and `bento` alone print the orientation to stdout and exit with status 0. It is at most 30 lines and contains: one sentence on what Bento is; the usage line; the commands in two groups, "Run" (`run`, `install`) and "Discover" (`cli search`, `schema`, `docs search`, `docs show`, `context show`), each with its summary; one sentence on `--output` and the failure document; and the discovery loop, ending with `bento docs show bento-for-agents`.
 - `bento <command> --help` prints the command's summary and description, its usage, its arguments grouped by heading, its effect, and its examples, to stdout with status 0.
 - Help is text in every invocation; it is usage, not a result.
 - `bento --version` prints `bento <version>` as today.
@@ -337,8 +392,8 @@ bento cli search [--limit <1-20>] [--output json|text] <query>...
 bento schema [--output json|text] [<command>...]
 ```
 
-- Without a command, returns `{ "items": [...] }` with every command's `command`, `id`, `summary`, `effect`, and `output`, in registry order.
-- With a command, returns its declaration: `id`, `command` (`bento` and the path), `summary`, `description`, `output`, `effect` (`kind`, and `what` for `modifies`), `requires`, `dryRun`, `idempotent`, `arguments` (each with `name`, `kind`, `usage` such as `--allow-fs-read <path>`, `type`, `required`, `multiple`, `default`, `acceptedValues`, `minimum`, `maximum`, `requires`, `heading`, `summary`), `errors` (each with `code`, `retryable`, and `meaning`, including `INVALID_ARGUMENT` and `INTERNAL`), `exitStatuses` (each with `status` and `meaning`), `examples` (each with `summary` and `command`, shell-quoted), and `resultSchema` (or null).
+- Without a command, returns `{ "items": [...] }` with every command's `command`, `id`, `summary`, `effect`, and `output` (its default format), in registry order.
+- With a command, returns its declaration: `id`, `command` (`bento` and the path), `summary`, `description`, `output`, `effect` (`kind`, and `what` for `modifies`), `requires`, `dryRun`, `idempotent`, `arguments` (each with `name`, `kind`, `usage` such as `--allow-fs-read <path>`, `type`, `required`, `multiple`, `default`, `acceptedValues`, `minimum`, `maximum`, `requires`, `heading`, `summary`), `results` (each with `format`, `dryRun`, and `schema`), `errors` (each with `code`, `retryable`, and `meaning`, including `INVALID_ARGUMENT` and `INTERNAL`), `exitStatuses` (each with `status` and `meaning`), and `examples` (each with `summary` and `command`, shell-quoted).
 - `run`, `cli search`, `cli.search`, and `bento cli search` all name the same command, as separate words or one.
 - An unknown command fails with `NOT_FOUND`. Its suggestions are `bento schema <path>` for up to three commands that `bento cli search` ranks highest for the given words, then `bento schema`.
 
@@ -369,8 +424,8 @@ The binary contains every Markdown file in `guides/` except `README.md`, embedde
 
 Two new guides ship and are compiled in with the others:
 
-- `guides/bento-for-agents.md` (`id: guide.bento-for-agents`, `title: Bento for Agents`, `describes: [proposal.0005]`) is the orientation an agent reads first, written in Phase 3 from this proposal and kept under 120 lines. It covers when to use `bento`; the loop of `bento cli search`, `bento schema`, `bento docs search`, `bento context show`, `bento run --dry-run`, running, and verifying; the two output contracts, the failure document, and exit statuses; that a bare `bento run` is unrestricted and `--permission` restricts it; that `--dry-run` and `--output` must come before the script, because after it they belong to the script, which then runs; and what a dry run does not check. It names other guides rather than repeating them, and includes one line a project can put in its own `AGENTS.md`.
-- `guides/cli-reference.md` (`id: guide.cli-reference`, `title: CLI Reference`, `describes: [proposal.0005]`) is generated from the registry. It states the output contracts, the failure document's JSON Schema, and the error codes, then documents each command: summary, description, effect, requirements, dry-run support, idempotence, output contract, errors, exit statuses, an argument table, examples, and the result schema. It opens by saying it is generated and must not be edited by hand.
+- `guides/bento-for-agents.md` (`id: guide.bento-for-agents`, `title: Bento for Agents`, `describes: [proposal.0005]`) is the orientation an agent reads first, written in Phase 3 from this proposal and kept under 120 lines. It covers when to use `bento`; the loop of `bento cli search`, `bento schema`, `bento docs search`, `bento context show`, `bento run --dry-run`, running, and verifying; `--output`, the two output contracts, the failure document, error codes, and exit statuses; that a bare `bento run` is unrestricted and `--permission` restricts it; that `--dry-run` and `--output` must come before the script, because after it they belong to the script, which then runs; and what a dry run does not check. It names other guides rather than repeating them, and includes one line a project can put in its own `AGENTS.md`.
+- `guides/cli-reference.md` (`id: guide.cli-reference`, `title: CLI Reference`, `describes: [proposal.0005]`) is generated from the registry. It states the wire contract: the output formats, the two output contracts and the rule between them, the failure document's JSON Schema, and the code table from the `ErrorCode` enum. Then it documents each command: summary, description, effect, requirements, dry-run support, idempotence, default output format, results and their schemas, errors, exit statuses, an argument table, and examples. It opens by saying it is generated and must not be edited by hand.
 
 ### Shared reports
 
@@ -559,11 +614,11 @@ A dry run prepares the launch exactly as `bento run` would, by calling the same 
 
 1. **Arguments.** Parse the command line and apply proposal 0003's rules for permission flags. A violation fails with `INVALID_ARGUMENT`; the message is the one the launch prints, and `details.argument` names the flag.
 2. **Inherited environment and permissions.** Read the inherited environment and decode `BENTO_PERMISSION_CEILING`. A variable that is not UTF-8, or a ceiling that cannot be read, fails with `INVALID_CONFIGURATION` and `details.variable`. A flag asking for more than the ceiling fails with `PERMISSION_DENIED`, with `details.argument` and `details.limit`. A file system flag whose path cannot be resolved fails with `INVALID_ARGUMENT`.
-3. **Script and project.** Resolve the script against the current directory and find its project. A missing script, or one that is not a regular file, fails with `NOT_FOUND` and `details.path`. No enclosing `package.json` fails with `NOT_FOUND`, `details.missing: "package.json"`, and `details.searchedFrom`. An unreadable `package.json` fails with `PRECONDITION_FAILED`; one that is not valid JSON, or has a field Bento rejects, fails with `INVALID_CONFIGURATION`, with `line` and `column` for a syntax error.
-4. **Environment files.** Load them for `watch` with `--watch` and `run` otherwise. An unreadable file fails with `PRECONDITION_FAILED`; a malformed one, or a `NODE_ENV` containing `/`, fails with `INVALID_CONFIGURATION`. The message names the file and line, never the value.
-5. **`tsconfig.json`.** Load it with `CompilerSettings::load`. A file in the chain that cannot be read or parsed fails with `INVALID_CONFIGURATION` and `details.path`. Diagnostics go into the preview.
+3. **Script and project.** Resolve the script against the current directory and find its project. A missing script, or one that is not a regular file, fails with `NOT_FOUND` and `details.path`. No enclosing `package.json` fails with `NOT_FOUND`, `details.missing: "package.json"`, and `details.searchedFrom`. An unreadable `package.json` fails with `PRECONDITION_FAILED`; one that is not valid JSON, or has a field Bento rejects, fails with `INVALID_CONFIGURATION` and `details.path`, with `location` at the syntax error.
+4. **Environment files.** Load them for `watch` with `--watch` and `run` otherwise. An unreadable file fails with `PRECONDITION_FAILED`; a malformed one fails with `INVALID_CONFIGURATION`, `details.path`, and `location` at its line, with `column` null; and a `NODE_ENV` containing `/` fails with `INVALID_CONFIGURATION` and `details.variable: "NODE_ENV"`. No message carries a value.
+5. **`tsconfig.json`.** Load it with `CompilerSettings::load`. A file in the chain that cannot be read or parsed fails with `INVALID_CONFIGURATION` and `details.path`, with `location` when the parser reports a position. Diagnostics go into the preview.
 6. **Reading the script.** When the launch's permissions would not let it read its own script, as when a restricted ceiling does not cover it, fail with `PERMISSION_DENIED`, `details.path`, and `details.permission: "fs-read"`.
-7. **Transforming the script.** For a `.ts`, `.mts`, `.cts`, `.tsx`, or `.jsx` script, read it and transform it with `bento_compiler::transform` and the settings the runtime would use: the project's, or TypeScript's defaults for a dependency source as the [TypeScript and JSX](../guides/typescript-and-jsx.md) guide defines one. A failure fails with `TRANSFORM_FAILED`, with `path`, `line`, and `column`. An unreadable script fails with `PRECONDITION_FAILED`. Other scripts are evaluated as written, so they are not checked.
+7. **Transforming the script.** For a `.ts`, `.mts`, `.cts`, `.tsx`, or `.jsx` script, read it and transform it with `bento_compiler::transform` and the settings the runtime would use: the project's, or TypeScript's defaults for a dependency source as the [TypeScript and JSX](../guides/typescript-and-jsx.md) guide defines one. A source Oxc's parser or semantic checker rejects fails with `SYNTAX_ERROR`; syntax the settings leave untransformed, or any other transformer error, fails with `TRANSFORM_FAILED`. Both set `location`. These are the codes a real run reports for the same failure. An unreadable script fails with `PRECONDITION_FAILED`. Other scripts are evaluated as written, so they are not checked.
 
 On success the result is the launch preview:
 
@@ -592,7 +647,7 @@ On success the result is the launch preview:
 - `notChecked` names what the preview does not establish. It always contains `imports`, because the modules the script imports are not resolved, read, or transformed, so a missing package, an import the permissions do not allow reading, or a syntax error in another module is not detected; and `execution`, because the script never runs, so its runtime behavior and the operations its permissions deny are not predicted. It contains `entry-syntax` when `entry.transform` is `none`, because Bento hands such a script to the engine as written and the dry run does not parse it.
 - A dry run reads only `package.json`, the files of the `tsconfig.json` chain and the package manifests resolving it reads, the environment files, and the script. It starts no JavaScript engine, subprocess, file watcher, or network connection, and writes no file. It prints no diagnostics to stderr.
 - `--dry-run` and `--output` are Bento options and go before the script. After the script they belong to the script: `bento run server.ts --dry-run` runs `server.ts` with `--dry-run` in `process.argv`, as Node would. The `--dry-run` summary, `bento schema run`, and Bento for Agents say so.
-- `--output` on `bento run` without `--dry-run` fails the launch with the usage error `--output requires --dry-run`, before anything runs.
+- `--output json` and `--output text` are the dry run's formats, `json` by default. `bento run --output json` without `--dry-run` fails with `INVALID_ARGUMENT` until proposal 0007 adds the run receipt, as [Output formats](#output-formats) says.
 
 ### Library changes
 
@@ -600,24 +655,24 @@ The CLI composes these public additions, so a Rust host can build the same repor
 
 - `bento_workspace::LaunchEnvironment` gains `files()`, the environment files it considered with their layer, path, whether each exists, and the names each defines; and `provenance()`, for every variable a file or the launch default sets, the layers that set it in precedence order, including the inherited layer when an inherited variable overrides it. Neither carries values. It keeps the file value an inherited variable overrides, which proposal 0003's restricted launches also need.
 - `bento_workspace::Manifest` gains `name`, `imports`, and `exports`, reported and not interpreted: resolution reads `imports` and `exports` through `oxc_resolver` as before, and a `name` that is not a string is null rather than an error.
-- `bento_compiler` gains `tsconfig_chain(project_root)`, returning the chain described above or the `ConfigError` that `CompilerSettings::load` would return.
+- `bento_compiler` gains `tsconfig_chain(project_root)`, returning the chain described above or the `ConfigError` that `CompilerSettings::load` would return. `bento_compiler::TransformError` gains `kind`: `Syntax` for diagnostics from Oxc's parser and semantic checker, and `Transform` for everything else `transform` rejects, so the dry run and the runtime tell `SYNTAX_ERROR` from `TRANSFORM_FAILED` the same way.
 - `bento_cli` adds `schemars` for result schemas, and `jsonschema` as a development dependency for the parity tests.
 
 ### Guides and repository
 
 - `guides/bento-for-agents.md` and the generated `guides/cli-reference.md` are added.
-- [Running with Bento](../guides/running-with-bento.md) gains sections, written from this proposal, on discovering commands, previewing a launch with `--dry-run`, and the output contracts.
+- [Running with Bento](../guides/running-with-bento.md) gains sections, written from this proposal, on discovering commands, previewing a launch with `--dry-run`, and the wire contract: `--output`, the output contracts, failure documents, and error codes.
 - The README's usage section names the discovery commands and `bento docs show bento-for-agents`.
 - `mise.toml` gains `cli:reference`, which regenerates `guides/cli-reference.md` from the registry.
 
 ## Compatibility
 
-- `bento run` and `bento install` without `--dry-run` keep their streams, messages, and exit statuses, and accept exactly the command lines proposals 0003 and 0004 define. A usage error's last line now names `bento schema <command>`.
+- `bento run` and `bento install` without `--dry-run` keep their streams, messages, and exit statuses, and accept exactly the command lines proposals 0003 and 0004 define, plus `--output text`, which changes nothing. A usage error's last line now names `bento schema <command>`.
 - `bento` alone prints the orientation to stdout and exits with 0 instead of 1.
 - Words that select no command now produce a failure document on stderr, still with status 1, instead of clap's text.
 - `bento help <command>` is removed; `bento <command> --help` prints the same help.
 - All help text is regenerated and reworded.
-- New: the five discovery commands, `--dry-run`, and `--output` on `bento run`.
+- New: the five discovery commands, `--dry-run`, and `--output` on every command. `bento run --output json` without `--dry-run` fails with a failure document until proposal 0007 gives it a receipt.
 - The library additions are additive. No stored data changes.
 
 ## Implications on adoption
@@ -627,7 +682,7 @@ Nothing new to install. The binary grows by the embedded guides, about 200 KB of
 ## Scope
 
 - The registry, the generated parser, help, and CLI reference, and the parity tests.
-- The structured output contract, the failure document, and contract selection.
+- The wire contract: the output formats, both output contracts and the rule between them, the failure document with `location`, and the `ErrorCode` enum and its table. `--error-format` is defined here and delivered with proposal 0007's codes, as [Pass-through invocations](#pass-through-invocations) says.
 - `bento cli search`, `bento schema`, `bento docs search`, `bento docs show`, and `bento context show`.
 - `bento run --dry-run`, with tests that it runs no guest code and writes nothing (a script whose top level writes a marker file leaves no marker), that every failure step reports its code, and that no environment value appears in any output (a `.env` secret never appears in context, preview, or failure output).
 - The library additions, the guides, the README paragraph, and the `cli:reference` task.
@@ -635,7 +690,7 @@ Nothing new to install. The binary grows by the embedded guides, about 200 KB of
 ### Out of scope
 
 - `bento resolve` and module-resolution inspection: proposal 0006. A dry run checks only the script, and says so in `notChecked`.
-- Structured runtime errors, `--error-format json`, `bento run --output json` with captured standard streams, and runtime events: proposal 0007. Pass-through invocations keep their human messages here.
+- What proposal 0007 adds under this contract: structured runtime errors and the codes `STARTUP_FAILED`, `UNCAUGHT_EXCEPTION`, and `DISPOSAL_INCOMPLETE`; delivering `--error-format`; `bento run --output json` without `--dry-run`, a run receipt with captured standard streams; and `bento run --output ndjson`, a stream of runtime events. Pass-through invocations keep their human messages until then.
 - Inline and standard-input evaluation (`-e`, `-p`, `-`): proposal 0008.
 - `--process-timeout` and heap limits: proposal 0009.
 - `node:vfs` and `--vfs-load`: proposal 0010.
@@ -657,6 +712,7 @@ Nothing new to install. The binary grows by the embedded guides, about 200 KB of
 - [ARCHITECTURE.md](../ARCHITECTURE.md): `bento_cli` stays "a thin composition layer over the libraries". The registry describes the CLI and lives in it; the reports compose library functions.
 - Proposal 0003 ([PR #259](https://github.com/bento-js/bento/pull/259), approved for implementation): the dry run reproduces its flag rules, messages, ceilings, implied script read, and environment removal by calling the same code, and the permissions report uses its vocabulary.
 - Proposal 0004 ([PR #268](https://github.com/bento-js/bento/pull/268), draft): the registry declares `bento run <script>` with no task targets, and `context show` reports no `tasks`.
+- Proposals 0006 ([PR #274](https://github.com/bento-js/bento/pull/274)) and 0007 ([PR #277](https://github.com/bento-js/bento/pull/277)), drafts: on 2026-11-27 Mark decided that this proposal owns the output formats, the failure document, and the code table, and that those proposals adopt them. The wire contract above is written for them to cite.
 
 ## Future directions
 
@@ -666,7 +722,7 @@ Nothing new to install. The binary grows by the embedded guides, about 200 KB of
 - An agent-usability benchmark in `bench/` measuring discovery accuracy, invalid-command rate, and commands per task for an agent with no prior knowledge of Bento.
 - `bento_runtime::check(config, entry)`, the embedding counterpart of a dry run.
 - Accepting Node's command line (#260) would register its invocation form as another pass-through command in the registry. Audit mode (#261) would add a field to the permissions report. Node configuration files (#262) would add the file to the context and a `config-file` value to the permissions report's `source`.
-- Proposals 0006 through 0010 would declare their commands and flags in the registry, which puts them in help, search, schema, and the reference without further work. Proposal 0007's structured runs could reuse the failure document.
+- Proposals 0006 through 0010 declare their commands, options, results, and codes in the registry under this contract, which puts them in help, search, schema, and the reference without further work.
 - Per-option provenance in the `tsconfig.json` report, naming the file that set each execution option.
 
 ## Alternatives considered
@@ -681,11 +737,11 @@ Nothing new to install. The binary grows by the embedded guides, about 200 KB of
 - **Embed proposals and policies as documentation.** They record intent and history, not what the binary does.
 - **Report environment values masked, hashed, or by length.** Each still leaks something about a secret. Names and layers answer which file supplied a variable.
 - **Resolve the script's whole module graph in a dry run.** That is module-resolution inspection, which proposal 0006 owns. The preview names the gap instead.
+- **Each proposal defines its own output option, failure envelope, and error codes.** Proposal 0007's first draft defined `--error-format`, the failure body's `location`, and its run codes itself, and proposal 0006 asked whether to wait for this proposal. Contracts defined one proposal at a time drift: `--output` could mean different things on different commands, and code lists could collide. Mark decided on 2026-11-27 that this proposal owns the output formats, the failure document, and the code table, and that the others adopt them.
 
 ## Open questions
 
 - [NEEDS CLARIFICATION: Sequencing. This design declares `bento run` as proposals 0003 and 0004 define it: Node's permission flags, and script targets only. Should implementation start only after both merge? If proposal 0004 is not accepted, should `bento run --dry-run <task-name>` fail with `INVALID_ARGUMENT`, or must the preview cover task targets too?]
-- [NEEDS CLARIFICATION: `--output` on `bento run`. This proposal makes `--output json|text` the result format of every structured invocation and accepts it on `bento run` only with `--dry-run`. Proposal 0007 plans `bento run --output json` for captured standard streams. Should proposal 0007 adopt this meaning, so that `--output json` asks for a structured result instead of pass-through, or should the dry run use a different option name?]
 - [NEEDS CLARIFICATION: Where the generated CLI reference lives. This proposal generates it into `guides/cli-reference.md`, so the documentation site, `bento docs`, and the reference are one file. The process says guides are written from proposals, not from code. Is a generated reference acceptable under `guides/`, or should it live elsewhere, such as `docs/cli-reference.md`, and stay out of `bento docs`?]
 
 ## Acknowledgments
