@@ -1,0 +1,1 @@
+import{t as e}from"./framework.aUqElhQb.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.DWmSUM-o.js`),[])};export{t as default};
