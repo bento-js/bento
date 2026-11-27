@@ -1,0 +1,1 @@
+import{t as e}from"./framework.DPI0H_hR.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.BehFLF-T.js`),[])};export{t as default};
