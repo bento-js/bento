@@ -15,7 +15,13 @@ import {
     EntriesTable,
     InventoryModuleTable,
 } from "#app/ui/inventory/tables.tsx";
-import { PageHeader, proseStyle, sectionStyle, stackStyle } from "#app/ui/layout.tsx";
+import {
+    definitionGridStyle,
+    PageHeader,
+    proseStyle,
+    sectionStyle,
+    stackStyle,
+} from "#app/ui/layout.tsx";
 import { paginate } from "#app/ui/query.ts";
 import { RunConditions, RunMeta, StateNotice } from "#app/ui/run-conditions.tsx";
 
@@ -50,10 +56,22 @@ export function InventoryPage(handle: Handle<InventoryPageProps>) {
                     <p mix={proseStyle}>
                         Presence only: globals and public built-in module exports from the pinned
                         Node baseline, compared by name and <code>typeof</code>. Nothing here was
-                        called, so a present export is not evidence that it behaves like Node. An
-                        inspection error means the entry could not be examined; it is not counted as
-                        missing.
+                        called, so a present export is not evidence that it behaves like Node.
                     </p>
+                    <dl mix={definitionGridStyle}>
+                        <dt>Missing</dt>
+                        <dd>Bento does not have the export, or does not have its module at all.</dd>
+                        <dt>Type mismatch</dt>
+                        <dd>
+                            Both runtimes have the name, but <code>typeof</code> differs, such as a
+                            function in Node and an object in Bento.
+                        </dd>
+                        <dt>Inspection error</dt>
+                        <dd>
+                            The module or export exists, but importing or reading it threw, so its
+                            type is unknown. It is not counted as missing.
+                        </dd>
+                    </dl>
                     <AvailabilitySummary action={action} summary={summary} />
                     <RunConditions report={report} />
                 </section>
