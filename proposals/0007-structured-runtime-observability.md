@@ -48,7 +48,7 @@ The workaround for each is screen-scraping and sleeping. It is slow, it races, a
 - [Proposal 0001](0001-embeddable-typescript-runtime.md): the runtime prints nothing of its own; the host decides how to report. A plain `bento run` behaves like `node script.js`: the script owns stdout and stderr, and its exit code is Bento's.
 - Proposal 0003 ([#259](https://github.com/bento-js/bento/pull/259), awaiting implementation) makes denials Node's errors: `ERR_ACCESS_DENIED` with `permission` and `resource` properties, `ERR_DLOPEN_DISABLED` for addons, and the Prompt API's `NotAllowedError`. A denied `fetch` rejects with an error whose `cause` is the denial. Usage errors exit with status 1.
 - Proposal 0004 ([#268](https://github.com/bento-js/bento/pull/268), draft) removes the task runner, so `bento run` runs only scripts. This proposal defines nothing for tasks.
-- Proposal 0005 ([#269](https://github.com/bento-js/bento/pull/269), draft) drafts Bento's structured output conventions: one JSON result on stdout, compact unless stdout is a terminal; a failure document on stderr in `mcp`'s shape; camelCase keys, lowercase kebab-case enumerated values, absolute paths; codes `INVALID_ARGUMENT`, `NOT_FOUND`, `PRECONDITION_FAILED`, `INVALID_CONFIGURATION`, `PERMISSION_DENIED`, `TRANSFORM_FAILED`, and `INTERNAL`; and `bento run --output json|text` for `--dry-run` only. This proposal adopts those conventions rather than inventing parallel ones.
+- Proposal 0005 ([#269](https://github.com/bento-js/bento/pull/269), draft) owns Bento's command-line wire contract. On 2026-11-27 Mark decided that its sections "Output formats", "Structured invocations", "Pass-through invocations", "Deciding the contract", "Failure documents", and "Error codes" are the single definition of the output formats and their framing, the rule between structured and pass-through invocations, the failure document and its body, `--error-format`, and the one code table, and that this proposal adopts them. 0005 names this proposal's results and codes and leaves their definitions here. It also adds `bento_compiler::TransformError::kind`, which tells a syntax error from a transform failure.
 - Proposal 0011 ([#276](https://github.com/bento-js/bento/pull/276), draft) adds `wait_async()` and makes `RunOutcome` `Clone`, `PartialEq`, and `Eq`. Capture and events must not depend on whether a host waits synchronously or asynchronously.
 - Per-instance redirection cannot reach native code that writes to file descriptors 1 and 2 directly, because file descriptors belong to the process. Only process-wide redirection (`dup2`) can, and it cannot tell instances apart.
 - A sink called synchronously from the isolate's thread delays the guest. A capture that waits for end-of-file can hang on an orphaned child.
@@ -57,7 +57,7 @@ The workaround for each is screen-scraping and sleeping. It is slow, it races, a
 
 - An agent can branch on a stable code and on typed fields, never on message text, and the same failure has the same code whether it reaches the agent as a receipt, an event, or a failure document.
 - Truncation is never silent: every captured stream says how many bytes the stream carried in total.
-- Stdout in machine modes is always parseable: nothing Bento or the guest writes can corrupt it.
+- A structured run's stdout is always parseable: nothing Bento or the guest writes can corrupt it.
 - An event reports a fact the runtime observed, not something guest code claimed; the listening event's port is the bound port.
 - Plain `bento run` is byte-for-byte unchanged, and the default library configuration costs nothing: no pipes, threads, or event values.
 
@@ -81,11 +81,11 @@ Three things in it are compromised. `Startup` conflates an instance that could n
 
 **Listeners**: `feature_ops.rs` replaces `op_net_listen_tcp` and `op_net_listen_tls` with Bento ops that call the originals, which is the pattern for observing a bind from Rust. UDP, `unixpacket`, and `vsock` listeners are denied as unsupported.
 
-**`mcp`'s failure document and proposal 0005's draft conventions** are the closest prior art for the CLI contract. 0005's `bento run --output` exists only for `--dry-run`, and its pass-through contract leaves Bento's run failures as human text.
+**Proposal 0005's wire contract** is what this proposal's CLI output is written under, and Mark's `mcp` CLI is its prior art. Until this proposal is implemented, 0005 rejects `bento run --output json` without `--dry-run`, accepts no `ndjson` on `bento run`, and defines `--error-format` without declaring it on `bento run`, so Bento's run failures stay human text.
 
 ## Proposed solution
 
-Build one data model in the libraries and render it three ways. `bento_runtime` gains structured errors (name, bare message, Node `code`, source-mapped frames classified by origin, causes, and typed details), per-instance standard streams that a host can inherit, capture with a bound, or stream to a sink, and a typed event sink that reports start, diagnostics, listeners, workers, and the run's end. The CLI renders that model as a receipt, an event stream, or a failure document, all sharing one failure body and one set of run fields.
+Build one data model in the libraries and render it three ways. `bento_runtime` gains structured errors (name, bare message, Node `code`, source-mapped frames classified by origin, causes, and typed details), per-instance standard streams that a host can inherit, capture with a bound, or stream to a sink, and a typed event sink that reports start, diagnostics, listeners, workers, and the run's end. Under proposal 0005's wire contract, the CLI renders that model as a receipt, an event stream, or a failure document, all sharing 0005's failure body and one set of run fields.
 
 ```text
 bento run --output json build.ts               → stdout: one receipt with outcome, exit code, duration, bounded stdout and stderr, diagnostics, and error
@@ -129,14 +129,14 @@ let stdout = output.stdout().expect("stdout is captured");
 ### Vocabulary
 
 - A **run** is one attempt to execute the script in a runtime instance, from the call to `start` to the instance's end; when `start` fails, the run ends at once without an instance. A plain `bento run` has one run; `bento run --watch` has one for every start. The CLI numbers the runs of one invocation from 1 in the order it calls `start`.
-- A **failure** is why a run ended badly. In the library it is a `RuntimeError`; in the CLI, any failure, including one before a run exists, is described by a **failure body**.
+- A **failure** is why a run ended badly. In the library it is a `RuntimeError`; the CLI reports it with proposal 0005's failure body.
 - An **exception** is the JavaScript value a failure carries when it was thrown and nothing caught it. Not every failure has one, and an exception has its own causes.
-- A failure's **kind** is the stage of a run it belongs to. Its **code** is the CLI's stable name for it. Each kind has exactly one code; the CLI has further codes for failures before a run.
+- A failure's **kind** is the stage of a run it belongs to. Its **error code** is the code from proposal 0005's one table that the CLI reports for it; each kind maps to exactly one code.
 - A **diagnostic** reports something about the project or the tooling without ending the run.
 - An **event** is something that happened, delivered as it happens. A run's **outcome** is how it ended; one event, `ended`, carries it whatever it is.
 - A **captured stream** is what Bento kept of one standard stream: its first bytes up to a limit, and how many bytes the stream carried in total.
 - A **listener** is a socket the guest bound and listens on. Bento reports its transport and address, not the protocol served over it.
-- **Machine output** is `--output json` (a **receipt**) or `--output ndjson` (an **event stream**). **Pass-through** output is today's: the script owns stdout and stderr.
+- A **receipt** is `bento run`'s `json` result, describing one run; an **event stream** is its `ndjson` result. Proposal 0005's vocabulary defines the other command-line terms used here: output format, structured and pass-through contracts, error format, failure document, failure body, and error code.
 
 ### Structured runtime errors
 
@@ -155,7 +155,7 @@ let stdout = output.stdout().expect("stdout is captured");
 | `Uncaught` | The guest threw, or a promise rejected, and nothing handled it; or the guest used an unsupported runtime feature. Unchanged. | `UNCAUGHT_EXCEPTION` |
 | `Internal` (new) | Bento itself failed: the runtime thread panicked, or a thread or async runtime could not be created. Was `Startup`. | `INTERNAL` |
 
-`bento_compiler::TransformError` gains `pub kind: TransformErrorKind`, with `Syntax` for diagnostics from Oxc's parser and semantic checker and `Transform` for everything else `transform` rejects, so the runtime can tell the two apart. The panic message `runtime thread panicked: <payload>` is unchanged; only its kind changes.
+The runtime tells `Syntax` from `Transform` with `bento_compiler::TransformError::kind`, which proposal 0005 adds: `Syntax` for diagnostics from Oxc's parser and semantic checker, and `Transform` for everything else `transform` rejects. Whichever proposal is implemented first adds it. The panic message `runtime thread panicked: <payload>` is unchanged; only its kind changes.
 
 #### `RuntimeError`
 
@@ -416,75 +416,92 @@ pub enum Listener {
 
 ### The `bento run` command line
 
-#### Options
+This section writes under proposal 0005's wire contract and defines only what 0005 leaves to this proposal. The output formats and their framing, the rule that decides whether an invocation is structured, the failure document and its body's `code`, `message`, `retryable`, `details`, `suggestions`, and `location`, the definition of `--error-format`, and the behavior when stdout's reader has gone away are 0005's, in its sections "Output formats", "Structured invocations", "Pass-through invocations", "Deciding the contract", "Failure documents", and "Error codes".
 
-These options go before the script, as proposal 0005 requires of Bento's options; after the script they belong to the script.
+#### What this proposal changes in proposal 0005's contract
 
-| Option | Values | Default | Meaning |
+- It lifts 0005's usage error `--output json requires --dry-run`. Without `--dry-run`, `bento run --output json` is structured and writes a [receipt](#receipts), and `bento run --output ndjson` is structured and writes an [event stream](#event-streams). With `--dry-run`, `--output json` and `text` keep 0005's meaning, and `ndjson` stays rejected.
+- It declares `--error-format` on `bento run`'s registry entry. 0005 defines the option and leaves shipping it to this proposal, because only with this proposal's codes can it report every run failure.
+- It adds two results to `bento run`'s registry entry: the receipt (`json`, without `--dry-run`) and the event (`ndjson`, one line). Each declares the JSON Schema of its Rust type and at least one example that 0005's parity tests run in the fixture project, and `bento run` declares the statuses under [Exit statuses](#exit-statuses).
+- It declares `--max-output` on `bento run`, defined below.
+- It adds `exception` to the failure body, a compatible addition under 0005's rule.
+- It adds four rows to 0005's code table, and defines the details and suggestions of run failures reported under codes 0005 already has.
+- It declares what `bento run` does when stdout's reader has gone away, as 0005 asks each command to declare.
+
+#### `--max-output`
+
+| Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `--output <format>` | `text`, `json`, `ndjson` | `text` | `text` is pass-through. `json` writes one receipt. `ndjson` writes an event stream. |
-| `--max-output <bytes>` | a non-negative integer | 65536 | With `--output json`, the bytes kept of each of stdout and stderr. |
-| `--error-format <format>` | `text`, `json` | `text`, or `json` under machine output | How Bento reports failures in pass-through runs. |
+| `--max-output <bytes>` | integer, minimum 0 | 65536 | The bytes of each of stdout and stderr that a receipt keeps. |
 
-Each of these fails with `INVALID_ARGUMENT` and status 1 before anything runs: `--output json` with `--watch`; `--max-output` without `--output json`; `--error-format text` with `--output json`, `--output ndjson`, or proposal 0005's `--dry-run`; and `--dry-run` with `--output ndjson` or `--max-output`. With `--dry-run`, `--output json` and `text` keep proposal 0005's meaning; without it, they mean what this proposal says.
+It goes before the script. Given without `--output json`, including with `--dry-run`, it fails with `INVALID_ARGUMENT`. `--output json` with `--watch` also fails with `INVALID_ARGUMENT`: a watch session has no single run for a receipt to describe, and `--output ndjson` streams it instead.
 
-As proposal 0005 decides a contract from the words before parsing, Bento decides how to report a usage error from them: when `--output json`, `--output ndjson`, or `--error-format json` (or their `=` forms) appear before the first word that is not an option or an option's value, a usage error is a failure document.
+#### The failure body's `exception`
 
-#### Failure body
-
-Every failure the CLI reports in JSON uses one body, in the receipt's `error`, in the `ended` event's `error`, and as `{"error": body}` in a failure document:
+Every failure body gains `exception`: the run failure's `Exception`, shaped as [Serialization](#serialization) says, or `null` for a failure that carried no thrown value and for every failure before a run. For a run failure, `location` is the `RuntimeError`'s location and `message` is the summary line of the text report, without color.
 
 ```json
 {
-    "code": "UNCAUGHT_EXCEPTION",
-    "message": "uncaught exception: /app/throw.ts: Uncaught (in promise) Error: no 42",
-    "retryable": false,
-    "details": {},
-    "suggestions": [],
-    "location": { "path": "/app/throw.ts", "line": 6, "column": 24 },
-    "exception": {
-        "name": "Error",
-        "message": "no 42",
-        "code": null,
-        "frames": [
-            {
-                "function": null,
-                "path": "/app/throw.ts",
-                "url": null,
-                "line": 6,
-                "column": 24,
-                "origin": "application"
-            }
-        ],
-        "customStack": null,
-        "cause": null,
-        "errors": []
+    "error": {
+        "code": "UNCAUGHT_EXCEPTION",
+        "message": "uncaught exception: /app/throw.ts: Uncaught (in promise) Error: no 42",
+        "retryable": false,
+        "details": {},
+        "suggestions": [],
+        "location": { "path": "/app/throw.ts", "line": 6, "column": 24 },
+        "exception": {
+            "name": "Error",
+            "message": "no 42",
+            "code": null,
+            "frames": [
+                {
+                    "function": null,
+                    "path": "/app/throw.ts",
+                    "url": null,
+                    "line": 6,
+                    "column": 24,
+                    "origin": "application"
+                }
+            ],
+            "customStack": null,
+            "cause": null,
+            "errors": []
+        }
     }
 }
 ```
 
-- `code`, `message`, `retryable`, `details`, and `suggestions` mean what proposal 0005 says. `message` is the summary line of the text report, without color, and is not a contract.
-- `location` is the place the text report quotes, as a `SourceLocation`, or `null`. It is set for run failures that have one and for a `package.json` that is not valid JSON.
-- `exception` is the run failure's `Exception`, or `null`.
-- `retryable` is `false` for every code in this proposal: each failure repeats when the same command runs unchanged.
+#### Error codes
 
-Failures before a run use the codes and details proposal 0005 defines: `INVALID_ARGUMENT`, `NOT_FOUND`, `PRECONDITION_FAILED`, `INVALID_CONFIGURATION`, `PERMISSION_DENIED`, and `INTERNAL`. This proposal adds two cases: when `--watch` cannot watch the project, `PRECONDITION_FAILED` with `details.path`; and when Bento cannot install its signal handlers, `INTERNAL`.
+This proposal adds these rows to proposal 0005's table:
 
-Run failures use these codes:
+| Code | Meaning | `retryable` | `details` | `suggestions` |
+| --- | --- | --- | --- | --- |
+| `STARTUP_FAILED` | A runtime instance could not be set up: its project root, working directory, or script could not be resolved as it started, a host module was declared under a specifier that is not a unique `host:` name, or a worker could not be initialized. | `false` | None. | None. |
+| `RESOLUTION_FAILED` | a module specifier could not be resolved | `false` | `specifier`, as written, and `from`, the importing module's absolute path, or its URL when it is not a file. | `bento install`, when the specifier is a bare package name: not relative, not absolute, not `host:`, and not a URL. |
+| `UNCAUGHT_EXCEPTION` | A running script threw, or a promise rejected, and nothing handled it; or the script used a runtime feature Bento does not support. | `false` | None; `exception` is the thrown value. | None. |
+| `DISPOSAL_INCOMPLETE` | A script ended by itself, but work it started had not settled by the shutdown deadline, so its instance was not fully disposed of. | `false` | None. | None. |
 
-| Code | Failure | `details` | `suggestions` |
-| --- | --- | --- | --- |
-| `STARTUP_FAILED` | `ErrorKind::Startup` | `{}` | none |
-| `INVALID_CONFIGURATION` | `ErrorKind::Configuration` | `{"path"}` | none |
-| `RESOLUTION_FAILED` | `ErrorKind::Resolution` | `{"specifier", "referrer"}` | `bento install`, when the specifier is a bare package name: not relative, absolute, `host:`, or a URL |
-| `SYNTAX_ERROR` | `ErrorKind::Syntax` | `{}` | none |
-| `TRANSFORM_FAILED` | `ErrorKind::Transform` | `{}` | none |
-| `PERMISSION_DENIED` | `ErrorKind::Permission` | `{"name", "code", "permission", "resource"}` from the `Denial`, or `{}` without one | the flag that would allow it, when the inherited ceiling allows that flag |
-| `UNCAUGHT_EXCEPTION` | `ErrorKind::Uncaught` | `{}` | none |
-| `INTERNAL` | `ErrorKind::Internal` | `{}` | reporting the defect, as proposal 0005 words it |
-| `DISPOSAL_INCOMPLETE` | A run that ended by itself left work unsettled at the shutdown deadline (`RunOutcome::Shutdown` with `TimedOut`) | `{}` | none |
+`RESOLUTION_FAILED`'s meaning is proposal 0005's, word for word, because proposal 0006 adds the same code and whichever is implemented first adds the row. `specifier` and `from` are the names 0006's report gives those facts; a `bento resolve` failure adds the rest of 0006's report to them.
 
-A permission suggestion names the flag proposal 0003's table gives for the denied permission: `--allow-fs-read=<resource>` and `--allow-fs-write=<resource>` for file system denials with a resource (the bare flag without one), `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-wasi`, `--allow-inspector` for those permissions, `--allow-addons` for `ERR_DLOPEN_DISABLED`, and `--allow-language-model` for `NotAllowedError`. It reads `add --allow-net before the script`. A permission without a flag in that table gets no suggestion.
+A run failure reports the code its kind maps to:
+
+| `ErrorKind` | Code | Row defined by | A run failure's `details` | A run failure's `suggestions` |
+| --- | --- | --- | --- | --- |
+| `Startup` | `STARTUP_FAILED` | this proposal | None. | None. |
+| `Configuration` | `INVALID_CONFIGURATION` | proposal 0005 | `path`: the `tsconfig.json`, or the file it extends, at fault. | None. |
+| `Resolution` | `RESOLUTION_FAILED` | this proposal or proposal 0006 | `specifier`, and `from` from the referrer: a path for a `file:` URL, otherwise the URL. | As in its row. |
+| `Syntax` | `SYNTAX_ERROR` | proposal 0005 | None; `location` is the syntax error. | None. |
+| `Transform` | `TRANSFORM_FAILED` | proposal 0005 | None; `location` is the syntax. | None. |
+| `Permission` | `PERMISSION_DENIED` | proposal 0005 | `denial`: the `Denial`'s `name`, `code`, `permission`, and `resource`, or no `denial` without one. | The flag that would allow it, when the inherited ceiling allows that flag. |
+| `Uncaught` | `UNCAUGHT_EXCEPTION` | this proposal | None. | None. |
+| `Internal` | `INTERNAL` | proposal 0005 | None. | 0005's suggestion to report the defect. |
+
+A run that ended by itself with `RunOutcome::Shutdown` and `ShutdownOutcome::TimedOut` reports `DISPOSAL_INCOMPLETE`.
+
+A run's denial is nested under `denial` because 0005 already gives `PERMISSION_DENIED` a `permission` for a launch that cannot read its own script, in Bento's vocabulary (`fs-read`), while `denial.permission` is Node's name for what the guest was denied (`FileSystemRead`). A permission suggestion names the flag proposal 0003's table gives for the denied permission: `--allow-fs-read=<resource>` and `--allow-fs-write=<resource>` for file system denials with a resource (the bare flag without one), `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-wasi`, `--allow-inspector` for those permissions, `--allow-addons` for `ERR_DLOPEN_DISABLED`, and `--allow-language-model` for `NotAllowedError`. It reads `add --allow-net before the script`. A permission without a flag in that table gets no suggestion.
+
+Failures before a run report 0005's codes. Two of them are `bento run`'s alone: when `--watch` cannot watch the project, `PRECONDITION_FAILED` with `details.path`; and when Bento cannot install its signal handlers, `INTERNAL`.
 
 #### Run fields
 
@@ -514,11 +531,13 @@ They derive from the outcome and from whether Bento asked the run to stop:
 | A requested stop reporting `TimedOut` | `stopped` | `shutdown: incomplete` |
 | Bento exited before the run ended: a second signal, or Bento's own deadline after a signal | `stopped` | `shutdown: abandoned` |
 
-`bento`'s exit statuses are unchanged in every output mode: `0` for `completed`; the exit code's low eight bits for `exited`; `1` for `failed` and for a failure before a run; and 128 plus the signal's number when a signal stopped or abandoned the run.
+#### Exit statuses
+
+`bento run` declares the same exit statuses for its receipt and its event stream as for a pass-through run, unchanged: `0` for `completed`; the exit code's low eight bits for `exited`; `1` for `failed` and for a failure before a run; and 128 plus the signal's number when a signal stopped or abandoned the run. A structured `bento run` therefore does not always exit with 0 on success, as 0005's discovery commands do; its status is the run's.
 
 #### Receipts
 
-With `--output json`, once Bento has prepared the launch (arguments, project, permissions, and environment) and asked the runtime to start the script, stdout receives exactly one receipt when the run ends or is abandoned, followed by a newline, whether or not the instance started. It is compact on one line unless stdout is a terminal, when it is indented by two spaces, as proposal 0005 formats results. Stderr receives nothing from Bento. A failure before that point writes no receipt; it writes a failure document to stderr and exits with status 1.
+A receipt is `bento run`'s `json` result. Once Bento has prepared the launch (arguments, project, permissions, and environment) and asked the runtime to start the script, it writes exactly one receipt when the run ends or is abandoned, whether or not the instance started. A failure before that point is a failure before the first document, which 0005's rules report.
 
 ```json
 {
@@ -537,13 +556,13 @@ With `--output json`, once Bento has prepared the launch (arguments, project, pe
 ```
 
 - `entry` is the canonical script path, followed by the run fields.
-- `stdout` and `stderr` are the captured streams, each captured with `--max-output` bytes. `text` is the kept bytes decoded as UTF-8, with invalid sequences, including one cut by the limit, replaced by U+FFFD; terminal escape sequences are kept as written. `totalBytes` counts every byte the stream carried. `truncated` is `true` exactly when `totalBytes` exceeds the number of bytes kept.
+- `stdout` and `stderr` are the captured streams, each captured with `--max-output` bytes. `text` is the kept bytes decoded as UTF-8, with invalid sequences, including one cut by the limit, replaced by U+FFFD; control characters, terminal escapes included, are escaped as 0005 requires. `totalBytes` counts every byte the stream carried. `truncated` is `true` exactly when `totalBytes` exceeds the number of bytes kept.
 - `diagnostics` lists the run's diagnostics as CLI diagnostic objects (below).
 - When a second signal or the deadline abandons the run, the receipt is written before Bento exits, with the output read so far.
 
 #### Event streams
 
-With `--output ndjson`, stdout carries only events: one compact JSON object per line, each ending in `\n`, never interleaved. Each has `event`, `elapsedMs` (milliseconds since `bento` started, from a monotonic clock), and `run` when it belongs to a run.
+An event stream is `bento run`'s `ndjson` result: each line is one event. Each event has `event`, `elapsedMs` (milliseconds since `bento` started, from a monotonic clock), and `run` when it belongs to a run.
 
 | `event` | `run` | Fields |
 | --- | --- | --- |
@@ -558,25 +577,27 @@ With `--output ndjson`, stdout carries only events: one compact JSON object per 
 | `restarting` | yes: the run about to start | none |
 
 - `started`, `listening`, `worker-started`, and `worker-ended` are the runtime's events with `run` and `elapsedMs` added. `diagnostic` carries a CLI diagnostic object, and `ended` is the CLI's description of the run, not the library's `RunOutcome`.
-- A CLI diagnostic object has `code` `TSCONFIG_OPTION` for a `tsconfig.json` diagnostic, carrying its `severity`, `message`, `path`, and `option`, or `WATCH_UNAVAILABLE` for a file `--watch` cannot watch yet, with severity `warning`, the file as `path`, and `option` `null`. A watch diagnostic belongs to no run.
+- A CLI diagnostic object has `code` `TSCONFIG_OPTION` for a `tsconfig.json` diagnostic, carrying its `severity`, `message`, `path`, and `option`, or `WATCH_UNAVAILABLE` for a file `--watch` cannot watch yet, with severity `warning`, the file as `path`, and `option` `null`. A watch diagnostic belongs to no run. These diagnostic codes name diagnostics, not failures, and are not rows of 0005's error-code table.
 - `output` carries the guest's output: the instance's stdout and stderr, including its workers' and the inherited output of its child processes. Each stream is decoded as UTF-8 incrementally, so a character split between chunks appears whole in the later event, and invalid sequences become U+FFFD. Concatenating a stream's `text` values gives the stream's whole output. Events are not aligned to lines, and output is not bounded.
 - Within a run, `started` comes first when the instance started, and `ended` comes last; every `output` of a run precedes its `ended`. Otherwise, `output` is not ordered against the run's other events. A run whose instance could not start has `ended`, with `outcome: failed`, and no `started`.
+- A run failure after the first event is reported in the run's `ended`, as 0005 anticipates for this stream; a failure before the first event is reported by 0005's rules.
 - Runs never overlap. In watch mode, a burst of changes that leads to a start produces `changed`, then `restarting` with the next run's number, then, if a run was running, its `ended` with `stopReason: restart`, then the next run's events. `paths` are the changed files' absolute paths, sorted and without duplicates. A burst that arrives while a restart is already underway or while Bento is stopping produces no events.
-- The text messages of pass-through watch mode, `watch: restarting…`, `…finished`, `…exited with code`, and `…waiting for changes…`, are not written; the events replace them. Stderr receives nothing from Bento, except a failure document for a failure before the first event.
+- The text messages of pass-through watch mode, `watch: restarting…`, `…finished`, `…exited with code`, and `…waiting for changes…`, are not written; the events replace them.
 - Without `--watch`, Bento exits after the run's `ended` with the run's status. With `--watch`, a signal stops the running run, whose `ended` reports it, and Bento exits; a signal while no run is running ends Bento at once, writing nothing more.
 
-#### Failure documents in pass-through runs
+#### Standard streams of a structured run
 
-With `--output text` and `--error-format json`, the script's output passes through as today, and `tsconfig.json` diagnostics and watch messages stay text on stderr. Every failure report Bento writes, including each failed load or reload under `--watch` and incomplete disposal, is a failure document: `{"error": body}`, compact on one line unless stderr is a terminal. A run failure's document is written after its instance has ended, so it is the last thing Bento writes to stderr for that run.
+- Bento itself reads nothing from stdin, as 0005 requires of a structured invocation. The script's standard input is inherited, as in a pass-through run, so `bento run --output json transform.ts < data.json` works.
+- Before starting any run, Bento keeps a duplicate of its standard output for its own documents and points file descriptor 1 at its standard error. Anything else that writes to file descriptor 1, such as a native addon or a child given that descriptor explicitly, then lands on stderr instead of inside the result.
+- For a reader that has gone away, `bento run` stops writing to stdout, shuts down a running instance as it would for `SIGTERM`, and ends once the run has ended. 0005's rule for a reader that left then applies to what it writes and its status.
 
-#### Keeping machine output clean
+#### Pass-through runs
 
-- With `--output json` or `ndjson`, before starting any run, Bento keeps a duplicate of its standard output for its own JSON and points file descriptor 1 at its standard error. Anything else that writes to file descriptor 1, such as a native addon or a child given that descriptor explicitly, then lands on stderr instead of inside the JSON.
-- When stdout's reader has gone away (`EPIPE`), Bento stops writing to it, shuts down a running instance as it would for `SIGTERM`, and exits with status 0 once the run has ended, writing nothing to stderr, as proposal 0005 specifies for a reader that chose to stop.
+`--error-format` behaves as 0005's "Pass-through invocations" defines. A run failure's failure document carries the codes, details, and `exception` above.
 
 ### Documentation
 
-- [Running with Bento](../guides/running-with-bento.md) gains a section on machine output: receipts, event streams, failure documents, the code table, and the run fields. Its error-report and exit-code sections note the reclassified kinds' new titles.
+- [Running with Bento](../guides/running-with-bento.md) gains a section on receipts and event streams: their contents, the run fields, and the codes this proposal adds. Proposal 0005's wire-contract section covers output formats, failure documents, and `--error-format`, and its generated CLI reference lists the codes from the `ErrorCode` enum. The guide's error-report and exit-code sections note the reclassified kinds' new titles.
 - [Embedding Bento](../guides/embedding-bento.md) documents `Stdio`, capture, sinks, `RuntimeEvent`, and the structured error fields, and replaces its statement that an unreadable `tsconfig.json` is `ErrorKind::Transform`.
 - The text report's title and label for the new kinds are `the project configuration is invalid` (label `invalid here`), `a module has a syntax error` (label `syntax error here`), and `Bento failed internally`.
 
@@ -589,9 +610,9 @@ With `--output text` and `--error-format json`, the script's output passes throu
     - `RuntimeConfig` gains `stdio` and `events`. Code that builds it with `..RuntimeConfig::new(root)` is unaffected; a full struct literal must add them.
     - `RunOutcome` gains `Clone`, `PartialEq`, `Eq`, and `Serialize`. `RuntimeError.message` and `location()` are unchanged.
 - A guest under `Capture` or `Sink` sees streams that are not terminals, so libraries that color output for terminals stop doing so. Under `Inherit` nothing changes.
-- Proposal 0005 allows `bento run --output` only with `--dry-run`. This proposal lifts that restriction and adds `ndjson`; with `--dry-run`, 0005's behavior is unchanged.
+- Proposal 0005 rejects `bento run --output json` without `--dry-run` and does not declare `--error-format` on `bento run`. This proposal lifts the first and ships the second; with `--dry-run`, 0005's behavior is unchanged.
 - Proposal 0011 says a panic is reported with `ErrorKind::Startup`. If both are accepted, it is `ErrorKind::Internal`, with the same message.
-- Later proposals add codes and outcomes, such as a timeout from proposal 0009. Adding a code, an event, an enumerated value, or a field is compatible; consumers branch on known values and ignore the rest. Removing or renaming any of them is breaking and is recorded in a changeset.
+- Later additions, such as a timeout from proposal 0009, follow proposal 0005's compatibility rule, under which the receipt, the events, and the run fields also fall: new fields, enumerated values, events, and codes are compatible, and removing or renaming one is breaking. `RuntimeEvent` and `ErrorKind` are `#[non_exhaustive]` for the same reason.
 
 ## Implications on adoption
 
@@ -601,15 +622,15 @@ Implementation follows proposal 0003, because permission details read Node's den
 
 ## Scope
 
-- `bento_compiler`: `TransformErrorKind`; `Serialize` for `Diagnostic` and `Severity`.
+- `bento_compiler`: `Serialize` for `Diagnostic` and `Severity`, and `TransformError::kind` if proposal 0005 has not added it.
 - `bento_runtime`: the `ErrorKind` changes and reclassification; `Exception`, `StackFrame`, `ErrorDetails`, and `Denial`, filled from uncaught exceptions, including their `code`, `permission`, and `resource` properties; `Serialize` on the listed types; `Stdio`, `OutputTarget`, `InputSource`, `OutputSink`, and `CapturedOutput`, applied to the main isolate, workers, `op_print`, and inherited child stdio; `EventSink` and `RuntimeEvent`, including listener observation for Deno's and Node's listen paths.
-- `bento_cli`: `--output`, `--max-output`, and `--error-format`; the failure body and codes; receipts; event streams for plain and watch runs; failure documents in pass-through runs; descriptor protection and `EPIPE` handling; the new text titles.
-- Tests: library tests for capture (console, `process.stdout`, workers, truncation counts, a child that outlives the instance), events (order, exactly-once `Started` and `Ended`, `Listening` on port 0 for `node:http` and `Deno.serve`, `TimedOut`), and every error field (name, bare message, `code`, frame origins, `cause`, aggregated errors, custom stacks, denial details through a `fetch` cause); CLI tests for receipts, event streams across watch restarts and failed reloads, failure documents, usage errors under machine output, option conflicts, and statuses.
+- `bento_cli`: on `bento run`'s registry entry, the receipt and event results with their schemas and examples, `--max-output`, `--error-format`, the codes it reports, and its exit statuses; the `ErrorCode` variants `STARTUP_FAILED`, `UNCAUGHT_EXCEPTION`, `DISPOSAL_INCOMPLETE`, and `RESOLUTION_FAILED` unless proposal 0006 has added it; `exception` in the failure body; receipts; event streams for plain and watch runs; run failures as failure documents under `--error-format json`; descriptor protection and the behavior for a reader that has gone away; the new text titles.
+- Tests: library tests for capture (console, `process.stdout`, workers, truncation counts, a child that outlives the instance), events (order, exactly-once `Started` and `Ended`, `Listening` on port 0 for `node:http` and `Deno.serve`, `TimedOut`), and every error field (name, bare message, `code`, frame origins, `cause`, aggregated errors, custom stacks, denial details through a `fetch` cause); CLI tests for receipts, event streams across watch restarts and failed reloads, run failures as failure documents, usage errors in structured runs, option conflicts, and statuses.
 - The guide changes under [Documentation](#documentation), and a changeset.
 
 ### Out of scope
 
-- The command registry, `cli search`, `schema`, `docs`, `context show`, and `run --dry-run` (proposal 0005); `bento resolve` (0006); inline and stdin evaluation (0008); `--process-timeout` and heap limits (0009); `node:vfs` (0010); async `wait` and `shutdown` (0011); persistent sessions (0012); typed host modules (0013).
+- The wire contract itself, the command registry, `cli search`, `schema`, `docs`, `context show`, and `run --dry-run` (proposal 0005); `bento resolve` (0006); inline and stdin evaluation (0008); `--process-timeout` and heap limits (0009); `node:vfs` (0010); async `wait` and `shutdown` (0011); persistent sessions (0012); typed host modules (0013).
 - Permission audit mode ([#261](https://github.com/bento-js/bento/issues/261)); this proposal only leaves room for its events.
 - Structured failures for `bento install`, which proposal 0005 keeps pass-through.
 - Async-operation spans, module-resolution traces, resource statistics, and telemetry export.
@@ -633,25 +654,27 @@ Implementation follows proposal 0003, because permission details read Node's den
 - [The vision](../VISION.md) — capture and events are library features the CLI consumes ("Embedding is the default"), and output destinations are the host's decision ("The host decides what code may do"). [The architecture](../ARCHITECTURE.md)'s "structured errors, exceptions, … source maps" for hosts are delivered in part.
 - [Proposal 0001](0001-embeddable-typescript-runtime.md) — the runtime still prints nothing of its own, and pass-through `bento run` stays Node-like.
 - Proposal 0003 — denial errors keep Node's shapes; this proposal only reads them. [Proposal 0002](0002-web-prompt-api.md)'s `NotAllowedError` is recognized as a denial.
+- Proposal 0005 — on 2026-11-27 Mark decided that 0005 owns the output formats, the error format, and the code list, and that this proposal adopts them. This proposal restates none of them and adds only what 0005 leaves to it: its two results, `--max-output`, `exception`, four code rows, and run details.
 
 ## Future directions
 
 - Permission audit events ([#261](https://github.com/bento-js/bento/issues/261)), as a `RuntimeEvent` variant and a CLI event.
 - `bento install --error-format json`, if `install` becomes structured.
-- `bento schema run` (proposal 0005) publishing JSON Schemas for the receipt, the events, and the failure body.
 - Async-operation spans, module-resolution traces, and resource statistics as further events, and optional telemetry export.
 - Streaming standard input for persistent sessions (proposal 0012), and wall-clock timestamps on events.
 - Keeping the tail, or the head and the tail, of a captured stream, if the open question below settles on the head.
 
 ## Alternatives considered
 
+- **A separate output contract and code table for runs.** This proposal's first draft defined its own `--error-format`, failure body, framing rules, and run code table beside proposal 0005's, and asked which should own them. Contracts defined one proposal at a time drift: `--output` could mean different things on different commands, and code lists could collide. On 2026-11-27 Mark decided that proposal 0005 owns the output formats, the error format, and the code list, and that this proposal adopts them.
 - **A separate `--events ndjson` flag beside `--output json`.** Both own stdout and cannot be combined, so they are two values of one choice; two flags would make an impossible combination expressible.
 - **Events on stderr, or on a dedicated descriptor or file, with guest output passed through.** On stderr, guest text mixes with events and a guest line can impersonate one. A descriptor or file is clean but needs plumbing in every agent harness. Wrapping guest output in `output` events, as `go test -json` does, keeps one parseable stream.
 - **Separate `exited`, `failed`, `stopped`, and `reloaded` events.** They are one fact, how a run ended, with different values; separate events would repeat the outcome's classification and drift from the receipt. `reloaded` is `restarting` followed by `started`.
-- **Flat receipt fields (`stdoutTruncated`, `stdoutTotalBytes`) and top-level `frames` and `suggestion`.** A captured stream is one concept with three facts, frames belong to an exception and its causes each have their own, and `suggestions` is proposal 0005's and `mcp`'s array.
+- **Flat receipt fields (`stdoutTruncated`, `stdoutTotalBytes`) and top-level `frames` and `suggestion`.** A captured stream is one concept with three facts, frames belong to an exception and its causes each have their own, and `suggestions` is proposal 0005's array.
+- **Flat denial fields in `PERMISSION_DENIED`'s details.** Proposal 0005 already gives the code a `permission` in Bento's vocabulary (`fs-read`); putting Node's `permission` (`FileSystemRead`) under the same key would mix two vocabularies in one field.
 - **Only sinks in the library, with bounded capture left to hosts.** Every host would reimplement the same bounded buffer and its counts; the CLI and embedders share one implementation instead.
 - **Returning captured output from `wait()`.** It would change `wait()`'s type and need a twin for proposal 0011's `wait_async()`. A handle works with any way of waiting.
-- **Process-wide redirection with `dup2` for capture.** It cannot tell instances apart. It is used only to keep machine stdout clean.
+- **Process-wide redirection with `dup2` for capture.** It cannot tell instances apart. It is used only to keep a structured run's stdout clean.
 - **Keeping `ErrorKind` and adding finer codes only in the CLI.** `RuntimeError` does not carry the facts that distinguish a syntax error from a panic, and embedders need them as much as the CLI.
 - **Serializing every own property of a thrown error.** It is unbounded and can serialize large guest objects; consumers branch on `code` and on the denial's fields, which are captured.
 - **Lossless base64 for output that is not UTF-8.** Scripts run by agents write text, `go test -json` coerces invalid UTF-8 the same way, and binary output belongs in a file.
@@ -662,8 +685,7 @@ Implementation follows proposal 0003, because permission details read Node's den
 
 - [NEEDS CLARIFICATION: What should `--max-output` default to? This draft uses 65536 bytes per stream, so a receipt fits an agent's context; 1 MiB would bound memory without truncating ordinary logs.]
 - [NEEDS CLARIFICATION: Which bytes should a truncated capture keep? This draft keeps the head, so the kept bytes are an exact prefix of the stream and the failure itself is in `error`; keeping the tail, or the head and the tail with the gap marked, would show the end of long logs.]
-- [NEEDS CLARIFICATION: Proposals 0005 and 0007 are both drafts that touch `bento run --output` and the failure codes. Should 0005's dry run report `SYNTAX_ERROR` for parse errors, as a real run will, and should both proposals share one code table, owned by whichever lands first?]
 
 ## Acknowledgments
 
-The failure document and output conventions come from Mark's `mcp` CLI and proposal 0005. `go test -json` informed the event stream's treatment of program output.
+The output formats, failure document, and code table are proposal 0005's, modeled on Mark's `mcp` CLI. `go test -json` informed the event stream's treatment of program output.
