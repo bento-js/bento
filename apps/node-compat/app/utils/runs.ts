@@ -25,7 +25,7 @@ export async function comparePrevious(
     runs: readonly RunSummary[],
 ): Promise<PreviousComparison> {
     if (report.state !== "complete") return { kind: "incomplete" };
-    let candidate = runs.find(
+    let candidates = runs.filter(
         run =>
             run.id !== report.id &&
             run.kind === "behavior" &&
@@ -36,21 +36,24 @@ export async function comparePrevious(
             run.platform === report.platform &&
             run.arch === report.arch,
     );
-    if (candidate === undefined) return { kind: "none" };
-    let previous = await store.get(candidate.id);
-    if (previous === null) return { kind: "none" };
-    let comparison = compareRuns(report, previous);
-    if (!comparison.comparable) {
-        return {
+    let newestIncomparable: PreviousComparison | null = null;
+    for (let candidate of candidates) {
+        let previous = await store.get(candidate.id);
+        if (previous === null) continue;
+        let comparison = compareRuns(report, previous);
+        if (comparison.comparable) {
+            return {
+                kind: "compared",
+                previous: candidate,
+                regressions: comparison.regressions.length,
+                improvements: comparison.improvements.length,
+            };
+        }
+        newestIncomparable ??= {
             kind: "incomparable",
             previous: candidate,
             reason: comparison.reason ?? "The runs were recorded under different conditions.",
         };
     }
-    return {
-        kind: "compared",
-        previous: candidate,
-        regressions: comparison.regressions.length,
-        improvements: comparison.improvements.length,
-    };
+    return newestIncomparable ?? { kind: "none" };
 }

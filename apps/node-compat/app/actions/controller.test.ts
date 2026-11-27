@@ -129,6 +129,7 @@ describe("dashboard routes", () => {
 
         assert.match(html, /Collection was interrupted/);
         assert.match(html, /2 of 3 selected files have no result/);
+        assert.doesNotMatch(html, /status=not-run/);
         assert.match(html, /Not compared: only complete runs are compared/);
     });
 
@@ -148,5 +149,28 @@ describe("dashboard routes", () => {
         assert.match(html, /These runs are not comparable/);
         assert.match(html, /The test selection changed\./);
         assert.doesNotMatch(html, /Regressions \(/);
+    });
+
+    it("compares the latest run with the newest comparable earlier run", async t => {
+        let get = await serve(t, [
+            report({ id: "comparable", behavior: [behavior("a.js", "passed")] }),
+            report({
+                id: "different-deadline",
+                startedAt: "2026-11-27T13:00:00.000Z",
+                timeoutMs: 20_000,
+                behavior: [behavior("a.js", "passed")],
+            }),
+            report({
+                id: "latest",
+                startedAt: "2026-11-27T14:00:00.000Z",
+                behavior: [behavior("a.js", "failed")],
+            }),
+        ]);
+
+        let html = await (await get("/")).text();
+
+        assert.match(html, /Compared with the run from/);
+        assert.match(html, /1 regression/);
+        assert.match(html, /previous=comparable/);
     });
 });

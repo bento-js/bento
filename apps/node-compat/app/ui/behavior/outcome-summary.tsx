@@ -85,7 +85,7 @@ export function OutcomeSummary(handle: Handle<OutcomeSummaryProps>) {
                             <Count href={href("crashed")} tone="fail" value={summary.crashed} />
                             <Count href={href("unsupported")} value={summary.unsupported} />
                             <Count href={href("skipped")} value={summary.skipped} />
-                            <Count href={href("not-run")} value={summary.notRun} />
+                            <Count value={summary.notRun} />
                             <Count href={href("control")} value={summary.baselineFailed} />
                         </tr>
                     </tbody>
