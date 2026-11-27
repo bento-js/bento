@@ -30,7 +30,7 @@ The harness is tooling, written in TypeScript and run by Node. It does not execu
 ### Prerequisites
 
 - Node 26.11.1 and `pnpm` 12 on `PATH`. The harness runs on Node, and each run installs the fixture with `pnpm install --frozen-lockfile`, which needs registry access the first time.
-- The repository's own dependencies, installed with `vp install`. The asset gate parses every served script with the repository's `oxc-parser`.
+- The repository's own dependencies, installed with `mise run deps:install`. The asset gate parses every served script with the repository's `oxc-parser`.
 - `rsync`, which macOS provides.
 - Bun 1.4.3 on `PATH` for the Bun runtime. A missing Bun is reported as unavailable.
 - `oha` for the `steady-state` workload. Install it with `cargo install --locked oha`; the harness records the version it finds.

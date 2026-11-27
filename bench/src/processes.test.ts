@@ -4,7 +4,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
-import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { baseEnvironment } from "./launch-commands.ts";
 import { LaunchError, runToCompletion, spawnManaged } from "./processes.ts";
@@ -59,13 +59,23 @@ describe("a command that cannot be launched", () => {
         expect(error).toMatchObject({ message: expect.stringContaining("EACCES") });
     });
 
-    test("a file that is not a program is reported as ENOEXEC", async () => {
-        let { executable, error } = await launchFailure("not-a-program", "not a program\n", 0o755);
+    // Only macOS reports ENOEXEC to the caller: glibc retries an ENOEXEC exec through
+    // /bin/sh, so on Linux the file starts as a shell script and there is no launch
+    // failure to report. macOS is the platform this harness benchmarks on.
+    test.skipIf(process.platform !== "darwin")(
+        "a file that is not a program is reported as ENOEXEC",
+        async () => {
+            let { executable, error } = await launchFailure(
+                "not-a-program",
+                "not a program\n",
+                0o755,
+            );
 
-        expect(error).toBeInstanceOf(LaunchError);
-        expect(error).toMatchObject({ message: expect.stringContaining(executable) });
-        expect(error).toMatchObject({ message: expect.stringContaining("ENOEXEC") });
-    });
+            expect(error).toBeInstanceOf(LaunchError);
+            expect(error).toMatchObject({ message: expect.stringContaining(executable) });
+            expect(error).toMatchObject({ message: expect.stringContaining("ENOEXEC") });
+        },
+    );
 });
 
 describe("a command with a deadline", () => {

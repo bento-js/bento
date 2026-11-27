@@ -1,0 +1,44 @@
+{
+    "$schema": "node_modules/oxlint/configuration_schema.json",
+    "ignorePatterns": [
+        "docs/.vitepress/dist/**",
+        "docs/.vitepress/cache/**",
+        // The VitePress theme imports Vue single-file components by name, plus CSS and image
+        // assets Vite resolves at build time. Only `vue-tsc` can type that graph, so it is
+        // outside this project's type program (see tsconfig.json) and the type-aware rules
+        // below would have nothing to resolve it against. `mise run docs:build` checks it.
+        "docs/.vitepress/theme/**",
+        // The direct-source example is an independent project whose types come from its
+        // own install, and the fixture is an independent project entirely.
+        "examples/direct-source/**",
+        "fixtures/**",
+        "target/**"
+    ],
+    "options": {
+        // Type-aware rules run through oxlint-tsgolint (a devDependency).
+        "typeAware": true,
+        "typeCheck": true
+    },
+    "jsPlugins": ["eslint-plugin-perfectionist", "eslint-plugin-prefer-let"],
+    "rules": {
+        "typescript/no-floating-promises": "allow",
+        "typescript/unbound-method": "allow",
+        "perfectionist/sort-jsx-props": "warn",
+        "import/extensions": [
+            "error",
+            "ignorePackages",
+            {
+                "cjs": "always",
+                "cts": "always",
+                "js": "always",
+                "jsx": "always",
+                "mjs": "always",
+                "mts": "always",
+                "ts": "always",
+                "tsx": "always"
+            }
+        ],
+        "eslint/prefer-const": "off",
+        "prefer-let/prefer-let": [2, { "forceUpperCaseConst": true }]
+    }
+}

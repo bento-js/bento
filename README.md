@@ -117,13 +117,13 @@ Some directions in [VISION.md](VISION.md#beyond-the-minimum), such as JavaScript
 
 ## Development
 
-Work in this repository follows [PROCESS.md](PROCESS.md), and [AGENTS.md](AGENTS.md) is the operative contract. Substantial changes start as a proposal in [`proposals/`](proposals/). Tests come before code, guides are derived from the proposal, and work is reviewed independently before it merges. [Policy 0001](policies/0001-prefer-voidzero-crates.md) requires VoidZero's crates (Oxc, `oxc_resolver`, Rolldown) for parsing, transformation, resolution, and bundling, and `vp run check` enforces it.
+Work in this repository follows [PROCESS.md](PROCESS.md), and [AGENTS.md](AGENTS.md) is the operative contract. Substantial changes start as a proposal in [`proposals/`](proposals/). Tests come before code, guides are derived from the proposal, and work is reviewed independently before it merges. [Policy 0001](policies/0001-prefer-voidzero-crates.md) requires VoidZero's crates (Oxc, `oxc_resolver`, Rolldown) for parsing, transformation, resolution, and bundling, and `mise run check` enforces it.
 
-[Vite+](https://viteplus.dev) runs the toolchain. `.node-version` pins Node, and `package.json` pins pnpm.
+[mise](https://mise.jdx.dev) owns the toolchains and every task; `mise.toml` pins Node, pnpm, Bun, and the Rust channel that `rust-toolchain.toml` also names. [hk](https://hk.jdx.dev) owns the git hooks, and [Beads](https://github.com/gastownhall/beads) (`bd`) holds the work graph.
 
 ```sh
-vp install        # dependencies, with the pinned pnpm
-vp run status     # which phase the current work is in, and what comes next
-vp run check      # formatting, lint, types, artifact validation, tests, and the docs build
-vp run rust       # rustfmt, clippy and rustdoc with warnings denied, and every crate's tests (macOS arm64)
+mise run setup    # one-time bootstrap after a clone: dependencies, work tracker, git hooks
+mise run status   # which phase the current work is in, and what comes next
+mise run check    # formatting, lint, types, artifact validation, tests, and the docs build
+mise run rust     # rustfmt, clippy and rustdoc with warnings denied, and every crate's tests (macOS arm64)
 ```

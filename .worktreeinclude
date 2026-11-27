@@ -1,0 +1,13 @@
+# What `wt step copy-ignored` carries into a new worktree. A path is copied only if
+# it is both gitignored and listed here, so this file is an allowlist of build caches
+# that are expensive to recreate and safe to share.
+
+node_modules
+
+# A cold `cargo build` of this workspace — V8 included — is by far the slowest part
+# of a new worktree.
+target
+
+# The fixture is an independent project with its own install; recreating it costs a
+# full pnpm install against the network.
+fixtures/remix-guest-book/node_modules

@@ -1,41 +1,44 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, onTestFinished, test } from "vite-plus/test";
+import { test, type TestContext } from "node:test";
 
-let statusScript = path.join(import.meta.dirname, "status.ts");
+let statusScript = new URL("./status.ts", import.meta.url).pathname;
 
-function statusWithPullRequests(
-    pullRequests: object[],
-    options: { defaultBranch?: string; originHead?: string } = {},
-): string {
-    let root = mkdtempSync(path.join(tmpdir(), "bento-status-"));
-    onTestFinished(() => rmSync(root, { force: true, recursive: true }));
-    execFileSync("git", ["init", "-q", "-b", "feature", root]);
-    execFileSync("git", [
-        "-C",
-        root,
-        "-c",
-        "user.name=Test",
-        "-c",
-        "user.email=test@example.com",
-        "commit",
-        "--allow-empty",
-        "-qm",
-        "fixture",
-    ]);
-    if (options.originHead)
-        execFileSync("git", [
+// Git's own environment variables name the repository a command acts on, and a caller can
+// have them set: `git` exports GIT_DIR and GIT_INDEX_FILE to every hook it runs, so a hook
+// that runs this suite would otherwise point these fixture commands — `git init` included —
+// at the real repository. Every child process here gets an environment without them.
+function fixtureEnvironment(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+    let environment: NodeJS.ProcessEnv = { ...process.env, ...extra };
+    for (let name of Object.keys(environment)) {
+        if (name.startsWith("GIT_")) delete environment[name];
+    }
+    return environment;
+}
+
+function statusWithPullRequests(t: TestContext, pullRequests: object[]): string {
+    let root = mkdtempSync(path.join(tmpdir(), "workbench-status-"));
+    t.after(() => rmSync(root, { force: true, recursive: true }));
+    execFileSync("git", ["init", "-q", "-b", "feature", root], { env: fixtureEnvironment() });
+    execFileSync(
+        "git",
+        [
             "-C",
             root,
-            "symbolic-ref",
-            "refs/remotes/origin/HEAD",
-            `refs/remotes/origin/${options.originHead}`,
-        ]);
-    let headRefOid = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
-        encoding: "utf8",
-    }).trim();
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "fixture",
+        ],
+        { env: fixtureEnvironment() },
+    );
     let bin = path.join(root, "bin");
     mkdirSync(bin);
     let gh = path.join(bin, "gh");
@@ -45,7 +48,7 @@ function statusWithPullRequests(
             `#!${process.execPath}`,
             "let command = process.argv[2];",
             'if (command === "--version" || command === "auth") process.exit(0);',
-            'if (command === "repo") console.log(JSON.stringify({defaultBranchRef: {name: process.env.TEST_DEFAULT_BRANCH}, nameWithOwner: "owner/repo"}));',
+            'if (command === "repo") console.log("main");',
             'else if (command === "pr" && process.argv[3] === "list") {',
             '  let state = process.argv.indexOf("--state");',
             '  let head = process.argv.indexOf("--head");',
@@ -63,23 +66,19 @@ function statusWithPullRequests(
     return execFileSync(process.execPath, [statusScript], {
         cwd: root,
         encoding: "utf8",
-        env: {
-            ...process.env,
+        env: fixtureEnvironment({
             PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
-            TEST_PULL_REQUESTS: JSON.stringify(
-                pullRequests.map(pullRequest => ({
-                    headRefOid,
-                    headRepository: { nameWithOwner: "owner/repo" },
-                    ...pullRequest,
-                })),
-            ),
-            TEST_DEFAULT_BRANCH: options.defaultBranch ?? "main",
-        },
+            TEST_PULL_REQUESTS: JSON.stringify(pullRequests),
+        }),
     });
 }
 
-test("finds an implemented feature's merged PR after it leaves the open PR list", () => {
-    let report = statusWithPullRequests([
+function assertContains(report: string, expected: string): void {
+    assert.ok(report.includes(expected), `expected report to contain ${expected}:\n${report}`);
+}
+
+test("finds a merged feature PR after it leaves the open PR list", t => {
+    let report = statusWithPullRequests(t, [
         {
             number: 1,
             state: "MERGED",
@@ -90,112 +89,74 @@ test("finds an implemented feature's merged PR after it leaves the open PR list"
         },
     ]);
 
-    expect(report).toContain("PR #1 (merged)");
-    expect(report).toContain("Phase 5 — Implementation merged");
-    expect(report).toMatch(/confirm.*implemented record.*merged revision/i);
+    assertContains(report, "PR #1 (merged)");
+    assertContains(report, "Phase 5 — Implementation merged");
 });
 
-test("does not select an arbitrary PR when a branch name has been reused", () => {
-    let report = statusWithPullRequests([
-        {
-            number: 1,
-            state: "MERGED",
-            baseRefName: "main",
-            isDraft: false,
-            title: "Earlier",
-            url: "https://github.com/owner/repo/pull/1",
-        },
-        {
-            number: 2,
-            state: "CLOSED",
-            baseRefName: "main",
-            isDraft: false,
-            title: "Later",
-            url: "https://github.com/owner/repo/pull/2",
-        },
+test("does not select an arbitrary PR when a branch name has been reused", t => {
+    let report = statusWithPullRequests(t, [
+        { number: 1, state: "MERGED", baseRefName: "main", isDraft: false, title: "Earlier" },
+        { number: 2, state: "CLOSED", baseRefName: "main", isDraft: false, title: "Later" },
     ]);
 
-    expect(report).toContain("PR — unknown (Multiple pull requests found for branch feature");
-    expect(report).not.toContain("Implementation merged");
-});
-
-test("rejects a PR record without the URL needed to identify its remote revision", () => {
-    let report = statusWithPullRequests([
-        { number: 1, state: "MERGED", baseRefName: "main", isDraft: false, title: "Feature" },
-    ]);
-
-    expect(report).toContain("PR — unknown (gh returned invalid pull request data)");
-    expect(report).not.toContain("Implementation merged");
-});
-
-test("does not attribute another repository's matching branch name to this checkout", () => {
-    let report = statusWithPullRequests([
-        {
-            number: 1,
-            state: "MERGED",
-            baseRefName: "main",
-            isDraft: false,
-            title: "Fork PR",
-            url: "https://github.com/owner/repo/pull/1",
-            headRepository: { nameWithOwner: "fork/repo" },
-        },
-    ]);
-
-    expect(report).toMatch(/PR — unknown/);
-    expect(report).not.toContain("Implementation merged");
-});
-
-test("does not use a sole historical PR after the branch has been reused", () => {
-    let report = statusWithPullRequests([
-        {
-            number: 1,
-            state: "MERGED",
-            baseRefName: "main",
-            isDraft: false,
-            title: "Old PR",
-            url: "https://github.com/owner/repo/pull/1",
-            headRefOid: "0000000000000000000000000000000000000000",
-        },
-    ]);
-
-    expect(report).toMatch(/PR — unknown/);
-    expect(report).not.toContain("Implementation merged");
-});
-
-test("does not trust an old origin default after GitHub changes the default", () => {
-    let report = statusWithPullRequests(
-        [
-            {
-                number: 1,
-                state: "MERGED",
-                baseRefName: "release/old",
-                isDraft: false,
-                title: "Feature",
-                url: "https://github.com/owner/repo/pull/1",
-            },
-        ],
-        { originHead: "release/old" },
+    assertContains(report, "PR — unknown (Multiple pull requests found for branch feature");
+    assertContains(report, "inspect their proposal links");
+    assertContains(report, "Check gh access and the branch's pull request association");
+    assert.ok(
+        !report.includes("Implementation merged"),
+        `expected report to omit "Implementation merged":\n${report}`,
     );
-
-    expect(report).not.toContain("Phase 5 — Implementation merged");
-    expect(report).toContain("main");
 });
 
-test("recognizes a default branch whose name contains a slash", () => {
-    let report = statusWithPullRequests(
+function statusInRepositoryWithoutRemote(t: TestContext): string {
+    let root = mkdtempSync(path.join(tmpdir(), "workbench-status-local-"));
+    t.after(() => rmSync(root, { force: true, recursive: true }));
+    execFileSync("git", ["init", "-q", "-b", "main", root], { env: fixtureEnvironment() });
+    execFileSync(
+        "git",
         [
-            {
-                number: 1,
-                state: "MERGED",
-                baseRefName: "release/v1",
-                isDraft: false,
-                title: "Feature",
-                url: "https://github.com/owner/repo/pull/1",
-            },
+            "-C",
+            root,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "fixture",
         ],
-        { defaultBranch: "release/v1", originHead: "release/v1" },
+        { env: fixtureEnvironment() },
     );
+    execFileSync("git", ["-C", root, "switch", "-q", "-c", "feature/x"], {
+        env: fixtureEnvironment(),
+    });
 
-    expect(report).toContain("Phase 5 — Implementation merged");
-    expect(report).not.toContain("not the default branch");
+    // No origin and no usable gh, so refs/heads/main is the only evidence of which
+    // branch is the default one.
+    let bin = path.join(root, "bin");
+    mkdirSync(bin);
+    let gh = path.join(bin, "gh");
+    writeFileSync(gh, `#!${process.execPath}\nprocess.exit(1);\n`);
+    chmodSync(gh, 0o755);
+
+    return execFileSync(process.execPath, [statusScript], {
+        cwd: root,
+        encoding: "utf8",
+        env: fixtureEnvironment({
+            PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        }),
+    });
+}
+
+test("recognizes a local default branch when there is no remote and no gh", t => {
+    let report = statusInRepositoryWithoutRemote(t);
+
+    assertContains(report, "branch feature/x");
+    assertContains(report, "PR — unknown (gh is unavailable)");
+    assertContains(report, "Phase 1 — Preparation");
+    assert.ok(
+        !report.includes("Branch role unknown"),
+        `expected report to omit "Branch role unknown":\n${report}`,
+    );
 });

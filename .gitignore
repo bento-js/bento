@@ -13,6 +13,18 @@ node_modules
 .cache/
 dist/
 
+# mise — machine-local overrides and their lockfiles. mise.toml and mise.lock are committed.
+mise.local.toml
+mise.*.local.toml
+.mise.local.toml
+.mise/locks/mise.local/
+
+# hk — machine-local hook overrides. hk.pkl is committed.
+hk.local.pkl
+
+# fnox — machine-local secret overrides. fnox.toml is committed; it holds no values.
+fnox.local.toml
+
 # Docs site (VitePress)
 docs/.vitepress/cache/
 docs/.vitepress/dist/

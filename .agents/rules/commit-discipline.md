@@ -28,19 +28,9 @@ Write an imperative, present-tense description: `add`, `fix`, `remove` — not `
 
 Do not write Conventional Commits `type(scope):` subjects. Scoped Commits lead with the area being changed.
 
-The allowed scopes are:
+The allowed scopes are the entries in [`.agents/commit-scopes`](../commit-scopes) — one per line, process scopes first, product scopes added as the project grows — plus `<NNNN>-<slug>` for work implementing that real proposal, such as `0007-export-queue`. That file is the only list; do not memorize a second one.
 
-| Scope | Use for |
-| --- | --- |
-| `proposal` · `policy` · `decision` | The corresponding record type |
-| `guides` · `docs` | Guides and rendered documentation |
-| `tools` · `ci` · `vite` | Tooling, workflows, and task definitions |
-| `agents` · `skills` · `rules` · `templates` · `hooks` | Agent process infrastructure |
-| `readme` · `vision` | Project overview and direction |
-| `treewide` | A genuinely repository-wide change with no narrower home |
-| `<NNNN>-<slug>` | Work implementing that real proposal, such as `0007-export-queue` |
-
-Product scopes extend this vocabulary through `.agents/commit-scopes`, one scope per line. Prefer the narrowest scope that accurately describes the change; use `treewide` only for a true sweep.
+Prefer the narrowest scope that accurately describes the change; use `treewide` only for a true sweep. A change that needs a scope the file does not have adds the scope to the file in the same commit.
 
 Examples:
 
@@ -49,7 +39,7 @@ Examples:
 - `hooks: enforce scoped commit subjects`
 - `0007-export-queue: reject duplicate export jobs`
 
-Mechanical merge, revert, fixup, and squash commits are exempt. The `commit-msg` hook enforces ordinary subjects and scopes on commits made from Oh My Pi, and CI checks every commit in a pull request.
+Mechanical merge, revert, fixup, and squash commits are exempt. hk runs `node tools/check-scoped-commit.ts` as its `commit-msg` step, so every commit is checked regardless of which harness, editor, or human made it, and CI checks every commit in a pull request.
 
 ## Staging
 
@@ -60,7 +50,8 @@ Mechanical merge, revert, fixup, and squash commits are exempt. The `commit-msg`
 
 ## Commit hooks and history
 
-- If a pre-commit hook fails, the commit did not happen. Fix the issue, re-stage, then create a new commit.
+- hk owns every git hook; `mise run setup` installs them with `hk install --mise`. Never run another tool's hook installer, and never set `core.hooksPath` by hand.
+- If a hook fails, the commit did not happen. Fix the issue, re-stage, then create a new commit.
 - Never bypass hooks with `--no-verify` unless the human explicitly asks.
 - Default to a new commit. Amend only when the previous commit is local, the correction belongs to the same logical change, and amending makes history clearer.
 - Never rewrite pushed history. Correct it with a new commit. A force-push is a history rewrite and requires explicit human confirmation.
@@ -72,18 +63,20 @@ Mechanical merge, revert, fixup, and squash commits are exempt. The `commit-msg`
 - Personal editor configuration unless the human explicitly asks.
 - Large binaries unless the project explicitly tracks them.
 
-If an unexpected secret appears in `git status`, stop and warn the human.
+If an unexpected secret appears in `git status`, stop and warn the human. Secrets reach tasks through Fnox grants in `mise.toml`, never through a tracked file.
 
 ## Frequency
 
 Prefer many small, focused commits to one large commit. Commit at each natural green boundary before beginning the next independent change.
 
+## Changesets
+
+Every pull request carries a changeset. Run `mise run changeset`, choose the bump, and write the entry for the person reading the changelog — not for the reviewer who already saw the diff. A change with no user-visible effect still carries one, created with `--empty`. The `.changeset/` file is committed with the work it describes; CI rejects a pull request without one, and the release pull request is exempt.
+
 ## Push policy
 
-Pushing an authorized feature branch to `origin` creates and updates the draft pull request that serves as the durable workspace. Direct human consent or an active, applicable human-approved build mandate must authorize that workspace. Push early and push often within that authority.
+Pushing the feature branch to `origin` is expected and routine: it creates and updates the draft pull request that serves as the durable workspace. Push early and push often.
 
 Pushing directly to the default branch is prohibited. Work reaches the default branch only by merging its pull request.
 
-PR merges require recorded acceptance and explicit authority to merge into the target branch, from the human or [an active, applicable human-approved build mandate](../../AGENTS.md#bounded-build-mandates). Delegated acceptance alone is not a merge grant. Fresh integration checks and independent review evidence are required; an explicit mandate merge grant replaces repeated per-feature confirmation.
-
-Force-pushing, deleting a branch, publishing a release, changing access, and other destructive actions still require explicit human authorization for that action. Permission to merge grants none of these.
+Force-pushing, deleting a branch, publishing a release, and merging require explicit human confirmation. Merging happens in phase 5 after human acceptance, not because the agent judges the work acceptable.

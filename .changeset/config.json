@@ -1,0 +1,13 @@
+{
+    "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+    "changelog": ["@changesets/changelog-github", { "repo": "bento-js/bento" }],
+    "commit": false,
+    "access": "restricted",
+    "baseBranch": "main",
+    "updateInternalDependencies": "patch",
+    "fixed": [],
+    "linked": [],
+    "ignore": [],
+    "format": false,
+    "privatePackages": { "version": true, "tag": false }
+}

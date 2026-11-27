@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import {
     mkdirSync,
     mkdtempSync,
@@ -9,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, onTestFinished, test } from "vite-plus/test";
+import { test, type TestContext } from "node:test";
 
 import {
     collectArtifacts,
@@ -30,9 +31,9 @@ function readTemplate(name: string): string {
     return readFileSync(new URL(name, templateDirectory), "utf8");
 }
 
-function temporaryRoot(): string {
-    let root = mkdtempSync(path.join(tmpdir(), "bento-validate-"));
-    onTestFinished(() => rmSync(root, { force: true, recursive: true }));
+function temporaryRoot(t: TestContext): string {
+    let root = mkdtempSync(path.join(tmpdir(), "workbench-validate-"));
+    t.after(() => rmSync(root, { force: true, recursive: true }));
     return root;
 }
 
@@ -57,10 +58,11 @@ function hasClarificationViolation(content: string): boolean {
 }
 
 function assertCodeIgnoresButProseReports(content: string): void {
-    expect(hasClarificationViolation(content)).toBe(false);
-    expect(
+    assert.equal(hasClarificationViolation(content), false);
+    assert.equal(
         hasClarificationViolation(`${content}\n\n[NEEDS CLARIFICATION: What remains unresolved?]`),
-    ).toBe(true);
+        true,
+    );
 }
 
 function validArtifacts(): Artifact[] {
@@ -101,7 +103,7 @@ function validArtifacts(): Artifact[] {
             describes: ["proposal.0002"],
         }),
         artifact("VISION.md", {
-            title: "Bento Vision",
+            title: "Workbench Vision",
             updated: "2026-08-25",
         }),
     ];
@@ -132,7 +134,7 @@ test("rule 1 rejects missing required keys and invalid statuses", () => {
     });
     records[1].frontmatter.supersedes = [];
 
-    expect(validateArtifacts(records)).toStrictEqual([
+    assert.deepEqual(validateArtifacts(records), [
         {
             path: "proposals/0001-records.md",
             message: 'missing required key "title"',
@@ -145,65 +147,72 @@ test("rule 1 rejects missing required keys and invalid statuses", () => {
 });
 
 test("rule 1 accepts every required key and allowed status", () => {
-    expect(
+    assert.equal(
         validateArtifacts(validArtifacts()).some(
             ({ message }) => message.includes("required key") || message.includes("invalid status"),
         ),
-    ).toBe(false);
+        false,
+    );
 });
 
 test("rule 1 requires a non-empty authors list on proposals", () => {
     let missingAuthors = validArtifacts();
     delete missingAuthors[0].frontmatter.authors;
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(missingAuthors).filter(({ message }) => message.includes("authors")),
-    ).toStrictEqual([
-        {
-            path: "proposals/0001-records.md",
-            message: 'missing required key "authors"',
-        },
-    ]);
+        [
+            {
+                path: "proposals/0001-records.md",
+                message: 'missing required key "authors"',
+            },
+        ],
+    );
 
     let presentAuthors = validArtifacts();
     presentAuthors[0].frontmatter.authors = ["Ada"];
 
-    expect(
+    assert.equal(
         validateArtifacts(presentAuthors).some(({ message }) => message.includes("authors")),
-    ).toBe(false);
+        false,
+    );
 });
 
 test("rule 1 rejects an empty authors list on proposals", () => {
     let records = validArtifacts();
     records[0].frontmatter.authors = [];
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("authors")),
-    ).toStrictEqual([
-        {
-            path: "proposals/0001-records.md",
-            message: 'key "authors" must be a non-empty inline list',
-        },
-    ]);
+        [
+            {
+                path: "proposals/0001-records.md",
+                message: 'key "authors" must be a non-empty inline list',
+            },
+        ],
+    );
 });
 
-test.each([
+for (let { type, index, status } of [
     { type: "proposal", index: 1, status: "rejected" },
     { type: "proposal", index: 1, status: "withdrawn" },
     { type: "policy", index: 2, status: "draft" },
     { type: "decision", index: 3, status: "proposed" },
-])("rule 1 accepts the newly allowed $type status $status", ({ type, index, status }) => {
-    let records = validArtifacts();
-    records[index].frontmatter.status = status;
+]) {
+    test(`rule 1 accepts the newly allowed ${type} status ${status}`, () => {
+        let records = validArtifacts();
+        records[index].frontmatter.status = status;
 
-    expect(
-        validateArtifacts(records).some(
-            ({ message }) => message === `invalid status "${status}" for ${type}`,
-        ),
-    ).toBe(false);
-});
+        assert.equal(
+            validateArtifacts(records).some(
+                ({ message }) => message === `invalid status "${status}" for ${type}`,
+            ),
+            false,
+        );
+    });
+}
 
-test.each([
+for (let status of [
     "draft",
     "awaiting-implementation",
     "active-review",
@@ -213,57 +222,66 @@ test.each([
     "rejected",
     "withdrawn",
     "superseded",
-])("rule 1 accepts proposal status %s", status => {
-    expect(validateArtifacts([proposalArtifact(status)])).toStrictEqual([]);
-});
+]) {
+    test(`rule 1 accepts proposal status ${status}`, () => {
+        assert.deepEqual(validateArtifacts([proposalArtifact(status)]), []);
+    });
+}
 
-test.each([
+for (let { type, index, status } of [
     { type: "proposal", index: 0, status: "active" },
     { type: "proposal", index: 0, status: "proposed" },
     { type: "policy", index: 2, status: "implemented" },
     { type: "policy", index: 2, status: "awaiting-implementation" },
     { type: "decision", index: 3, status: "awaiting-implementation" },
-])("rule 1 rejects $type status $status from another record kind", ({ type, index, status }) => {
-    let records = validArtifacts();
-    records[index].frontmatter.status = status;
+]) {
+    test(`rule 1 rejects ${type} status ${status} from another record kind`, () => {
+        let records = validArtifacts();
+        records[index].frontmatter.status = status;
 
-    expect(
-        validateArtifacts(records).filter(
-            ({ message }) => message === `invalid status "${status}" for ${type}`,
-        ),
-    ).toStrictEqual([
-        {
-            path: records[index].path,
-            message: `invalid status "${status}" for ${type}`,
-        },
-    ]);
-});
+        assert.deepEqual(
+            validateArtifacts(records).filter(
+                ({ message }) => message === `invalid status "${status}" for ${type}`,
+            ),
+            [
+                {
+                    path: records[index].path,
+                    message: `invalid status "${status}" for ${type}`,
+                },
+            ],
+        );
+    });
+}
 
-test.each([
+for (let { kind, issues } of [
     { kind: "absent", issues: undefined },
     { kind: "empty", issues: [] },
-    { kind: "populated", issues: ["#12", "https://github.com/example/bento/issues/34"] },
-])("rule 1 accepts an $kind proposal issues list", ({ issues }) => {
-    let records = validArtifacts();
-    if (issues !== undefined) records[0].frontmatter.issues = issues;
+    { kind: "populated", issues: ["#12", "https://github.com/example/my-project/issues/34"] },
+]) {
+    test(`rule 1 accepts an ${kind} proposal issues list`, () => {
+        let records = validArtifacts();
+        if (issues !== undefined) records[0].frontmatter.issues = issues;
 
-    expect(validateArtifacts(records).some(({ message }) => message.includes("issues"))).toBe(
-        false,
-    );
-});
+        assert.equal(
+            validateArtifacts(records).some(({ message }) => message.includes("issues")),
+            false,
+        );
+    });
+}
 
 test("rule 1 rejects a proposal issues value that is not a list", () => {
     let records = validArtifacts();
     records[0].frontmatter.issues = "#12";
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("issues")),
-    ).toStrictEqual([
-        {
-            path: "proposals/0001-records.md",
-            message: 'key "issues" must be an inline list',
-        },
-    ]);
+        [
+            {
+                path: "proposals/0001-records.md",
+                message: 'key "issues" must be an inline list',
+            },
+        ],
+    );
 });
 
 test("rule 2 rejects IDs that do not match their filenames and duplicates", () => {
@@ -271,26 +289,28 @@ test("rule 2 rejects IDs that do not match their filenames and duplicates", () =
     records[0].frontmatter.id = "proposal.9999";
     records[1].frontmatter.id = "policy.0001";
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("ID")),
-    ).toStrictEqual([
-        {
-            path: "proposals/0001-records.md",
-            message: 'ID "proposal.9999" must be "proposal.0001" for this filename',
-        },
-        {
-            path: "proposals/0002-replaces.md",
-            message: 'ID "policy.0001" must be "proposal.0002" for this filename',
-        },
-        {
-            path: "proposals/0002-replaces.md",
-            message: 'duplicate ID "policy.0001"; first declared in policies/0001-records.md',
-        },
-    ]);
+        [
+            {
+                path: "proposals/0001-records.md",
+                message: 'ID "proposal.9999" must be "proposal.0001" for this filename',
+            },
+            {
+                path: "proposals/0002-replaces.md",
+                message: 'ID "policy.0001" must be "proposal.0002" for this filename',
+            },
+            {
+                path: "proposals/0002-replaces.md",
+                message: 'duplicate ID "policy.0001"; first declared in policies/0001-records.md',
+            },
+        ],
+    );
 });
 
 test("rule 2 accepts IDs matching unique filenames", () => {
-    expect(validateArtifacts(validArtifacts()).some(({ message }) => message.includes("ID"))).toBe(
+    assert.equal(
+        validateArtifacts(validArtifacts()).some(({ message }) => message.includes("ID")),
         false,
     );
 });
@@ -299,22 +319,24 @@ test("rule 3 rejects unresolved cross-references", () => {
     let records = validArtifacts();
     records[4].frontmatter.describes = ["proposal.9999"];
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("does not resolve")),
-    ).toStrictEqual([
-        {
-            path: "guides/records.md",
-            message: 'reference "proposal.9999" in describes does not resolve',
-        },
-    ]);
+        [
+            {
+                path: "guides/records.md",
+                message: 'reference "proposal.9999" in describes does not resolve',
+            },
+        ],
+    );
 });
 
 test("rule 3 accepts resolved cross-references", () => {
-    expect(
+    assert.equal(
         validateArtifacts(validArtifacts()).some(({ message }) =>
             message.includes("does not resolve"),
         ),
-    ).toBe(false);
+        false,
+    );
 });
 
 function policySupersession(status: string): Artifact[] {
@@ -345,69 +367,78 @@ function policySupersession(status: string): Artifact[] {
 }
 
 test("rule 4 rejects a superseded record that remains active", () => {
-    expect(
+    assert.deepEqual(
         validateArtifacts(policySupersession("active")).filter(({ message }) =>
             message.includes("must have status"),
         ),
-    ).toStrictEqual([
-        {
-            path: "policies/0001-old.md",
-            message: 'record superseded by policy.0002 must have status "superseded"',
-        },
-    ]);
+        [
+            {
+                path: "policies/0001-old.md",
+                message: 'record superseded by policy.0002 must have status "superseded"',
+            },
+        ],
+    );
 });
 
 test("rule 4 accepts a record marked superseded", () => {
-    expect(
+    assert.equal(
         validateArtifacts(policySupersession("superseded")).some(({ message }) =>
             message.includes("must have status"),
         ),
-    ).toBe(false);
+        false,
+    );
 });
 
-test.each(["awaiting-implementation", "active-review", "accepted", "implemented", "superseded"])(
-    "rule 5 rejects a clarification marker in a %s proposal",
-    status => {
+for (let status of [
+    "awaiting-implementation",
+    "active-review",
+    "accepted",
+    "implemented",
+    "superseded",
+]) {
+    test(`rule 5 rejects a clarification marker in a ${status} proposal`, () => {
         let records = validArtifacts();
         records[1].frontmatter.status = status;
         records[1].content = "[NEEDS CLARIFICATION: What is the release boundary?]";
 
-        expect(
+        assert.deepEqual(
             validateArtifacts(records).filter(({ message }) =>
                 message.includes("NEEDS CLARIFICATION"),
             ),
-        ).toStrictEqual([
-            {
-                path: "proposals/0002-replaces.md",
-                message: `proposal status "${status}" does not allow a [NEEDS CLARIFICATION:] marker`,
-            },
-        ]);
-    },
-);
+            [
+                {
+                    path: "proposals/0002-replaces.md",
+                    message: `proposal status "${status}" does not allow a [NEEDS CLARIFICATION:] marker`,
+                },
+            ],
+        );
+    });
+}
 
-test.each(["draft", "returned-for-revisions", "rejected", "withdrawn"])(
-    "rule 5 permits a clarification marker in a %s proposal",
-    status => {
+for (let status of ["draft", "returned-for-revisions", "rejected", "withdrawn"]) {
+    test(`rule 5 permits a clarification marker in a ${status} proposal`, () => {
         let records = validArtifacts();
         records[1].frontmatter.status = status;
         records[1].content = "[NEEDS CLARIFICATION: What is the release boundary?]";
 
-        expect(
+        assert.equal(
             validateArtifacts(records).some(({ message }) =>
                 message.includes("NEEDS CLARIFICATION"),
             ),
-        ).toBe(false);
-    },
-);
+            false,
+        );
+    });
+}
 
 test("rule 5 ignores a marker inside an inline code span", () => {
     let records = validArtifacts();
     records[1].frontmatter.status = "accepted";
     records[1].content = "Rule 5 rejects a `[NEEDS CLARIFICATION:` marker in a final proposal.";
 
-    expect(
+    assert.equal(
         validateArtifacts(records).some(({ message }) => message.includes("NEEDS CLARIFICATION")),
-    ).toBe(false);
+        false,
+    );
 });
 
 test("rule 5 ignores a marker inside a fenced code block", () => {
@@ -415,9 +446,10 @@ test("rule 5 ignores a marker inside a fenced code block", () => {
     records[1].frontmatter.status = "accepted";
     records[1].content = "Example:\n\n```md\n- [NEEDS CLARIFICATION: how?]\n```\n";
 
-    expect(
+    assert.equal(
         validateArtifacts(records).some(({ message }) => message.includes("NEEDS CLARIFICATION")),
-    ).toBe(false);
+        false,
+    );
 });
 
 test("rule 5 still fires on a prose marker beside a quoted one", () => {
@@ -427,22 +459,23 @@ test("rule 5 still fires on a prose marker beside a quoted one", () => {
         "The `[NEEDS CLARIFICATION:` form is the convention.\n\n" +
         "- [NEEDS CLARIFICATION: is this genuinely unresolved?]\n";
 
-    expect(
+    assert.equal(
         validateArtifacts(records).some(({ message }) => message.includes("NEEDS CLARIFICATION")),
-    ).toBe(true);
+        true,
+    );
 });
 
 test("withoutCode strips code while preserving surrounding prose", () => {
-    expect(withoutCode("before `x` after")).toBe("before  after");
+    assert.equal(withoutCode("before `x` after"), "before  after");
 
     let stripped = withoutCode("before\n\n```\nexample\n```\n\nafter");
-    expect(stripped).not.toContain("example");
-    expect(stripped).toMatch(/^before/);
-    expect(stripped).toMatch(/after$/);
+    assert.ok(!stripped.includes("example"), `expected stripped output to drop code: ${stripped}`);
+    assert.match(stripped, /^before/);
+    assert.match(stripped, /after$/);
 });
 
 test("a valid full record set has no violations", () => {
-    expect(validateArtifacts(validArtifacts())).toStrictEqual([]);
+    assert.deepEqual(validateArtifacts(validArtifacts()), []);
 });
 
 test("parseFrontmatter accepts blank lines and full-line comments without stripping values", () => {
@@ -458,7 +491,7 @@ test("parseFrontmatter accepts blank lines and full-line comments without stripp
         "Body",
     ].join("\n");
 
-    expect(parseFrontmatter(source)).toStrictEqual({
+    assert.deepEqual(parseFrontmatter(source), {
         frontmatter: {
             id: "proposal.0001",
             title: "A title # with a literal hash",
@@ -469,13 +502,13 @@ test("parseFrontmatter accepts blank lines and full-line comments without stripp
 });
 
 test("parseFrontmatter rejects malformed input and duplicate keys", () => {
-    expect(parseFrontmatter("title: Missing delimiters")).toStrictEqual({
+    assert.deepEqual(parseFrontmatter("title: Missing delimiters"), {
         error: "missing YAML frontmatter",
     });
-    expect(parseFrontmatter("---\ntitle: First\ntitle: Second\n---")).toStrictEqual({
+    assert.deepEqual(parseFrontmatter("---\ntitle: First\ntitle: Second\n---"), {
         error: 'duplicate frontmatter key "title"',
     });
-    expect(parseFrontmatter("---\nnot valid\n---")).toStrictEqual({
+    assert.deepEqual(parseFrontmatter("---\nnot valid\n---"), {
         error: 'cannot parse frontmatter line "not valid"',
     });
 });
@@ -486,7 +519,7 @@ test("every record template has parsable frontmatter", () => {
         .map(entry => [entry.name, readTemplate(entry.name)] as const);
     let frontmatterTemplates = templates.filter(([, source]) => source.startsWith("---"));
 
-    expect(frontmatterTemplates.map(([name]) => name).sort()).toStrictEqual([
+    assert.deepEqual(frontmatterTemplates.map(([name]) => name).sort(), [
         "DECISION.md",
         "GUIDE.md",
         "POLICY.md",
@@ -495,7 +528,7 @@ test("every record template has parsable frontmatter", () => {
     ]);
     for (let [name, source] of frontmatterTemplates) {
         let parsed = parseFrontmatter(source);
-        expect(parsed.error, `${name}: ${parsed.error}`).toBeUndefined();
+        assert.equal(parsed.error, undefined, `${name}: ${parsed.error}`);
     }
 });
 
@@ -507,16 +540,17 @@ test("a filled-in proposal template validates", () => {
         .replace("pull-request: <url or number, empty while unopened>", "pull-request: 42");
     let parsed = parseFrontmatter(source);
 
-    expect(parsed.error).toBeUndefined();
-    expect(
+    assert.equal(parsed.error, undefined);
+    assert.deepEqual(
         validateArtifacts([
             artifact("proposals/0001-template.md", parsed.frontmatter ?? {}, parsed.content),
         ]),
-    ).toStrictEqual([]);
+        [],
+    );
 });
 
-test("collectArtifacts validates symlinked regular files without traversing symlinked directories", () => {
-    let root = temporaryRoot();
+test("collectArtifacts validates symlinked regular files without traversing symlinked directories", t => {
+    let root = temporaryRoot(t);
     let proposals = path.join(root, "proposals");
     let nested = path.join(root, "nested");
     mkdirSync(proposals);
@@ -528,11 +562,12 @@ test("collectArtifacts validates symlinked regular files without traversing syml
 
     let collected = collectArtifacts(root);
 
-    expect(collected.violations).toStrictEqual([]);
-    expect(collected.artifacts.map(({ path: artifactPath }) => artifactPath)).toStrictEqual([
-        "proposals/0001-records.md",
-    ]);
-    expect(validateArtifacts(collected.artifacts)).toStrictEqual([
+    assert.deepEqual(collected.violations, []);
+    assert.deepEqual(
+        collected.artifacts.map(({ path: artifactPath }) => artifactPath),
+        ["proposals/0001-records.md"],
+    );
+    assert.deepEqual(validateArtifacts(collected.artifacts), [
         {
             path: "proposals/0001-records.md",
             message: 'ID "proposal.9999" must be "proposal.0001" for this filename',
@@ -540,13 +575,13 @@ test("collectArtifacts validates symlinked regular files without traversing syml
     ]);
 });
 
-test("collectArtifacts rejects markdown nested beneath record directories", () => {
-    let root = temporaryRoot();
+test("collectArtifacts rejects markdown nested beneath record directories", t => {
+    let root = temporaryRoot(t);
     let nested = path.join(root, "proposals", "drafts");
     mkdirSync(nested, { recursive: true });
     writeFileSync(path.join(nested, "0001-record.md"), proposalSource());
 
-    expect(collectArtifacts(root)).toStrictEqual({
+    assert.deepEqual(collectArtifacts(root), {
         artifacts: [],
         violations: [
             {
@@ -565,14 +600,15 @@ test("rule 2 rejects guide filenames that are not kebab-case", () => {
         describes: ["proposal.0002"],
     });
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ path: file }) => file.startsWith("guides/")),
-    ).toStrictEqual([
-        {
-            path: "guides/My Guide (DRAFT)!.md",
-            message: "guide filename must be kebab-case",
-        },
-    ]);
+        [
+            {
+                path: "guides/My Guide (DRAFT)!.md",
+                message: "guide filename must be kebab-case",
+            },
+        ],
+    );
 });
 
 test("rule 4 rejects a self-supersession", () => {
@@ -580,14 +616,15 @@ test("rule 4 rejects a self-supersession", () => {
     records[2].frontmatter.status = "superseded";
     records[2].frontmatter.supersedes = ["policy.0002"];
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("supersession cycle")),
-    ).toStrictEqual([
-        {
-            path: "policies/0002-new.md",
-            message: "supersession cycle: policy.0002 -> policy.0002",
-        },
-    ]);
+        [
+            {
+                path: "policies/0002-new.md",
+                message: "supersession cycle: policy.0002 -> policy.0002",
+            },
+        ],
+    );
 });
 
 test("rule 4 rejects a supersession cycle", () => {
@@ -595,14 +632,15 @@ test("rule 4 rejects a supersession cycle", () => {
     records[1].frontmatter.supersedes = ["policy.0002"];
     records[2].frontmatter.status = "superseded";
 
-    expect(
+    assert.deepEqual(
         validateArtifacts(records).filter(({ message }) => message.includes("supersession cycle")),
-    ).toStrictEqual([
-        {
-            path: "policies/0001-old.md",
-            message: "supersession cycle: policy.0001 -> policy.0002 -> policy.0001",
-        },
-    ]);
+        [
+            {
+                path: "policies/0001-old.md",
+                message: "supersession cycle: policy.0001 -> policy.0002 -> policy.0001",
+            },
+        ],
+    );
 });
 
 test("rule 5 ignores markers inside tilde fences but detects surrounding prose", () => {
@@ -616,13 +654,15 @@ test("rule 5 respects a backtick fence's opening length", () => {
 });
 
 test("rule 5 does not open a fence whose info string contains a backtick", () => {
-    expect(
+    assert.equal(
         hasClarificationViolation("``` `note`\n[NEEDS CLARIFICATION: This remains prose.]\n```\n"),
-    ).toBe(true);
+        true,
+    );
 });
 
 test("rule 5 does not mistake inline code for an opening fence", () => {
-    expect(hasClarificationViolation("`note`\n[NEEDS CLARIFICATION: This remains prose.]")).toBe(
+    assert.equal(
+        hasClarificationViolation("`note`\n[NEEDS CLARIFICATION: This remains prose.]"),
         true,
     );
 });

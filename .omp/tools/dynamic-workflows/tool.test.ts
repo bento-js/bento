@@ -3,7 +3,7 @@ import type { AgentDefinition, SingleResult } from "@oh-my-pi/pi-coding-agent/ta
 import type { ExecutorOptions } from "@oh-my-pi/pi-coding-agent/task/executor";
 
 import { createRequire } from "node:module";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OmpWorkflowAgentDependencies } from "./agent.js";
 import type { WorkflowRunDelivery } from "./runs.js";

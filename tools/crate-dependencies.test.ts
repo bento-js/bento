@@ -1,4 +1,5 @@
-import { expect, test } from "vite-plus/test";
+import assert from "node:assert/strict";
+import { test } from "node:test";
 
 import { findDisallowedDependencies, type CargoMetadata } from "./crate-dependencies.ts";
 
@@ -36,7 +37,7 @@ test("accepts VoidZero crates and the Deno runtime substrate", () => {
             },
         ]),
     );
-    expect(violations).toEqual([]);
+    assert.deepEqual(violations, []);
 });
 
 test("rejects SWC-based crates under every dependency kind", () => {
@@ -56,13 +57,16 @@ test("rejects SWC-based crates under every dependency kind", () => {
             },
         ]),
     );
-    expect(violations.map(violation => [violation.crate, violation.dependency])).toEqual([
-        ["bento_runtime", "deno_ast"],
-        ["bento_runtime", "swc_ecma_parser"],
-        ["bento_runtime", "swc"],
-        ["bento_cli", "deno_graph"],
-    ]);
-    expect(violations[0].message).toContain("policy.0001");
+    assert.deepEqual(
+        violations.map(violation => [violation.crate, violation.dependency]),
+        [
+            ["bento_runtime", "deno_ast"],
+            ["bento_runtime", "swc_ecma_parser"],
+            ["bento_runtime", "swc"],
+            ["bento_cli", "deno_graph"],
+        ],
+    );
+    assert.ok(violations[0].message.includes("policy.0001"));
 });
 
 test("sees through a renamed dependency", () => {
@@ -74,7 +78,10 @@ test("sees through a renamed dependency", () => {
             },
         ]),
     );
-    expect(violations.map(violation => violation.dependency)).toEqual(["swc_core"]);
+    assert.deepEqual(
+        violations.map(violation => violation.dependency),
+        ["swc_core"],
+    );
 });
 
 test("ignores packages outside the workspace", () => {
@@ -87,7 +94,7 @@ test("ignores packages outside the workspace", () => {
             },
         ]),
     );
-    expect(violations).toEqual([]);
+    assert.deepEqual(violations, []);
 });
 
 test("does not mistake lookalike names for SWC crates", () => {
@@ -102,5 +109,5 @@ test("does not mistake lookalike names for SWC crates", () => {
             },
         ]),
     );
-    expect(violations).toEqual([]);
+    assert.deepEqual(violations, []);
 });

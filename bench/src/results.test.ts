@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, expect, test } from "vite-plus/test";
+import { afterEach, expect, test } from "vitest";
 
 import type { RunRecord } from "./results-model.ts";
 

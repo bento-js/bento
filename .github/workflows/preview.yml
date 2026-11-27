@@ -28,12 +28,17 @@ jobs:
         steps:
             - uses: actions/checkout@v7
 
-            - uses: voidzero-dev/setup-vp@v1.21.1
+            # cache: false — a pull request must not write a cache the docs publish
+            # workflow could later restore.
+            - uses: jdx/mise-action@v5
               with:
-                  cache: true
+                  cache: false
+
+            # VitePress and its theme are devDependencies.
+            - run: mise run deps:install
 
             # The base must match the path the preview is served from, or every asset 404s.
-            - run: vp run docs:build
+            - run: mise run docs:build
               env:
                   DOCS_BASE: /${{ github.event.repository.name }}/pr-preview/pr-${{ github.event.pull_request.number }}/
 

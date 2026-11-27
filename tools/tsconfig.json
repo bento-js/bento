@@ -2,9 +2,12 @@
     "extends": "../tsconfig.json",
     "compilerOptions": {
         // Node runs these files directly by stripping types, which cannot handle TypeScript-only
-        // runtime syntax such as enums or parameter properties. Vitest would compile it anyway.
+        // runtime syntax such as enums or parameter properties.
         "erasableSyntaxOnly": true,
         "types": ["node"]
     },
+    // The root config excludes this directory so the two projects do not overlap; that exclusion
+    // would otherwise be inherited here and leave this project with no inputs at all.
+    "exclude": [],
     "include": ["*.ts"]
 }

@@ -36,13 +36,14 @@ jobs:
         steps:
             - uses: actions/checkout@v7
 
-            - uses: voidzero-dev/setup-vp@v1.21.1
-              with:
-                  cache: true
+            - uses: jdx/mise-action@v5
+
+            # VitePress and its theme are devDependencies.
+            - run: mise run deps:install
 
             # Pages serves this repository at /<name>/, so the site's base must match or every
             # asset resolves against the domain root and the page loads blank.
-            - run: vp run docs:build
+            - run: mise run docs:build
               env:
                   DOCS_BASE: /${{ github.event.repository.name }}/
 

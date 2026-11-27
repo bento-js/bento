@@ -1,4 +1,4 @@
-# Agentic Development Process
+# Workbench Agentic Development Process
 
 This document describes the process I use for agentic development (“vibe coding”).
 
@@ -8,13 +8,13 @@ The process starts with understanding the problem. For substantive changes, the 
 
 ## Goals
 
-The process has several goals:
+The Workbench process has several goals:
 
 - Preserve a coherent long-term vision for the project even as individual features are developed independently.
 - Make the intended behavior and scope of a feature explicit before implementation begins.
 - Maintain multiple independently useful representations of that intent in proposals, tests, guides, and code.
 - Make disagreements between those representations visible before a feature is released.
-- Delegate product and technical decisions within human-approved boundaries, with independent evidence required before acceptance.
+- Use agents for implementation and review without making the agent the final authority over product intent.
 - Preserve enough design rationale, implementation history, and review discussion for future humans and agents to understand why the project is the way it is.
 - Keep dependent projects synchronized as new functionality moves from development previews to production releases.
 
@@ -45,6 +45,12 @@ Future work may supersede a decision, but should do so explicitly rather than ac
 A _proposal_ describes a specific change to the project in enough detail to serve as the specification for its implementation.
 
 Proposals record the motivation, intended behavior, scope, and relevant design decisions of a feature. They remain part of the project's history after implementation. A future proposal may revise or supersede an earlier proposal.
+
+### Work items
+
+A _work item_ is a tracked unit of work in Beads: a task, a blocker, a discovered defect, or a durable memory the project needs to survive a context reset.
+
+Work items answer a different question from proposals. The proposal records reviewed intent and is preserved as history; the Beads graph records what is ready, what is blocked, what was deliberately deferred, and what a future session must know. Neither substitutes for the other.
 
 ### Tests
 
@@ -88,7 +94,7 @@ A new project begins with the creation of its vision document.
 
 The agent and I develop the vision together before normal feature work begins. The document describes both the minimum viable version of the project and the broader direction in which the project may evolve.
 
-The vision is not a collection of committed feature specifications. Individual changes are designed through proposals, with approval owned by the human or delegated through a bounded build mandate.
+The vision is not a collection of committed feature specifications. Individual changes are still designed and implemented through proposals.
 
 Unlike proposals, however, the vision is a living document. After accepted features materially alter the project's capabilities or direction, the vision is updated so that it continues to describe the project accurately.
 
@@ -99,36 +105,24 @@ Substantial feature work proceeds through five phases:
 1. preparation,
 2. proposal development,
 3. implementation,
-4. acceptance review, and
+4. human review, and
 5. completion and release.
 
 The process is iterative. Findings during implementation or review may cause the proposal itself to change, at which point the implementation is reevaluated against the revised proposal.
 
 The full feature loop applies to changes that decide new behavior or resolve a meaningful design choice. A correction whose intent is already established, such as an unambiguous bug fix or dead link, may be handled directly. If investigation uncovers a design choice, return to proposal development before implementing it.
 
-The primary agent is the strategist: it owns domain understanding, conceptual modeling, proposal intent, delegation, and the excellence pass. Implementers realize bounded, already-understood behavior without redefining the proposal. A reframer challenges the problem formulation when it no longer explains the evidence. An independent adversary tries to falsify the finished work and reports findings without editing it.
+The primary agent owns domain understanding, conceptual modeling, and proposal intent, and it usually implements the work itself. It delegates only independent slices that can run in parallel, and it uses a reframer when the problem formulation no longer explains the evidence. An independent adversary tries to falsify the finished work and reports findings without editing it.
 
-Before entering the proposal path, establish authority. An active human-approved build mandate can authorize the strategist to create and approve in-scope proposals without a new question for each feature. Otherwise the agent asks whether the human wants a proposal and receives an explicit yes before creating its branch or draft PR. A no rules out the proposal and its draft PR; correct unambiguous behavior directly or clarify consequential choices before implementation.
-
-### Bounded build mandates
-
-A mandate gives the strategist authority to deliver one agreed outcome without repeated human approval. Its canonical requirements are in [the agent contract](AGENTS.md#bounded-build-mandates). It lives in an ordinary proposal and records the outcome, boundaries, delegated actions, resource limits, evidence requirements, end condition, and human approval of a specific revision.
-
-The human approves the mandate itself. Governed proposals link that approved revision in an Authorization section. Within the delegated scope, the strategist may settle design choices, approve proposals for implementation, create policies and decisions, and accept independently reviewed work. An explicit merge grant permits gated PR integration into the named branch even while the human is unavailable.
-
-Tests, guides, implementation, fresh validation, independent review, and preview still apply. Acceptance records who exercised the delegated authority and the evidence supporting it. The implementer's own success report does not satisfy independent review, and unresolved defects or disputed material findings block autonomous acceptance.
-
-Only the human changes the mandate's boundaries or extends its authority. A boundary conflict blocks the affected slice and is recorded in Beads and the PR; unrelated authorized work continues. Expiry, completion, revocation, missing approval evidence, or unresolved boundaries restore the individual human-approval path. Approval to introduce this mechanism does not activate a build mandate.
-
-Publication, production deployment, credential or access changes, and destructive operations need their own explicit human authority. Merge permission alone grants none of them. The mandate can define a merge-only delivery that completes without publication; a required release cannot be silently dropped.
+Before entering the proposal path for a change, the agent asks the human whether they want a proposal, even if the request sounds like a feature or asks for one. An explicit yes for this change authorizes its proposal and later revisions, not future proposals. A no rules out the proposal and its draft pull request: proceed directly when intent is already clear, or clarify and narrow the work before implementation when a consequential design choice remains. This question precedes branch creation and PR preparation so unnecessary draft PRs are not opened.
 
 ### Agent orchestration
 
-The project's Oh My Pi `workflow` tool, registered by `.omp/extensions/dynamic-workflows.ts`, is for a dependency graph of agent work: independent branches that feed a later synthesis, or result-driven branches and pipelines. A single small task stays inline; a fixed batch of independent slices uses ordinary task delegation. A run goes to the background and reports back as a `workflow-result` message, so the strategist keeps working while it runs, addresses an agent by its label-derived id with `write agent://<id>`, and uses `workflow_runs` to inspect a run, block on it with `action: "wait"`, or cancel it. Workflow scripts orchestrate subagents deterministically and expose phases, but the agents still need bounded ownership and the strategist still owns intent and review. A failed branch yields `null`; treat it as a missing result, not evidence of success.
+The project's Oh My Pi `workflow` tool, registered by `.omp/extensions/dynamic-workflows.ts` with its runtime in `.omp/tools/dynamic-workflows/`, is for a dependency graph of agent work: independent branches that feed a later synthesis, or result-driven branches and pipelines. A single small task stays inline; a fixed batch of independent slices uses ordinary task delegation. A run goes to the background and reports back as a `workflow-result` message, so the primary agent keeps working while it runs, addresses an agent by its label-derived id with `write agent://<id>`, and uses `workflow_runs` to inspect a run, block on it with `action: "wait"`, or cancel it. Workflow scripts orchestrate subagents deterministically and expose phases, but the agents still need bounded ownership and the primary agent still owns intent and review. A failed branch yields `null`; treat it as a missing result, not evidence of success.
 
 ## Preparation
 
-After direct human consent or an applicable mandate authorizes the proposal, work begins in an isolated Git branch.
+After the human opts into a proposal for this change, work on the feature begins in an isolated Git branch.
 
 The agent creates the branch, pushes it to the project's `origin` remote, and creates a draft pull request for the work.
 
@@ -138,11 +132,13 @@ The pull request remains a draft while the feature is being specified and implem
 
 ## Proposal Development
 
-Before implementation, the agent writes a proposal describing the feature under the applicable approval path.
+Before implementation, the agent and I write a proposal describing the feature.
 
 The proposal should make the intended change sufficiently concrete that the agent can derive tests, documentation, and an implementation from it without relying primarily on the original conversational request.
 
-The approval owner settles the intent: the human for individual work, or the strategist for decisions delegated by a mandate. The proposal remains a historical record after the feature ships.
+We iterate on the proposal until I am satisfied that it represents the feature I intend to build.
+
+The proposal is preserved after the feature ships. It becomes part of the historical explanation of the feature rather than merely temporary planning material.
 
 If future work changes that design, a later proposal may revise or supersede it.
 
@@ -158,11 +154,11 @@ After grounding, inspect the closest implementation, prototype, workflow, or pri
 
 ### Decide and record intent
 
-Compare viable approaches against the grounded constraints, vision, policies, and decisions. Write the selected behavior in the proposal's **Detailed design**, with scope and unresolved questions explicit. The approval owner records the decision and sets `awaiting-implementation`; an implementer cannot authorize its own work, and a strategist cannot manufacture mandate authority.
+Compare viable approaches against the grounded constraints, vision, policies, and decisions. Write the selected behavior in the proposal's **Detailed design**, with scope and unresolved questions explicit. The human decides when the proposal is settled and sets `awaiting-implementation`; an agent must not approve its own proposal.
 
 ## Implementation
 
-After the approval owner sets `awaiting-implementation`, the strategist delegates bounded implementation slices with their detailed design, domain constraints, baseline, quality bar, governing records, authorization, and verification commands. If an implementer reports `NEEDS_STRATEGY`, stop that slice and return the conflict to the strategist. Use `reframing-a-problem` when repeated local fixes no longer explain the problem. The strategist may revise in-mandate intent before resuming implementation; changing mandate boundaries requires the human.
+After the human sets `awaiting-implementation`, the agent implements the proposal itself unless independent slices can run in parallel; a delegated slice gets its detailed design, constraints, scope, and verification commands. Use `reframing-a-problem` when repeated local fixes no longer explain the problem, or when a slice reports that the evidence contradicts the proposal's model; revise intent with the human before continuing.
 
 ### Behavioral Tests
 
@@ -195,53 +191,15 @@ Implementation continues until the project's quality gates pass. Depending on th
 
 Passing the quality gates is necessary but not sufficient for the feature to be considered complete.
 
-### Excellence Pass and Inline Reviews
+### Self-Check
 
-After behavior works and validation passes, the strategist uses `excellence-pass` to ask whether the implementation should remain: does it express the grounded model, reuse the right boundaries, and present a clear interface without inherited or speculative complexity? Substantive corrections return to implementation, then validation and this pass run again. A finding that changes intended behavior returns to the proposal and approval owner before code changes.
-
-The strategist then obtains a proposal-compliance review and a code-quality review, in that order. Both must be clean before `reviewing-an-implementation` begins the cross-artifact review. These inline reviews do not replace the independent adversarial review.
-
-### Cross-Artifact Review
-
-Once the implementation passes its automated checks, the agent reviews the proposal, tests, guides, and code together.
-
-The purpose of this review is to find disagreement between the different representations of the feature.
-
-In particular, the agent verifies that:
-
-- the tests cover the behavior promised by the proposal;
-- the guides describe the same behavior exercised by the tests;
-- the code implements the behavior described by the proposal and guides;
-- no substantial documented behavior is missing from the implementation;
-- no substantial implemented behavior exists without being represented in the proposal or documentation; and
-- implementation details have not unintentionally changed the original scope or intent.
+Once the implementation passes its automated checks, the agent reads the proposal, tests, guides, and code together to find disagreement between the representations: tests that miss promised behavior, guides that describe something the tests do not exercise, code that implements behavior the proposal does not describe, or details that quietly changed scope or intent. It also asks whether this is the implementation that should remain — whether its structure expresses the proposal's model or leaks implementation conveniences into public behavior. It fixes what it finds, or records a deliberate divergence for the human.
 
 ### Adversarial Review
 
-The implementation is then reviewed independently by a subagent using a different model from the primary agent.
+The implementation is then reviewed once, independently, by a subagent with fresh context and preferably a different model. It receives the proposal and the work, and tries to falsify the claim that the work is done: missing or wrong behavior, weak or misleading tests, regressions, and security risks. It ignores style and reports without editing.
 
-The reviewing agent receives the proposal, tests, guides, and implementation and attempts to find weaknesses rather than continue implementation.
-
-Its review considers issues such as:
-
-- weak, misleading, or incomplete tests;
-- implementation defects;
-- security vulnerabilities;
-- regressions;
-- scope creep;
-- undocumented behavior;
-- inconsistencies between artifacts;
-- violations of policies or decisions;
-- unnecessary complexity;
-- code smell;
-- fragile architecture; and
-- assumptions that have not been adequately validated.
-
-The reviewing agent reports its findings to the primary agent.
-
-The primary agent addresses legitimate findings and preserves declined findings with evidence and reasoning in the readiness report. Disputed material findings block autonomous acceptance and return to the human.
-
-The adversarial reviewer reports evidence rather than deciding acceptance. The approval owner judges the finished work against its intent after considering that independent attempt to falsify it.
+The primary agent fixes confirmed defects inside the proposal's scope. A finding outside that scope is never a reason to widen the change: it is declined with reasoning or filed in Beads. Declined findings are preserved for human review rather than silently discarded. The adversarial reviewer does not decide whether the feature is acceptable.
 
 ### Preview
 
@@ -249,11 +207,11 @@ Produce the preview selected in the proposal after review findings are resolved.
 
 ### Readiness Report
 
-After the cross-artifact and adversarial reviews and preview, the agent posts a readiness report describing implemented behavior, verification, any declined findings, and how to exercise the preview. `reviewing-an-implementation` owns this handoff. Moving the proposal to `active-review`, posting the report, and marking the pull request ready form one transition into acceptance review. An applicable mandate can delegate the next decision to the strategist without a wait for the human.
+After the self-check, the adversarial review, and the preview, the agent posts a readiness report describing implemented behavior, verification, any declined findings, and how to exercise the preview. `reviewing-an-implementation` owns this handoff. Moving the proposal to `active-review`, posting the report, and marking the pull request ready form one transition into human review.
 
-## Acceptance Review
+## Human Review
 
-Acceptance determines whether the implementation satisfies the intended feature. Under a mandate, the strategist checks its current authority, reviews the independent evidence, and records `accepted` or `returned-for-revisions`. Delegated merge additionally requires fresh verification of the integration candidate. Without that authority, the human follows the review process below.
+Human review determines whether the implementation actually satisfies the intended feature.
 
 I review both the agent's readiness report and the artifacts produced during development. Depending on the feature, this may include:
 
@@ -272,89 +230,55 @@ I then instruct the agent to process the review feedback. Additional context may
 
 If the feedback changes the intended design rather than merely correcting its implementation, the agent updates the proposal first.
 
-The agent then repeats the affected tests, guides, code, validation, excellence pass, cross-artifact review, and adversarial review against the revised proposal as necessary.
+The agent then repeats the affected tests, guides, code, validation, self-check, and adversarial review against the revised proposal as necessary.
 
-Implementation and acceptance review therefore form a loop:
+Implementation and human review therefore form a loop:
 
-**proposal → tests → guides → code → validation → excellence pass → inline reviews → cross-artifact review → adversarial review → preview → acceptance review → revision**
+**proposal → tests → guides → code → validation → self-check → adversarial review → preview → human review → revision**
 
-The loop continues until the approval owner accepts the feature. A human may intervene at any point, including when acceptance was delegated.
+The loop continues until I accept the feature.
 
 ## Policies and Decisions
 
 Feature development may reveal information that should outlive the proposal itself.
 
-When a feature establishes a rule that future work should continue to enforce, record or update a policy with the approval owner's authorization.
+When a feature establishes a rule that future work should continue to enforce, the agent should record or update that rule as a policy, after discussion with me.
 
-When it establishes an architectural choice that future work needs to understand, record or update a decision under the same authority. Delegated policy and decision work cannot change the mandate's own constraints or silently supersede governing records beyond its authority.
+When a feature establishes an architectural choice that future work needs to understand, the agent should record or update that choice as a decision, after discussion with me.
 
 Policies and decisions are therefore not substitutes for proposals. A proposal explains a particular change; policies and decisions extract the durable constraints and architectural knowledge discovered while making that change.
 
 Future proposals should be evaluated against the current vision, policies, and decisions.
 
-## Defect Tracking
+## Work Tracking
 
-During proposal development, implementation, automated validation, adversarial review, or human review, the agent may discover defects that should be preserved independently of the current pull request.
+During proposal development, implementation, automated validation, adversarial review, or human review, the agent discovers work that should be preserved independently of the current pull request. Beads (`bd`) holds it.
 
-A defect that prevents the current implementation from satisfying its proposal remains part of the current work and should normally be fixed before the pull request is accepted. The agent should not create an issue merely to defer work required by the proposal.
+A defect that prevents the current implementation from satisfying its proposal remains part of the current work and should be fixed before the pull request is accepted. The agent does not file a work item merely to defer work the proposal already requires.
 
-A defect may instead be recorded as a GitHub issue when it is outside the scope of the current proposal, already exists on the main branch, affects another feature or project, or otherwise represents legitimate future work that should survive beyond the current pull request.
+A defect is recorded in Beads instead when it is outside the scope of the current proposal, already exists on the main branch, affects another feature or project, or otherwise represents legitimate future work that should survive beyond the current pull request.
 
-Before creating a new issue, the agent checks the repository's existing open and closed issues for the same defect to avoid creating duplicates.
+Before creating a new item, the agent searches the existing graph — `bd ready` for what is startable, then `bd search` and `bd list` across every state, open through closed, with the result limit lifted — so the same defect is not filed twice.
 
-When a new issue is necessary, the agent creates it using the [`gh`](https://cli.github.com/) CLI. The issue should contain enough information for a future human or agent to understand and reproduce the defect without depending on the conversational context in which it was discovered.
-
-At minimum, a defect should record:
-
-- a concise description of the incorrect behavior;
-- the behavior that was expected instead;
-- reproduction steps or a minimal reproduction when available;
-- relevant environmental or version information;
-- links or references to the proposal, pull request, test, or code where the defect was discovered when useful; and
-- any known constraints, suspected causes, or related defects that would help a future investigation.
-
-For example:
+A work item should contain enough information for a future human or agent to understand and reproduce the defect without depending on the conversational context in which it was discovered: a concise description of the incorrect behavior, the behavior expected instead, reproduction steps or a minimal reproduction, relevant environment or version information, links to the proposal, pull request, test, or code where it was discovered, and any known constraints, suspected causes, or related defects.
 
 ```sh
-gh issue create \
-  --title "Parser rejects nested optional routes" \
-  --label bug \
-  --body-file - <<'EOF'
-## Description
-
-The route parser rejects nested optional route segments that should be valid.
-
-## Expected behavior
-
-`($lang).($region).products.tsx` should produce two nested optional route segments.
-
-## Actual behavior
-
-Route discovery fails with an invalid segment error.
-
-## Reproduction
-
-1. Create `app/routes/($lang).($region).products.tsx`.
-2. Run the route discovery command.
-3. Observe the invalid segment error.
-
-## Context
-
-Discovered while implementing #123.
-
-The current proposal does not alter optional-route parsing, so this defect is outside its scope.
-EOF
+bd create "Parser rejects nested optional routes" \
+  --type=bug --priority=1 \
+  --description="Expected: ($lang).($region).products.tsx produces two nested optional segments. Actual: route discovery fails with an invalid segment error. Repro: create that file and run route discovery. Found under proposal.0007 in PR #42; out of scope because that proposal does not change optional-route parsing."
 ```
 
-The agent applies the repository's normal issue labels, types, milestones, projects, parent issues, or dependency relationships when those conventions exist.
+The agent applies the project's existing types, priorities, labels, and dependency relationships when those conventions exist. Dependencies matter: an item blocked by another is linked so `bd ready` stays honest about what can actually be started.
 
-When a newly discovered defect is relevant to the current pull request but intentionally outside its scope, the agent links the resulting issue from the pull request or an appropriate review comment. This makes the decision to defer the defect explicit and leaves a durable path from the context in which it was discovered to the future work needed to resolve it.
+When a newly discovered defect is relevant to the current pull request but intentionally outside its scope, the agent links the work item from the pull request or an appropriate review comment. This makes the decision to defer the defect explicit and leaves a durable path from the context in which it was discovered to the future work needed to resolve it.
 
-If subsequent work fixes the defect incidentally, the agent updates or closes the issue with a reference to the pull request or commit that resolved it rather than leaving the issue stale.
+If subsequent work fixes the defect incidentally, the agent closes the item with a reference to the pull request or commit that resolved it rather than leaving it stale.
+
+Durable project knowledge — a constraint learned the hard way, a decision too small for a record but too costly to rediscover — goes in `bd remember`, not a memory file.
 
 ## Completion
 
-Once the feature has passed acceptance review, the agent performs the authorized integration and delivery work.
+Once the feature has passed human review, the agent completes the authorized integration and delivery work.
 
 ### Vision Update
 
@@ -364,15 +288,19 @@ Because the vision is intended to describe the project as it currently exists an
 
 The agent may consult me before making substantial changes to the vision.
 
+### Changeset
+
+Every pull request carries a changeset. `mise run changeset` writes one into `.changeset/`, naming the bump and describing the change for the changelog a user will read — not for the reviewer who already saw the diff. A change with no user-visible effect still carries a changeset, created with `--empty`. CI rejects a pull request without one; the release pull request is exempt.
+
 ### Implementation Record
 
-After acceptance and the vision update, set the proposal to `implemented` in the original feature pull request before merging it. This records the accepted implementation, not integration or release. Keep the approval owner's acceptance and any outstanding required delivery visible in the proposal or pull request. Verify the updated integration candidate; never open a follow-up pull request solely to change the proposal status.
+After acceptance and the vision update, set the proposal to `implemented` in the feature pull request before merging it. This records the approved implementation, not integration or release. Keep acceptance and outstanding delivery visible in the proposal or pull request. Verify the updated integration candidate; do not open a follow-up pull request solely to change the proposal status.
 
-Confirm the status record is in the pull request revision, not only the local checkout, before marking a draft pull request ready or merging. If an earlier pull request already merged, inspect its merged revision before concluding a local `accepted` status means the record is missing. Ask the approval owner how to reconcile an absent record instead of editing a merged pull request or opening a status-only pull request.
+Confirm the status record is in the pull request revision, not only the local checkout, before marking a draft pull request ready or merging. If an earlier pull request has already merged, inspect its merged revision before concluding a local `accepted` status means the record is missing. Report an absent record to the human for reconciliation rather than treating a merged pull request as editable or opening a status-only pull request.
 
 ### Merge
 
-The agent merges the pull request into the authorized target branch after direct human approval or under an active mandate's explicit merge grant, once the implementation record is present in the latest pull request revision and integration checks are fresh. If the accepted pull request remains draft, reconcile its readiness record, mark it ready, and verify that revision before merging. One integration owner serializes merges. Direct pushes to the default branch remain prohibited.
+The agent merges the accepted pull request into the project's main branch after confirming that the implementation record is in its latest revision and its checks are fresh. If the pull request remains draft, mark it ready and verify the updated revision before merging.
 
 The merge should preserve enough information for future humans or agents to recover:
 
@@ -387,7 +315,7 @@ The proposal and relevant pull request history therefore form part of the long-t
 
 ### Release
 
-When the proposal requires a release and the human has explicitly authorized that action, release through the project's CI/CD process using the required mechanism, such as a Git tag, package publication, or deployment. Merge approval alone does not authorize publication. `implemented` records accepted implementation, not completed delivery: track every required release separately until it happens. A merge-only change needs no fabricated release.
+When a release is required and the human has explicitly authorized it, release through the project's CI/CD process using the required mechanism. Merge approval alone does not authorize publication. `implemented` records accepted implementation in the feature pull request, not a completed release. Track any required release separately until performed; merge-only delivery needs no fabricated release.
 
 ### Dependent Work
 
@@ -399,11 +327,9 @@ This allows work across multiple repositories to be developed against previews w
 
 ### Cleanup
 
-Finally, the agent removes development state that is no longer useful.
+After required delivery, the agent cleans up temporary files, preview configuration, and stale feature branches only with the relevant authorization.
 
-Cleanup can include pruning feature branches, removing obsolete preview configuration, and removing temporary artifacts created during development. Branch deletion, published-artifact teardown, and other destructive actions require explicit human authorization for the action; a merge grant does not cover them.
-
-Cleanup concludes the feature process.
+Branch deletion and published-artifact teardown require explicit human confirmation. Cleanup is a separate operation, not an automatic result of merging or setting `implemented`.
 
 ## Process Summary
 
@@ -413,10 +339,10 @@ At the project level:
 
 For each feature:
 
-**human consent or active mandate → branch → draft pull request → grounding and ontology review when needed → baseline study → approved proposal → tests → guides → code → validation → excellence pass → inline reviews → cross-artifact review → adversarial review → preview → ready pull request → acceptance review → revision or acceptance → vision update → implemented record in feature pull request → authorized merge and delivery → dependent updates → authorized cleanup**
+**human opts into proposal → branch → draft pull request → grounding and ontology review when needed → baseline study → proposal → tests → guides → code → validation → self-check → adversarial review → preview → ready pull request → human review → revision or acceptance → vision update → implemented record in the feature pull request → merge → required release → dependent updates → authorized cleanup**
 
 The central invariant of the process is that no single artifact defines the feature by itself.
 
-The proposal records intent. Tests encode behavior. Guides explain behavior. Code implements behavior. Previews expose behavior for direct inspection. Independent agent review attempts to find contradictions and defects. The approval owner determines whether the result satisfies the intended feature within the human's authority.
+The proposal records intent. Tests encode behavior. Guides explain behavior. Code implements behavior. Previews expose behavior for direct inspection. Independent agent review attempts to find contradictions and defects. Human review determines whether the result is actually the feature that was intended.
 
 Each representation acts as a check on the others.

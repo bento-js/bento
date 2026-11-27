@@ -5,31 +5,60 @@ on:
         branches: [main]
     pull_request:
 
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+    cancel-in-progress: true
+
 jobs:
+    # `mise run check` is the one definition of the blocking gate. The pre-push hook
+    # runs the same task, so the local gate and this one cannot drift apart.
     check:
+        name: Check
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v7
               with:
                   fetch-depth: 0
-            - uses: voidzero-dev/setup-vp@v1.21.1
+            - uses: jdx/mise-action@v5
+            # Oxfmt, Oxlint, tsrs, tsc, Vitest and VitePress are devDependencies, so
+            # `check` needs them.
+            - run: mise run deps:install
+            - run: mise run check
+
+    commits:
+        name: Commit messages
+        if: github.event_name == 'pull_request'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
               with:
-                  cache: true
-            - run: vp run check
-            - name: Check Prompt API example types
-              run: vp exec tsc --project examples/prompt-api/tsconfig.json
+                  fetch-depth: 0
+            - uses: jdx/mise-action@v5
             - name: Validate pull request commit messages
-              if: github.event_name == 'pull_request'
               env:
                   BASE_SHA: ${{ github.event.pull_request.base.sha }}
                   HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-              run: |
-                  while IFS= read -r subject; do
-                    message_file="$(mktemp)"
-                    printf '%s\n' "$subject" > "$message_file"
-                    .agents/hooks/check-scoped-commit "$message_file"
-                    rm "$message_file"
-                  done < <(git log --format=%s "$BASE_SHA..$HEAD_SHA")
+              run: node tools/check-pr-commits.ts "$BASE_SHA" "$HEAD_SHA"
+
+    # The release pull request consumes changesets instead of adding one, so it is exempt.
+    changeset:
+        name: Changeset
+        if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+            - uses: jdx/mise-action@v5
+            - run: mise run deps:install
+            - name: Require a changeset
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: node tools/require-changeset.ts "$BASE_SHA" "$HEAD_SHA"
 
     rust:
         # Bento supports only macOS on Apple silicon for now.
@@ -37,16 +66,19 @@ jobs:
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v7
-            - uses: voidzero-dev/setup-vp@v1.21.1
+            # mise-action caches only mise's data directory, so a restore can bring
+            # back mise's "rust is installed" marker without the toolchain behind it.
+            # rust-cache covers the part that is actually slow.
+            - uses: jdx/mise-action@v5
               with:
-                  cache: true
+                  cache: false
             - uses: Swatinem/rust-cache@v2
             - name: Record native platform and SDK
               run: |
                   sw_vers
                   xcrun --sdk macosx --show-sdk-version
                   xcrun swift --version
-            - run: vp run rust
+            - run: mise run rust
             - name: Check standalone core without native or engine dependencies
               run: cargo check --locked -p bento_prompt --no-default-features --lib
             - name: Check standalone native core and Rust example
@@ -76,9 +108,9 @@ jobs:
         timeout-minutes: 90
         steps:
             - uses: actions/checkout@v7
-            - uses: voidzero-dev/setup-vp@v1.21.1
+            - uses: jdx/mise-action@v5
               with:
-                  cache: true
+                  cache: false
             - uses: Swatinem/rust-cache@v2
               with:
                   key: backend-free
