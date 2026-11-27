@@ -227,7 +227,7 @@ pub enum ErrorDetails {
 
 pub struct Denial {
     pub name: String,
-    pub code: Option<String>,
+    pub node_code: Option<String>,
     pub permission: Option<String>,
     pub resource: Option<String>,
 }
@@ -235,7 +235,7 @@ pub struct Denial {
 
 - Every `Configuration` failure carries `Configuration` details naming the file that could not be read or understood: `tsconfig.json` or the file it extends.
 - Every `Resolution` failure the loader recorded carries `Resolution` details: the specifier as written and the referrer's URL.
-- A `Permission` failure carries `Permission` details when its exception tree contains an error whose `code` is `ERR_ACCESS_DENIED` or `ERR_DLOPEN_DISABLED`, or whose name is `NotAllowedError`. Bento searches the exception, then its `cause` chain, then its aggregated errors depth-first, and describes the first match: its `name`, its `code`, and its own string `permission` and `resource` properties as proposal 0003 sets them. A denied `fetch` therefore reports `permission: "Net"` although the uncaught error is a `TypeError`.
+- A `Permission` failure carries `Permission` details when its exception tree contains an error whose `code` is `ERR_ACCESS_DENIED` or `ERR_DLOPEN_DISABLED`, or whose name is `NotAllowedError`. Bento searches the exception, then its `cause` chain, then its aggregated errors depth-first, and describes the first match: its `name`, its `code` as `node_code`, and its own string `permission` and `resource` properties as proposal 0003 sets them, each `None` when the error does not carry it. A denied `fetch` therefore reports `permission: "Net"` although the uncaught error is a `TypeError`.
 - Other failures carry no details. The kind always tells which variant to expect.
 
 #### Serialization
@@ -246,7 +246,7 @@ pub struct Denial {
 - `SourceLocation`: `{"path", "line", "column"}`.
 - `StackFrame`: `{"function", "path", "url", "line", "column", "origin"}`, where at most one of `path` and `url` is non-null, and `origin` is `application`, `dependency`, or `runtime`.
 - `Exception`: `{"name", "message", "code", "frames", "customStack", "cause", "errors"}`.
-- `RuntimeError`: `{"kind", "message", "location", "exception", "details"}`, where `kind` is `startup`, `configuration`, `resolution`, `syntax`, `transform`, `permission`, `uncaught`, or `internal`, and `details` is `{"path"}`, `{"specifier", "referrer"}`, `{"name", "code", "permission", "resource"}`, or `null`.
+- `RuntimeError`: `{"kind", "message", "location", "exception", "details"}`, where `kind` is `startup`, `configuration`, `resolution`, `syntax`, `transform`, `permission`, `uncaught`, or `internal`, and `details` is `{"path"}`, `{"specifier", "referrer"}`, `{"name", "nodeCode", "permission", "resource"}`, or `null`.
 - `Diagnostic`: `{"severity", "path", "option", "message"}`, with `severity` `warning` or `error`.
 - `RunOutcome`: `{"type": "completed"}`, `{"type": "exited", "exitCode"}`, `{"type": "failed", "error"}`, or `{"type": "shutdown", "report"}`.
 - `ShutdownReport`: `{"outcome"}`, where the outcome is `{"type": "graceful", "exitCode"}`, `{"type": "failed", "error"}`, `{"type": "interrupted"}`, or `{"type": "timed-out"}`.
@@ -287,7 +287,7 @@ A failure for an uncaught `TypeError` caused by a denial serializes as:
     },
     "details": {
         "name": "Error",
-        "code": "ERR_ACCESS_DENIED",
+        "nodeCode": "ERR_ACCESS_DENIED",
         "permission": "Net",
         "resource": null
     }
@@ -478,11 +478,11 @@ This proposal adds these rows to proposal 0005's table:
 | Code | Meaning | `retryable` | `details` | `suggestions` |
 | --- | --- | --- | --- | --- |
 | `STARTUP_FAILED` | A runtime instance could not be set up: its project root, working directory, or script could not be resolved as it started, a host module was declared under a specifier that is not a unique `host:` name, or a worker could not be initialized. | `false` | None. | None. |
-| `RESOLUTION_FAILED` | a module specifier could not be resolved | `false` | `specifier`, as written, and `from`, the importing module's absolute path, or its URL when it is not a file. | `bento install`, when the specifier is a bare package name: not relative, not absolute, not `host:`, and not a URL. |
+| `RESOLUTION_FAILED` | A module specifier could not be resolved. | `false` | `specifier`, as written, and `referrer`, the referrer's URL (`file:` for a file). | Those the reporter can determine. From a run: `bento install`, when the specifier is a bare package name: not relative, not absolute, not `host:`, and not a URL. |
 | `UNCAUGHT_EXCEPTION` | A running script threw, or a promise rejected, and nothing handled it; or the script used a runtime feature Bento does not support. | `false` | None; `exception` is the thrown value. | None. |
 | `DISPOSAL_INCOMPLETE` | A script ended by itself, but work it started had not settled by the shutdown deadline, so its instance was not fully disposed of. | `false` | None. | None. |
 
-`RESOLUTION_FAILED`'s meaning is proposal 0005's, word for word, because proposal 0006 adds the same code and whichever is implemented first adds the row. `specifier` and `from` are the names 0006's report gives those facts; a `bento resolve` failure adds the rest of 0006's report to them.
+`RESOLUTION_FAILED`'s meaning is proposal 0005's, word for word, because proposal 0006 adds the same code and whichever is implemented first adds the row. `specifier` and `referrer` are the base details of both proposals, in the loader's own term, so the row is the same whichever adds it; a `bento resolve` failure adds the rest of 0006's report to them.
 
 A run failure reports the code its kind maps to:
 
@@ -490,16 +490,16 @@ A run failure reports the code its kind maps to:
 | --- | --- | --- | --- | --- |
 | `Startup` | `STARTUP_FAILED` | this proposal | None. | None. |
 | `Configuration` | `INVALID_CONFIGURATION` | proposal 0005 | `path`: the `tsconfig.json`, or the file it extends, at fault. | None. |
-| `Resolution` | `RESOLUTION_FAILED` | this proposal or proposal 0006 | `specifier`, and `from` from the referrer: a path for a `file:` URL, otherwise the URL. | As in its row. |
+| `Resolution` | `RESOLUTION_FAILED` | this proposal or proposal 0006 | `specifier`, and `referrer`: the referrer's URL, `file:` for a file. | `bento install` for a bare package specifier, as in its row. |
 | `Syntax` | `SYNTAX_ERROR` | proposal 0005 | None; `location` is the syntax error. | None. |
 | `Transform` | `TRANSFORM_FAILED` | proposal 0005 | None; `location` is the syntax. | None. |
-| `Permission` | `PERMISSION_DENIED` | proposal 0005 | `denial`: the `Denial`'s `name`, `code`, `permission`, and `resource`, or no `denial` without one. | The flag that would allow it, when the inherited ceiling allows that flag. |
+| `Permission` | `PERMISSION_DENIED` | proposal 0005 | From the `Denial`, in proposal 0003's Node vocabulary: `permission` (such as `FileSystemRead`), `resource`, and `nodeCode` (such as `ERR_ACCESS_DENIED` or `ERR_DLOPEN_DISABLED`), each only when the denial carries it. A denial without them, such as the Prompt API's `NotAllowedError`, carries none; the error's `name` is in `exception`. | The flag that would allow it, when the inherited ceiling allows that flag. |
 | `Uncaught` | `UNCAUGHT_EXCEPTION` | this proposal | None. | None. |
 | `Internal` | `INTERNAL` | proposal 0005 | None. | 0005's suggestion to report the defect. |
 
 A run that ended by itself with `RunOutcome::Shutdown` and `ShutdownOutcome::TimedOut` reports `DISPOSAL_INCOMPLETE`.
 
-A run's denial is nested under `denial` because 0005 already gives `PERMISSION_DENIED` a `permission` for a launch that cannot read its own script, in Bento's vocabulary (`fs-read`), while `denial.permission` is Node's name for what the guest was denied (`FileSystemRead`). A permission suggestion names the flag proposal 0003's table gives for the denied permission: `--allow-fs-read=<resource>` and `--allow-fs-write=<resource>` for file system denials with a resource (the bare flag without one), `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-wasi`, `--allow-inspector` for those permissions, `--allow-addons` for `ERR_DLOPEN_DISABLED`, and `--allow-language-model` for `NotAllowedError`. It reads `add --allow-net before the script`. A permission without a flag in that table gets no suggestion.
+A permission suggestion names the flag proposal 0003's table gives for the denied permission: `--allow-fs-read=<resource>` and `--allow-fs-write=<resource>` for file system denials with a resource (the bare flag without one), `--allow-net`, `--allow-child-process`, `--allow-worker`, `--allow-wasi`, `--allow-inspector` for those permissions, `--allow-addons` for `ERR_DLOPEN_DISABLED`, and `--allow-language-model` for `NotAllowedError`. It reads `add --allow-net before the script`. A permission without a flag in that table gets no suggestion.
 
 Failures before a run report 0005's codes. Two of them are `bento run`'s alone: when `--watch` cannot watch the project, `PRECONDITION_FAILED` with `details.path`; and when Bento cannot install its signal handlers, `INTERNAL`.
 
@@ -587,7 +587,7 @@ An event stream is `bento run`'s `ndjson` result: each line is one event. Each e
 
 #### Standard streams of a structured run
 
-- Bento itself reads nothing from stdin, as 0005 requires of a structured invocation. The script's standard input is inherited, as in a pass-through run, so `bento run --output json transform.ts < data.json` works.
+- As proposal 0005 provides, Bento itself reads stdin only where a command declares it as input, which neither of these results does, and a script's standard input passes through, as in a pass-through run, so `bento run --output json transform.ts < data.json` works.
 - Before starting any run, Bento keeps a duplicate of its standard output for its own documents and points file descriptor 1 at its standard error. Anything else that writes to file descriptor 1, such as a native addon or a child given that descriptor explicitly, then lands on stderr instead of inside the result.
 - For a reader that has gone away, `bento run` stops writing to stdout, shuts down a running instance as it would for `SIGTERM`, and ends once the run has ended. 0005's rule for a reader that left then applies to what it writes and its status.
 
@@ -671,7 +671,6 @@ Implementation follows proposal 0003, because permission details read Node's den
 - **Events on stderr, or on a dedicated descriptor or file, with guest output passed through.** On stderr, guest text mixes with events and a guest line can impersonate one. A descriptor or file is clean but needs plumbing in every agent harness. Wrapping guest output in `output` events, as `go test -json` does, keeps one parseable stream.
 - **Separate `exited`, `failed`, `stopped`, and `reloaded` events.** They are one fact, how a run ended, with different values; separate events would repeat the outcome's classification and drift from the receipt. `reloaded` is `restarting` followed by `started`.
 - **Flat receipt fields (`stdoutTruncated`, `stdoutTotalBytes`) and top-level `frames` and `suggestion`.** A captured stream is one concept with three facts, frames belong to an exception and its causes each have their own, and `suggestions` is proposal 0005's array.
-- **Flat denial fields in `PERMISSION_DENIED`'s details.** Proposal 0005 already gives the code a `permission` in Bento's vocabulary (`fs-read`); putting Node's `permission` (`FileSystemRead`) under the same key would mix two vocabularies in one field.
 - **Only sinks in the library, with bounded capture left to hosts.** Every host would reimplement the same bounded buffer and its counts; the CLI and embedders share one implementation instead.
 - **Returning captured output from `wait()`.** It would change `wait()`'s type and need a twin for proposal 0011's `wait_async()`. A handle works with any way of waiting.
 - **Process-wide redirection with `dup2` for capture.** It cannot tell instances apart. It is used only to keep a structured run's stdout clean.
