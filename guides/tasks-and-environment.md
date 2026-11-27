@@ -137,7 +137,7 @@ The permission model removed the environment variable "API_TOKEN" at startup. Us
 
 Guest code may set, change, and delete any variable while it runs, whether or not `--allow-env` matches it. Those changes affect only that launch's environment, never the `bento` process's own. A subprocess the guest starts receives the guest's environment after the removal, while task commands always receive the whole prepared environment.
 
-`process.permission.has("env", "PORT")` answers for one variable. `process.permission.drop("env", "API_TOKEN")` removes that variable from the environment for the rest of the run, and `process.permission.drop("env")` removes every variable except the always-kept ones. A name passed to `drop` cannot contain `*`: `drop("env", "APP_*")` throws a `TypeError` with code `ERR_INVALID_ARG_VALUE`.
+`process.permission.has("env", "PORT")` answers for one variable. `process.permission.drop("env", "API_TOKEN")` removes that variable from the environment of the thread that calls it for the rest of the run, and `process.permission.drop("env")` removes every variable except the always-kept ones. As in Node, a worker's environment is a copy of its creator's, and a drop in one thread leaves the others' environments alone. A name passed to `drop` cannot contain `*`: `drop("env", "APP_*")` throws a `TypeError` with code `ERR_INVALID_ARG_VALUE`.
 
 ## Worked example
 

@@ -46,11 +46,13 @@ In a restricted instance, the environment variables its permissions do not cover
 
 `node:child_process` (`spawn`, `exec`, `execFile`, `fork`, and their synchronous forms) and `Deno.Command` work in an unrestricted instance and in a restricted instance allowed child processes. Otherwise they throw `ERR_ACCESS_DENIED` with permission `ChildProcess` and the command as `resource`, and no process starts. A child process runs with the user's full authority, outside every permission, so allowing child processes in a restricted instance lets its code escape every other restriction. `subprocess.kill()` signals the child.
 
-A subprocess receives the instance's environment after the startup removal. When a restricted instance starts a process, Bento adds `BENTO_PERMISSION_CEILING` to the child's environment, describing the instance's permissions at that moment, so a `bento` the child starts stays within them. Bento does not change `NODE_OPTIONS`.
+A subprocess receives the instance's environment after the startup removal. When an instance that is denied anything starts a process, Bento adds `BENTO_PERMISSION_CEILING` to the child's environment, describing the instance's permissions at that moment, so a `bento` the child starts stays within them. Bento does not change `NODE_OPTIONS`.
 
 `process.execPath` is the `bento` executable, and Bento does not accept Node's command-line options yet ([#260](https://github.com/bento-js/bento/issues/260)). `fork()`, and any code that starts `process.execPath` with Node's options, therefore fails with Bento's usage error from the child.
 
-`worker_threads.Worker` and the Web `Worker` work in an unrestricted instance and in a restricted instance allowed workers. Otherwise they throw `ERR_ACCESS_DENIED` with permission `WorkerThreads`. A worker always has its creator's current permissions: a worker's `execArgv` cannot change them, and Deno's `deno.permissions` worker option throws `NotSupported`.
+`worker_threads.Worker` and the Web `Worker` work in an unrestricted instance and in a restricted instance allowed workers. Otherwise they throw `ERR_ACCESS_DENIED` with permission `WorkerThreads`. As in Node, every thread holds permissions of its own: a worker starts with the permissions the instance was created with, whatever its creator has dropped. A worker's `execArgv` cannot change them, and Deno's `deno.permissions` worker option throws `NotSupported`.
+
+Listening on or connecting to a Unix-domain socket path needs only the network permission, as in Node; the file permissions do not apply to the socket's path.
 
 ### Native addons
 
@@ -76,7 +78,7 @@ An unrestricted instance holds each permission it is not denied as if allowed wi
 
 `process.permission.drop(scope[, reference])` irreversibly removes the whole scope, or, with a reference, the one allowance given by exactly that value. A reference that matches no allowance changes nothing, as in Node 26.13.1, and so does any reference when the whole scope is allowed with `*`. Dropping `env` with a name removes that variable from the environment, and dropping the whole `env` scope removes every variable except the always-kept ones. A name containing `*` throws a `TypeError` with code `ERR_INVALID_ARG_VALUE`: `Wildcards are not supported when dropping environment variables`.
 
-A drop affects the whole instance, every worker it has created, and the ceiling given to processes it starts afterward. Files, sockets, child processes, and workers that are already open stay open.
+As in Node, a drop affects only the thread that makes it, the main thread or one worker, and the ceiling given to processes that thread starts afterward. Files, sockets, child processes, and workers that are already open stay open.
 
 `Deno.permissions.query()` and `querySync()` report the instance's permissions in Deno's vocabulary. `request()`, `requestSync()`, `revoke()`, and `revokeSync()` fail with `NotSupported`; Bento never prompts.
 
@@ -91,6 +93,7 @@ In a restricted instance, a denied operation throws what Node 26.13.1 throws for
 | Connecting or listening | `ERR_ACCESS_DENIED`, `permission: 'Net'` |
 | Starting a child process | `ERR_ACCESS_DENIED`, `permission: 'ChildProcess'`, `resource` the command |
 | Starting a worker | `ERR_ACCESS_DENIED`, `permission: 'WorkerThreads'` |
+| Importing, requiring, or resolving a module | `ERR_ACCESS_DENIED`, `permission: 'FileSystemRead'`, `resource` the module's file, or for a package, the first file Node reads, its `package.json`; a denied module anywhere in an `import()` graph rejects the `import()` |
 | Loading a native addon | `ERR_DLOPEN_DISABLED`, `Cannot load native addon because loading addons is disabled.` |
 
 An `ERR_ACCESS_DENIED` message names the flag that manages the permission, as in `Access to this API has been restricted. Use --allow-fs-read to manage permissions.` Network denials reach guest code through the same paths as in Node: a denied `fetch` rejects with an error whose `cause` is the `ERR_ACCESS_DENIED` error. `Deno` namespace APIs throw the same errors as their Node counterparts. The local language model keeps the Web API's `NotAllowedError`, as [Using the Prompt API](prompt-api.md) describes.
@@ -105,13 +108,11 @@ These are the only intended differences from Node 26.13.1's permission model, an
 
 - Paths are compared at their real locations, and links are followed before checking. Node compares paths as written and documents following links outside the allowed paths as a known limitation.
 - Boolean flags reject values. Node accepts any value for `--allow-net` and allows every host. Bento rejects the value, so a command written for Bento's earlier host-scoped network flag cannot silently allow every host.
-- Workers keep their creator's permissions. In Node, a worker created with an explicit `execArgv` loses the parent's permission model.
+- Workers keep the instance's permissions whatever their `execArgv`. In Node, a worker created with an explicit `execArgv` loses the parent's permission model.
 - Nested launches are bounded. A nested `bento` cannot widen its ceiling. Node passes its flags to child Node processes, which can add their own.
 - `process.permission` exists in an unrestricted embedding that denies something. Node has no such configuration.
 - Bento prints none of Node's `ExperimentalWarning` or `SecurityWarning` messages about permission flags; those report Node's own stability levels. The comma warning and the removed-variable warning are kept, because they explain an outcome.
 - Command-line errors exit with status 1, Bento's status for usage errors. Node exits with 9 when a flag is missing its argument.
-- A dropped permission is gone from workers that are already running, as from the rest of the instance. In Node, `process.permission.drop()` leaves running workers unchanged.
-- Bento warns about a comma in every `--allow-fs-read` or `--allow-fs-write` value. Node warns only when the flag has exactly one value, and it counts the entry script among the values, so it never warns when running a script.
 
 Bento also has a permission Node lacks, for the local language model, and operations that are unavailable in every instance because they concern the host process rather than a permission: `process.chdir`, `process.loadEnvFile`, `process.abort`, `process.kill`, and `Deno.kill`.
 

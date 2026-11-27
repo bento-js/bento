@@ -102,10 +102,10 @@ Quote a value containing `*` in your shell, as in `--allow-fs-read='*'`, so that
 - Any other value is a path, absolute or relative to the directory you run `bento` in, not to the project root.
 - A value containing `*` covers every path whose text begins with the text before the first `*`. Anything after that `*` is ignored. `--allow-fs-read='./test*'` covers `test`, `test2`, and `testing/notes.txt`, but not `tes`.
 - Without `*`, an existing directory covers itself and everything beneath it. Anything else, a file or a path that does not exist yet, covers exactly that path. A directory the code will create needs a trailing `*`: `--allow-fs-write='./build/*'` covers `build` itself and everything the code creates beneath it.
-- A comma is part of the path. To allow several paths, repeat the flag. When a value contains a comma, Bento prints Node's warning to standard error, naming the flag, and continues:
+- A comma is part of the path. To allow several paths, repeat the flag. When a flag has exactly one value and it contains a comma, Bento prints Node's warning to standard error, naming the flag, and continues. As in Node, the script you run counts as one more `--allow-fs-read` value, so running a script never warns about reading:
 
 ```text
-warning: The --allow-fs-read CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions
+warning: The --allow-fs-write CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions
 ```
 
 Bento compares paths at their real locations. It resolves each value as the operating system would before comparing it: when `data` is a link to `/srv/data`, `--allow-fs-read=./data` covers `/srv/data`, and because `..` after a link leaves the link's target, `--allow-fs-read=./data/../shared` covers `/srv/shared`. A link to something that does not exist yet names the location it points to, and a path that does not exist yet keeps its missing part as written beneath its nearest existing directory. A value with `*` has its existing directory part resolved and the rest kept as written. On macOS, where `/tmp` is a link to `/private/tmp`, `--allow-fs-read=/tmp/app` covers `/private/tmp/app`.
@@ -122,11 +122,11 @@ An unrestricted launch sees the whole prepared environment. A restricted launch 
 
 `process.execPath` is the `bento` executable, and Bento does not accept Node's command-line options yet ([#260](https://github.com/bento-js/bento/issues/260)). `fork()`, and any code that starts `process.execPath` with Node's options, therefore fails with Bento's usage error from the child, even in an unrestricted launch.
 
-`worker_threads.Worker` and the Web `Worker` work in an unrestricted launch, and in a restricted one with `--allow-worker`. A worker always has its creator's current permissions; passing `execArgv` cannot change them.
+`worker_threads.Worker` and the Web `Worker` work in an unrestricted launch, and in a restricted one with `--allow-worker`. As in Node, every thread holds permissions of its own: a worker starts with the permissions the launch started with, whatever its creator has dropped, and passing `execArgv` cannot change them.
 
 Native addons load in an unrestricted launch, and in a restricted one with `--allow-addons`, from any path. An addon runs native code inside the `bento` process, outside every permission: once loaded, it is not contained by the file, network, or environment restrictions. Pass `--allow-addons` only when you trust every package that ships an addon.
 
-`--allow-net` allows every host and port. Neither Bento nor Node can limit a launch to particular hosts.
+`--allow-net` allows every host and port. Neither Bento nor Node can limit a launch to particular hosts. Listening on or connecting to a Unix-domain socket path needs only `--allow-net`, as in Node; the file permissions do not apply to the socket's path.
 
 #### Available in every launch, and in none
 
@@ -157,7 +157,7 @@ Bento prints none of Node's `ExperimentalWarning` or `SecurityWarning` messages 
 
 #### Inspect and drop permissions
 
-In a restricted launch, `process.permission` reports what the code holds and lets it give permissions up. In an unrestricted launch it is `undefined`, as in Node. `process.permission.has("fs.read", "./data")` answers for one path, and `process.permission.has("fs.read")` is `true` only after `--allow-fs-read='*'`. `process.permission.drop("fs.write")` removes a permission for the rest of the run, and nothing gives it back. [Node Compatibility](node-compatibility.md#inspect-and-drop-permissions) describes both methods.
+In a restricted launch, `process.permission` reports what the code holds and lets it give permissions up. In an unrestricted launch it is `undefined`, as in Node. `process.permission.has("fs.read", "./data")` answers for one path, and `process.permission.has("fs.read")` is `true` only after `--allow-fs-read='*'`. `process.permission.drop("fs.write")` removes a permission for the rest of the run, and nothing gives it back. As in Node, a drop applies only to the thread that makes it, the main thread or one worker. [Node Compatibility](node-compatibility.md#inspect-and-drop-permissions) describes both methods.
 
 #### Move from earlier flags
 
