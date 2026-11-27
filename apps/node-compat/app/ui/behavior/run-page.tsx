@@ -16,7 +16,7 @@ import { ModuleTable, ResultsTable } from "#app/ui/behavior/tables.tsx";
 import { Document } from "#app/ui/document.tsx";
 import { FilterForm, Pagination } from "#app/ui/filters.tsx";
 import { formatCount, formatTimestamp, withSearch } from "#app/ui/format.ts";
-import { PageHeader, proseStyle, sectionStyle, splitStyle } from "#app/ui/layout.tsx";
+import { PageHeader, proseStyle, sectionStyle, stackStyle } from "#app/ui/layout.tsx";
 import { paginate } from "#app/ui/query.ts";
 import { RunConditions, RunMeta, StateNotice } from "#app/ui/run-conditions.tsx";
 
@@ -54,7 +54,7 @@ export function BehaviorRunPage(handle: Handle<BehaviorRunPageProps>) {
                 {report.behavior.length === 0 ? (
                     <p mix={proseStyle}>This run has no recorded test results.</p>
                 ) : (
-                    <div mix={splitStyle}>
+                    <div mix={stackStyle}>
                         <section aria-labelledby="modules-heading" mix={sectionStyle}>
                             <h2 id="modules-heading">Modules</h2>
                             <ModuleTable

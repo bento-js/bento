@@ -15,7 +15,7 @@ import {
     EntriesTable,
     InventoryModuleTable,
 } from "#app/ui/inventory/tables.tsx";
-import { PageHeader, proseStyle, sectionStyle, splitStyle } from "#app/ui/layout.tsx";
+import { PageHeader, proseStyle, sectionStyle, stackStyle } from "#app/ui/layout.tsx";
 import { paginate } from "#app/ui/query.ts";
 import { RunConditions, RunMeta, StateNotice } from "#app/ui/run-conditions.tsx";
 
@@ -60,7 +60,7 @@ export function InventoryPage(handle: Handle<InventoryPageProps>) {
                 {report.inventory.length === 0 ? (
                     <p mix={proseStyle}>This run has no recorded inventory entries.</p>
                 ) : (
-                    <div mix={splitStyle}>
+                    <div mix={stackStyle}>
                         <section aria-labelledby="inventory-modules-heading" mix={sectionStyle}>
                             <h2 id="inventory-modules-heading">Modules</h2>
                             <InventoryModuleTable

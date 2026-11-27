@@ -75,13 +75,10 @@ export let metaLineStyle = css({
     },
 });
 
-export let splitStyle = css({
+export let stackStyle = css({
     display: "grid",
     gap: theme.space.xxl,
-    alignItems: "start",
-    "@media (min-width: 80rem)": {
-        gridTemplateColumns: "minmax(22rem, 30rem) minmax(0, 1fr)",
-    },
+    minWidth: 0,
 });
 
 export let proseStyle = css({
