@@ -1,0 +1,43 @@
+min_version = "2026.10.4"
+
+[tools]
+node = "26.12.1"
+pnpm = "12.15.0"
+
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+
+[tasks.setup]
+description = "Install the dashboard's locked dependencies"
+run = "pnpm install --frozen-lockfile"
+
+[tasks.dev]
+description = "Serve the local compatibility dashboard with watch mode"
+env = { NODE_ENV = "development" }
+run = "node --watch --import remix/node-tsx server.ts"
+
+[tasks.start]
+description = "Serve the local compatibility dashboard"
+env = { NODE_ENV = "production" }
+run = "node --import remix/node-tsx server.ts"
+
+[tasks.prepare]
+description = "Fetch and verify the pinned upstream Node test corpus"
+run = "node collector/prepare.ts"
+
+[tasks.collect]
+description = "Collect Node/Bento evidence; accepts --kind, --filter, and --bento"
+run = "node collector/main.ts"
+
+[tasks.test]
+env = { NODE_ENV = "test" }
+run = "remix test"
+
+[tasks.typecheck]
+run = "tsc"
+
+[tasks.fmt]
+run = "oxfmt"
+
+[tasks.check]
+run = ["oxfmt --check", "oxlint --disable-nested-config --deny-warnings", "tsc", "remix test"]

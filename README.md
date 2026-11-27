@@ -60,6 +60,7 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 - [Installing dependencies](guides/installing-dependencies.md): `bento install` and pnpm.
 - [TypeScript and JSX](guides/typescript-and-jsx.md): which `tsconfig.json` settings Bento honors.
 - [Node compatibility](guides/node-compatibility.md): the Node and Web surface exercised so far, and how grants apply to it.
+- [Local compatibility dashboard](apps/node-compat/README.md): upstream Node behavioral results, API availability, failures, and run history; start with `mise run compat:dev`.
 - [Embedding Bento](guides/embedding-bento.md): the Rust API, host modules, and lifecycle.
 - [Using the Prompt API](guides/prompt-api.md): local model grants, text and JSON sessions, cancellation, and Rust reuse.
 - [Guest-book embedding example](guides/guest-book-embedding-example.md): a complete Rust host.
@@ -82,6 +83,7 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 | `examples/prompt-api` | Native CLI, permission-denial, worker-cancellation, shutdown, and idle-session previews |
 | `fixtures/remix-guest-book` | The Remix 3 application used for acceptance and benchmarks |
 | `bench` | The benchmark harness and recorded results |
+| `apps/node-compat` | The local Remix 3.3 Node compatibility dashboard and collectors |
 | `guides`, `proposals`, `policies`, `decisions` | Documentation and the project's design record |
 
 The runtime is assembled from Deno 2.9.7's crates behind Bento-owned interfaces. Its `deno_core` patch lives in the [bento-js/deno_core](https://github.com/bento-js/deno_core) fork. The optional model backend uses a pinned [bento-js/foundation-models-rs](https://github.com/bento-js/foundation-models-rs) fork for cancellable asynchronous streaming and typed macOS 27 errors.
@@ -127,3 +129,7 @@ mise run status   # which phase the current work is in, and what comes next
 mise run check    # formatting, lint, types, artifact validation, tests, and the docs build
 mise run rust     # rustfmt, clippy and rustdoc with warnings denied, and every crate's tests (macOS arm64)
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

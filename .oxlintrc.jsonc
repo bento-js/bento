@@ -12,6 +12,7 @@
         // own install, and the fixture is an independent project entirely.
         "examples/direct-source/**",
         "fixtures/**",
+        "apps/node-compat/**",
         "target/**"
     ],
     "options": {

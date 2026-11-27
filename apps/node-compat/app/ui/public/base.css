@@ -1,0 +1,81 @@
+@layer rmx-reset {
+    :root {
+        color-scheme: light dark;
+    }
+
+    *,
+    ::before,
+    ::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        border: 0 solid;
+    }
+
+    html {
+        line-height: 1.5;
+        -webkit-text-size-adjust: 100%;
+        tab-size: 4;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+        font-size: inherit;
+        font-weight: inherit;
+        text-wrap: balance;
+    }
+
+    a {
+        color: var(--rmx-colors-text-link);
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+    }
+
+    a:hover {
+        color: var(--rmx-colors-text-link-hover);
+    }
+
+    code,
+    kbd,
+    samp,
+    pre {
+        font-family: var(--rmx-font-family-mono);
+        font-size: 1em;
+    }
+
+    table {
+        border-collapse: collapse;
+        text-indent: 0;
+        border-color: inherit;
+    }
+
+    ol,
+    ul {
+        list-style: none;
+    }
+
+    button,
+    input,
+    select {
+        font: inherit;
+        color: inherit;
+        letter-spacing: inherit;
+        background-color: transparent;
+    }
+
+    summary {
+        cursor: pointer;
+    }
+
+    :focus-visible {
+        outline: 2px solid var(--rmx-colors-focus-ring);
+        outline-offset: 2px;
+    }
+
+    [hidden]:where(:not([hidden="until-found"])) {
+        display: none !important;
+    }
+}

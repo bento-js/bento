@@ -1,0 +1,17 @@
+{
+    "$schema": "node_modules/remix/schema/remix.json",
+    "assets": {
+        "basePath": "/assets",
+        "allowFiles": ["app/**/public/**"],
+        "denyFiles": ["app/**/*.test.*"]
+    },
+    "db": {
+        "adapter": {
+            "type": "sqlite",
+            "filename": "./.data/results.sqlite"
+        },
+        "migrations": {
+            "directory": "./data/migrations"
+        }
+    }
+}
