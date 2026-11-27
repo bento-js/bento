@@ -1,0 +1,1 @@
+import{t as e}from"./framework.B0Edo2ed.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.CYckSvbx.js`),[])};export{t as default};
