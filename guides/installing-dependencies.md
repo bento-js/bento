@@ -1,7 +1,7 @@
 ---
 id: guide.installing-dependencies
 title: Installing Dependencies
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0004]
 ---
 
 # Installing Dependencies
@@ -30,7 +30,7 @@ Bento stops before running anything when `devEngines.packageManager` is missing 
 
 ### Development dependencies
 
-`devDependencies` are always installed, even when `NODE_ENV=production` is set in your environment: Bento runs pnpm with `--production=false`. Project tasks rely on them for formatting, linting, type checking, and migrations.
+`devDependencies` are always installed, even when `NODE_ENV=production` is set in your environment: Bento runs pnpm with `--production=false`. They usually hold the project's package tools for formatting, linting, type checking, and migrations.
 
 ### Build scripts
 

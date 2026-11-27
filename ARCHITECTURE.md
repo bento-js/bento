@@ -25,7 +25,7 @@ Bento must:
 - Offer a Rust embedding interface whose host controls filesystem, networking, environment, subprocesses, module access, and runtime lifecycle.
 - Support multiple runtime instances in a larger application, including scoped scripts used by coding agents.
 - Support JavaScriptCore-backed execution on Apple platforms, especially iOS, without assuming that all Node APIs are available there.
-- Integrate type checking, formatting, linting, bundling, testing, development serving, CSS, Markdown/MDX, dependency installation, and task execution through a coherent project model.
+- Integrate type checking, formatting, linting, bundling, testing, development serving, CSS, Markdown/MDX, and dependency installation through a coherent project model.
 - Compile into feature-selected binaries that omit unnecessary tooling and native capabilities.
 - Retain the conventional JavaScript ecosystem's manifests, dependency semantics, and configuration formats wherever possible.
 
@@ -63,7 +63,7 @@ Bento is **not** a new JavaScript language, a new TypeScript syntax, a replaceme
   tsrs / Oxlint / Oxfmt                Host capability adapters
   Vite / Vitest                        Isolates / event loop
   CSS / Markdown                       Deno extensions
-  Tasks / pnpm / Mise                  deno_core
+  pnpm                                 deno_core
        |                                      |
        +--------- shared module identity ----+
                                               |
@@ -95,7 +95,6 @@ The following are proposed Bento-owned crates, not existing published packages.
 | `bento_dev` | HTTP dev server, HMR, module runner, plugin host | May embed a runtime; not the reverse |
 | `bento_test` | Test discovery, workers, assertions, mocking and coverage | Uses runtime APIs and workspace snapshots |
 | `bento_package` | pnpm-backed package installation, registries, lockfiles | Not required for already-resolved production modules |
-| `bento_task` | Task graphs, environment injection, caching, process execution | Uses host process capabilities |
 | `bento_cli` | Argument parsing, configuration assembly, user interface | Thin composition layer over the libraries |
 | `bento_ffi` | Stable C-compatible embedding surface for Swift and other hosts | Wraps runtime handles, never exposes raw engine pointers |
 
@@ -220,7 +219,6 @@ Content mappers connect generated, embedded, and original source positions for T
 | CSS | Lightning CSS | Transforms, compatibility targeting, minification |
 | Markdown / MDX | Sätteri | Rust parser/compiler plus compatible JS plugin bridge |
 | Dependency installation | pnpm 12 Rust crates | Lockfile, registry, store, workspace operations |
-| Tasks and environments | Mise-derived concepts | Project task graph, tool paths, environment injection |
 
 ### Development server
 
@@ -238,9 +236,9 @@ Oxc handles TypeScript stripping and JS/TS transformations; Rolldown handles gra
 
 The production runtime should not require any of these tools if build outputs have already been prepared.
 
-## Dependencies, tasks, and configuration
+## Dependencies and configuration
 
-`package.json` is Bento's primary project entry point. Bento recognizes standard `scripts`, `dependencies`, `devDependencies`, `exports`, `imports`, `workspaces`, and `packageManager` fields. Dependent project commands are declared in the top-level `tasks` field and selected with `bento run <task-name>`. Other Bento-specific options, such as runtime configuration, live under a namespaced `bento` field rather than replacing existing standards.
+`package.json` is Bento's primary project entry point. Bento recognizes standard `scripts`, `dependencies`, `devDependencies`, `exports`, `imports`, `workspaces`, and `packageManager` fields. Bento does not orchestrate project tasks: `scripts`, and workflows such as migrations or checks, belong to the package manager or whichever task runner the project chooses, which calls `bento` like any other command. Other Bento-specific options, such as runtime configuration, live under a namespaced `bento` field rather than replacing existing standards.
 
 An illustrative configuration:
 
@@ -250,11 +248,6 @@ An illustrative configuration:
     "type": "module",
     "packageManager": "pnpm@12.0.0",
     "scripts": { "start": "bento run src/server.ts" },
-    "tasks": {
-        "check": { "dependsOn": ["lint", "types"] },
-        "types": { "command": "tsc" },
-        "lint": { "command": "oxlint" }
-    },
     "bento": {
         "runtime": { "profile": "node" }
     }
@@ -263,9 +256,9 @@ An illustrative configuration:
 
 The exact schema is to be specified independently of the underlying crates. Existing files such as `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `vite.config.ts`, and `tsconfig.json` are recognized according to their native semantics. Reading another package manager's lockfile does not imply that Bento can install from it with full fidelity; unsupported operations must either delegate to the declared manager or fail clearly, rather than rewrite it silently.
 
-pnpm 12 provides the preferred installation and store implementation. `npm:` loading is routed through resolution and the package service, with deterministic lockfile and offline behavior. Mise concepts inform task dependencies, environment interpolation, tool-path injection (including `node_modules/.bin`), and caching, without making Mise itself a mandatory runtime dependency.
+pnpm 12 provides the preferred installation and store implementation. `npm:` loading is routed through resolution and the package service, with deterministic lockfile and offline behavior.
 
-The CLI exposes coherent commands such as `bento run` for scripts and named tasks, `dev`, `test`, `typecheck`, `lint`, `fmt`, `build`, and `install`; these map onto the same underlying libraries available to embedders. [Proposal 0001](proposals/0001-embeddable-typescript-runtime.md) specifies the initial supported subset, including Node-backed package tools within tasks.
+The CLI exposes coherent commands such as `bento run` for source files, `dev`, `test`, `typecheck`, `lint`, `fmt`, `build`, and `install`; these map onto the same underlying libraries available to embedders. [Proposal 0001](proposals/0001-embeddable-typescript-runtime.md) specifies the initial supported subset.
 
 ## Build configurations and deployment
 
@@ -275,7 +268,7 @@ Compiled features determine whether a binary contains an engine backend, transfo
 
 | Artifact | Contents | Intended use |
 | --- | --- | --- |
-| Full | Runtime plus compiler, type checker, package manager, formatting, linting, dev, test, and tasks | Development workstation |
+| Full | Runtime plus compiler, type checker, package manager, formatting, linting, dev, and test | Development workstation |
 | Server | Runtime, Web/Node APIs, server host, prebuilt module loader | Containerized production deployment |
 | Embedded | Runtime, selected modules, policy and host adapter APIs | Agent harnesses and native software |
 | Apple/iOS | System JSC adapter, constrained runtime, selected APIs, Swift-facing ABI | App-integrated scripting and extensions |

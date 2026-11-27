@@ -1,7 +1,7 @@
 ---
 id: guide.node-compatibility
 title: Node Compatibility
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0004]
 ---
 
 # Node Compatibility
@@ -18,7 +18,7 @@ Available globals include `process.argv`, instance-local `process.cwd()` and `pr
 
 JavaScript entries and dependencies can use `.js`, `.mjs`, and `.cjs`. CommonJS modules imported by ESM receive generated facades with statically discovered named exports; CommonJS `require()` uses the upstream Node compatibility resolver. The runtime's ESM resolver uses Oxc with Node's `node`, `import`, and `default` conditions, package `exports` and `imports`, and real-path pnpm symlink resolution. Relative ESM imports must name the complete file, including its extension. TypeScript `paths` and `baseUrl` do not change runtime resolution.
 
-Install the project's locked dependencies before execution. A missing package reports the specifier and recommends `bento install`; application startup never invokes an installer or downloads dependencies. An unregistered `host:` import reports that the host did not register the module, without an installation suggestion. Remote URL imports and guest subprocess execution are unavailable regardless of network grants. Installation and explicitly trusted project tasks are separate host operations.
+Install the project's locked dependencies before execution. A missing package reports the specifier and recommends `bento install`; application startup never invokes an installer or downloads dependencies. An unregistered `host:` import reports that the host did not register the module, without an installation suggestion. Remote URL imports and guest subprocess execution are unavailable regardless of network grants. Installation is a separate host operation.
 
 Bento transforms `.ts`, `.mts`, `.cts`, `.tsx`, and `.jsx` in memory through `bento_compiler`; plain JavaScript passes through unchanged. Explicit TypeScript extensions in imports work. The project-root `tsconfig.json` and its inherited execution settings are loaded once per instance. Every non-dependency source uses them, including workspace sources outside the project root. Dependencies use default compiler settings rather than inheriting the application's settings: inside the project, files beneath its own `node_modules`; outside it, files with a `node_modules` directory anywhere in their path. A project whose own root has a `node_modules` ancestor still uses its project settings. `noEmit` never disables runtime transformation, and no emitted JavaScript is written to disk.
 
