@@ -1,7 +1,6 @@
 ---
 id: guide.embedding-bento
 title: Embedding Bento
-describes: [proposal.0001, proposal.0002]
 ---
 
 # Embedding Bento

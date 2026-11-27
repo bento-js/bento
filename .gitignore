@@ -22,17 +22,14 @@ mise.*.local.toml
 # hk — machine-local hook overrides. hk.pkl is committed.
 hk.local.pkl
 
-# fnox — machine-local secret overrides. fnox.toml is committed; it holds no values.
-fnox.local.toml
+# The Workbench package link: machine-local, recreated by `mise install`.
+.workbench
 
-# Docs site (VitePress)
-docs/.vitepress/cache/
-docs/.vitepress/dist/
-
-# Environment
+# Environment: Varlock reads .env.schema (committed) and values from the process environment or
+# a gitignored .env.local.
 .env
 .env.*
-!.env.example
+!.env.schema
 
 # Logs and temp
 *.log
@@ -49,5 +46,7 @@ coverage/
 .beads/proxieddb/
 *.gate.lock*
 
-# Rust
+# Rust build output, and the release archives `mise run package` writes. Cargo.lock is
+# committed: it makes a release reproducible.
 /target/
+/artifacts/

@@ -3,7 +3,6 @@ id: policy.0001
 title: Prefer VoidZero Crates for JavaScript Tooling
 status: active
 established-by: proposal.0001
-supersedes: []
 ---
 
 # Prefer VoidZero Crates for JavaScript Tooling

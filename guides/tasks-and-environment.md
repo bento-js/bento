@@ -1,7 +1,6 @@
 ---
 id: guide.tasks-and-environment
 title: Tasks and Environment
-describes: [proposal.0001, proposal.0002]
 ---
 
 # Tasks and Environment
@@ -18,11 +17,11 @@ For a task, Bento finds the project by looking for the nearest `package.json` in
 
 ### Declare tasks
 
-| Shape | Example | Meaning |
-| --- | --- | --- |
-| A string | `"lint": "oxlint --fix"` | One command. |
-| An array of strings | `"check": ["oxfmt --check", "oxlint", "tsc"]` | Commands that run one after another. The first failure stops the rest. |
-| An object | `"dev": { "dependsOn": ["db:migrate"], "command": "bento run --watch server.ts" }` | `dependsOn` lists tasks to run first; `command` is one command string. Either may be left out, but not both. |
+| Shape               | Example                                                                            | Meaning                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| A string            | `"lint": "oxlint --fix"`                                                           | One command.                                                                                                 |
+| An array of strings | `"check": ["oxfmt --check", "oxlint", "tsc"]`                                      | Commands that run one after another. The first failure stops the rest.                                       |
+| An object           | `"dev": { "dependsOn": ["db:migrate"], "command": "bento run --watch server.ts" }` | `dependsOn` lists tasks to run first; `command` is one command string. Either may be left out, but not both. |
 
 An object with only `dependsOn` groups other tasks: it succeeds when they all succeed.
 

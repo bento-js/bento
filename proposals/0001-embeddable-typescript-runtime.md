@@ -117,12 +117,12 @@ Nested Bento task commands distinguish actual inherited or explicitly assigned e
 
 The required Node compatibility floor includes:
 
-| Module | Required application behavior |
-| --- | --- |
-| `node:http` | Create and listen on the fixture's HTTP server; support its request/response adaptation and streaming; close the listener and active connections through the APIs used by `server.ts`. |
-| `node:path` | Resolve, join, and interpret paths with the platform semantics used by application, configuration, and asset loading. |
-| `node:sqlite` | Run the fixture's actual Remix SQLite adapter, migrations, parameterized reads/writes, and connection cleanup against a persistent database. |
-| `node:fs` and `node:fs/promises` | Perform the file, directory, metadata, and asynchronous operations needed by configuration discovery, migrations, source loading, and assets, subject to applicable grants. |
+| Module                           | Required application behavior                                                                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node:http`                      | Create and listen on the fixture's HTTP server; support its request/response adaptation and streaming; close the listener and active connections through the APIs used by `server.ts`. |
+| `node:path`                      | Resolve, join, and interpret paths with the platform semantics used by application, configuration, and asset loading.                                                                  |
+| `node:sqlite`                    | Run the fixture's actual Remix SQLite adapter, migrations, parameterized reads/writes, and connection cleanup against a persistent database.                                           |
+| `node:fs` and `node:fs/promises` | Perform the file, directory, metadata, and asynchronous operations needed by configuration discovery, migrations, source loading, and assets, subject to applicable grants.            |
 
 This is a minimum list, not a reason to reject additional built-ins required by the actual dependency graph. The same graph also needs Node globals and interoperability such as `process`, `Buffer`, `createRequire`, CommonJS native wrappers, and `import.meta.dirname`, alongside Fetch, streams, form data, async context, and event APIs. Reuse existing compatibility implementations; do not replace Remix packages with fixture-specific stubs.
 
@@ -196,14 +196,14 @@ Persist `id`, `name`, `message`, and `createdAt`. Preserve frame-targeted render
 
 Provide a repeatable benchmark harness and recorded results as the runtime becomes usable, then rerun against the integrated build. Correctness gates precede timing. Use the same selected Remix 3 source, locked packages, input data, compiler options, environment mode, and equivalent authority; record hardware, runtime versions, configuration, and source revisions. Benchmark one workload at a time, without concurrent swarm builds or tests contaminating measurements. Keep raw samples and report repeated-trial medians and spread, with latency percentiles where the sample count supports them.
 
-| Workload | What it answers |
-| --- | --- |
-| Cold process launch to listening and to the first correctly rendered page | Startup versus application initialization cost; do not confuse the two milestones. |
-| First JavaScript/TSX/CSS asset graph and repeat requests in the same process | Native compilation cost versus the fixture's warm in-memory cache, separately in development and production modes. |
-| Matching parse, resolve, transform, minify, and CSS operations | Where time goes inside the asset path; compare native package bindings with compatible built-ins if both actually exist. |
-| Steady rendered GET, asset GET, and persisted POST workloads | Throughput and latency with equivalent response bodies, validation, redirects, and database state. |
-| Entry and transitive-source edits to changed responses | Watch reload latency, successful recovery, and whether persistence/listener correctness survives. |
-| Idle and peak process memory during startup and asset compilation | The footprint of the usable application and native dependencies, not only an empty isolate. |
+| Workload                                                                     | What it answers                                                                                                          |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Cold process launch to listening and to the first correctly rendered page    | Startup versus application initialization cost; do not confuse the two milestones.                                       |
+| First JavaScript/TSX/CSS asset graph and repeat requests in the same process | Native compilation cost versus the fixture's warm in-memory cache, separately in development and production modes.       |
+| Matching parse, resolve, transform, minify, and CSS operations               | Where time goes inside the asset path; compare native package bindings with compatible built-ins if both actually exist. |
+| Steady rendered GET, asset GET, and persisted POST workloads                 | Throughput and latency with equivalent response bodies, validation, redirects, and database state.                       |
+| Entry and transitive-source edits to changed responses                       | Watch reload latency, successful recovery, and whether persistence/listener correctness survives.                        |
+| Idle and peak process memory during startup and asset compilation            | The footprint of the usable application and native dependencies, not only an empty isolate.                              |
 
 Node uses the fixture's `--import remix/node-tsx` launch path; Bun and Bento use their direct source execution. Browser-source transformations still go through the same Remix 3 asset implementation. Do not invent a persistent asset-cache scenario: this fixture uses an in-process cache. Reset databases and cold state deliberately, use warmups for steady-state measurements, and alternate runtime order to reduce environmental bias.
 

@@ -1,4 +1,5 @@
-# Mirrors the Oxfmt settings used for TypeScript (vite.config.ts and the fixture's .oxfmtrc.jsonc).
+# 100 columns and 4-space indentation, like the Oxfmt (.oxfmtrc.jsonc) and dprint (dprint.json)
+# settings for the rest of the repository.
 max_width = 100
 tab_spaces = 4
 hard_tabs = false

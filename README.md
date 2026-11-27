@@ -67,22 +67,22 @@ To embed the runtime instead, read [Embedding Bento](guides/embedding-bento.md) 
 
 ## Repository layout
 
-| Path | Contents |
-| --- | --- |
-| `crates/bento_runtime` | The embeddable runtime: module loading, Node and Web APIs, Node-API addons, grants, host modules, lifecycle |
-| `crates/bento_prompt` | Engine-independent text sessions, the optional macOS Foundation Models backend, and the optional Deno adapter |
-| `crates/bento_cli` | The `bento` command |
-| `crates/bento_host` | Grants, scopes, canonical paths, and network targets |
-| `crates/bento_compiler` | Oxc transforms and `tsconfig.json` settings |
-| `crates/bento_workspace` | Project discovery, targets, and `.env` loading |
-| `crates/bento_task` | Task graphs, nested launches, and process-group cancellation |
-| `crates/bento_package` | Installation through pnpm |
-| `examples/guestbook-host` | A Rust host embedding the guest book |
-| `examples/direct-source` | A TypeScript and TSX example |
-| `examples/prompt-api` | Native CLI, permission-denial, worker-cancellation, shutdown, and idle-session previews |
-| `fixtures/remix-guest-book` | The Remix 3 application used for acceptance and benchmarks |
-| `bench` | The benchmark harness and recorded results |
-| `guides`, `proposals`, `policies`, `decisions` | Documentation and the project's design record |
+| Path                                           | Contents                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `crates/bento_runtime`                         | The embeddable runtime: module loading, Node and Web APIs, Node-API addons, grants, host modules, lifecycle   |
+| `crates/bento_prompt`                          | Engine-independent text sessions, the optional macOS Foundation Models backend, and the optional Deno adapter |
+| `crates/bento_cli`                             | The `bento` command                                                                                           |
+| `crates/bento_host`                            | Grants, scopes, canonical paths, and network targets                                                          |
+| `crates/bento_compiler`                        | Oxc transforms and `tsconfig.json` settings                                                                   |
+| `crates/bento_workspace`                       | Project discovery, targets, and `.env` loading                                                                |
+| `crates/bento_task`                            | Task graphs, nested launches, and process-group cancellation                                                  |
+| `crates/bento_package`                         | Installation through pnpm                                                                                     |
+| `examples/guestbook-host`                      | A Rust host embedding the guest book                                                                          |
+| `examples/direct-source`                       | A TypeScript and TSX example                                                                                  |
+| `examples/prompt-api`                          | Native CLI, permission-denial, worker-cancellation, shutdown, and idle-session previews                       |
+| `fixtures/remix-guest-book`                    | The Remix 3 application used for acceptance and benchmarks                                                    |
+| `bench`                                        | The benchmark harness and recorded results                                                                    |
+| `guides`, `proposals`, `policies`, `decisions` | Documentation and the project's design record                                                                 |
 
 The runtime is assembled from Deno 2.9.7's crates behind Bento-owned interfaces. Its `deno_core` patch lives in the [bento-js/deno_core](https://github.com/bento-js/deno_core) fork. The optional model backend uses a pinned [bento-js/foundation-models-rs](https://github.com/bento-js/foundation-models-rs) fork for cancellable asynchronous streaming and typed macOS 27 errors.
 
@@ -117,13 +117,17 @@ Some directions in [VISION.md](VISION.md#beyond-the-minimum), such as JavaScript
 
 ## Development
 
-Work in this repository follows [PROCESS.md](PROCESS.md), and [AGENTS.md](AGENTS.md) is the operative contract. Substantial changes start as a proposal in [`proposals/`](proposals/). Tests come before code, guides are derived from the proposal, and work is reviewed independently before it merges. [Policy 0001](policies/0001-prefer-voidzero-crates.md) requires VoidZero's crates (Oxc, `oxc_resolver`, Rolldown) for parsing, transformation, resolution, and bundling, and `mise run check` enforces it.
+Work in this repository follows [Workbench](https://github.com/markmals/workbench), pinned in `mise.toml` and loaded from `.workbench`, and [AGENTS.md](AGENTS.md) holds the facts agents need about Bento. Substantial changes start as a proposal in [`proposals/`](proposals/). Tests come before code, guides are derived from the proposal, and work is reviewed independently before it merges. [Policy 0001](policies/0001-prefer-voidzero-crates.md) requires VoidZero's crates (Oxc, `oxc_resolver`, Rolldown) for parsing, transformation, resolution, and bundling, and `mise run check` enforces it.
 
-[mise](https://mise.jdx.dev) owns the toolchains and every task; `mise.toml` pins Node, pnpm, Bun, and the Rust channel that `rust-toolchain.toml` also names. [hk](https://hk.jdx.dev) owns the git hooks, and [Beads](https://github.com/gastownhall/beads) (`bd`) holds the work graph.
+[mise](https://mise.jdx.dev) owns the toolchains and every task; `mise.toml` pins Workbench, Node, pnpm, and the Rust channel that `rust-toolchain.toml` also names. [hk](https://hk.jdx.dev) owns the git hooks, [Beads](https://github.com/gastownhall/beads) (`bd`) holds the work graph, and [Knope](https://knope.tech) turns each pull request's change file into the changelog.
 
 ```sh
 mise run setup    # one-time bootstrap after a clone: dependencies, work tracker, git hooks
 mise run status   # which phase the current work is in, and what comes next
-mise run check    # formatting, lint, types, artifact validation, tests, and the docs build
+mise run check    # formatting, lint, types, tests, record validation, crate policy, and the site build
+mise run fmt      # format in place: dprint, Oxfmt, rustfmt
 mise run rust     # rustfmt, clippy and rustdoc with warnings denied, and every crate's tests (macOS arm64)
+mise run package  # build the default CLI's release archive into artifacts/ (`-- backend-free` for the other)
 ```
+
+Knope turns the change files merged to `main` into one open release pull request. Merging it builds both macOS archives and publishes them as a GitHub release tagged `v<version>`.

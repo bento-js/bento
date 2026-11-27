@@ -1,16 +1,15 @@
 # Publishes the documentation site from the default branch to the root of `gh-pages`, alongside
 # the per-pull-request previews that live under `pr-preview/`.
 #
-# PRIVACY
+# PRIVACY — READ BEFORE ADOPTING
 #
-# This publishes the vision, architecture, record, and guides to the public internet. In a public
-# repository that exposes nothing new, because the same files are already readable there. In a
-# private one it is a leak, and this workflow is the one place that can happen by accident.
+# This publishes your guides to the public internet. The kit's default is that guides are
+# private, and this workflow is the one place that default can be broken by accident.
 #
 # The job is therefore gated on the repository being public. A private repository will skip it
 # rather than publish, and GitHub Pages cannot serve privately outside Enterprise anyway. If your
-# guides must stay private and you still want them rendered, delete this workflow and use the
-# Cloudflare Pages recipe in `preview.yml`, which can gate a site behind Cloudflare Access.
+# guides must stay private and you still want them rendered, publish to Cloudflare instead
+# (`workbench project init --site cloudflare`), which can gate a site behind Cloudflare Access.
 
 name: Docs
 
@@ -38,14 +37,12 @@ jobs:
 
             - uses: jdx/mise-action@v5
 
-            # VitePress and its theme are devDependencies.
-            - run: mise run deps:install
-
-            # Pages serves this repository at /<name>/, so the site's base must match or every
-            # asset resolves against the domain root and the page loads blank.
+            # Pages serves this repository at /<name>/, so the site's base URL must match or every
+            # asset and link resolves against the domain root. Hugo reads HUGO_BASEURL in place of
+            # `baseURL` in docs/hugo.toml. A custom Pages domain needs its own URL here.
             - run: mise run docs:build
               env:
-                  DOCS_BASE: /${{ github.event.repository.name }}/
+                  HUGO_BASEURL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
             # `clean` removes files no longer in the build, which would take the preview umbrella
             # directory with it. Excluding `pr-preview` lets the production site and the open
@@ -53,7 +50,7 @@ jobs:
             - uses: JamesIves/github-pages-deploy-action@v4.9.0
               with:
                   branch: gh-pages
-                  folder: docs/.vitepress/dist
+                  folder: docs/public
                   clean: true
                   clean-exclude: pr-preview
                   commit-message: "Deploy documentation from ${{ github.sha }}"

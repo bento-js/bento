@@ -1,7 +1,6 @@
 ---
 id: guide.prompt-api
 title: Using the Prompt API
-describes: [proposal.0002]
 ---
 
 # Using the Prompt API
@@ -142,16 +141,16 @@ const answer = JSON.parse(text);
 
 The response is JSON text. Bento translates the accepted schema into native guided decoding and validates the completed result before reporting success. The supported subset is closed:
 
-| Schema element | Supported behavior |
-| --- | --- |
-| `type` | `object`, `array`, `string`, `integer`, `number`, or `boolean` |
-| `properties`, `required` | Nested object properties; omitted `required` makes them optional |
-| `additionalProperties` | Only `false`; when omitted, output may still contain only declared properties |
-| `items` | One schema for every array item |
-| `minItems`, `maxItems` | Nonnegative array length bounds in the signed 64-bit range |
-| `minimum`, `maximum` | Numeric bounds; integer bounds must fit the native signed 64-bit range, and number bounds use binary64 |
-| `enum` | String-valued choices |
-| `title`, `description` | Schema annotations |
+| Schema element           | Supported behavior                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `type`                   | `object`, `array`, `string`, `integer`, `number`, or `boolean`                                         |
+| `properties`, `required` | Nested object properties; omitted `required` makes them optional                                       |
+| `additionalProperties`   | Only `false`; when omitted, output may still contain only declared properties                          |
+| `items`                  | One schema for every array item                                                                        |
+| `minItems`, `maxItems`   | Nonnegative array length bounds in the signed 64-bit range                                             |
+| `minimum`, `maximum`     | Numeric bounds; integer bounds must fit the native signed 64-bit range, and number bounds use binary64 |
+| `enum`                   | String-valued choices                                                                                  |
+| `title`, `description`   | Schema annotations                                                                                     |
 
 Each schema node requires an explicit supported `type`; an array also requires its homogeneous `items` schema. Names in `required` must be unique and declared in `properties`. An integer is a number with no fractional part, so `1.0` is valid both as an integer result and as an array length bound. A fractional `minimum` or `maximum` on an integer schema narrows inward to the integers it permits: `minimum: 1.2` permits 2 and above, and `maximum: 4.7` permits 4 and below. Bounds that leave no permitted integer, such as `minimum: 1.2` with `maximum: 1.8`, reject with `TypeError`. Empty enums, repeated required names, negative or fractional array bounds, inverted bounds, and incorrectly typed annotations are malformed. Tuple `items`, non-string enum values, and `additionalProperties: true` are outside the supported subset.
 
@@ -171,7 +170,7 @@ For a native-enabled embedding executable, set `MACOSX_DEPLOYMENT_TARGET=27.0` w
 
 The public Rust API uses `Session`, typed text `Message` values, `CreateOptions`, `PromptOptions`, and `Cancellation`. It provides availability, creation, append, generation, streaming, measurement, independent forks, destruction, and awaited disposal. Direct Rust callers own model authority; the JavaScript adapter is where host grants are enforced. Await disposal when the caller needs proof that native inference and callbacks have settled.
 
-`bento_prompt::TYPESCRIPT_DECLARATIONS` contains the ambient declarations from `crates/bento_prompt/types/prompt.d.ts`. Embedders can write that text into a guest project's type inputs. The declarations describe the implemented surface rather than the whole draft: message and expected content types are narrowed to `"text"`, and members Bento does not implement are absent instead of declared. Those absent members are image, audio, tool-call and tool-response content, tool declarations, `samplingMode`, `topK`, `temperature`, `params()`, `inputUsage`, and `inputQuota`.
+`bento_prompt::TYPESCRIPT_DECLARATIONS` contains the ambient declarations from [`crates/bento_prompt/types/prompt.d.ts`](../crates/bento_prompt/types/prompt.d.ts). Embedders can write that text into a guest project's type inputs. The declarations describe the implemented surface rather than the whole draft: message and expected content types are narrowed to `"text"`, and members Bento does not implement are absent instead of declared. Those absent members are image, audio, tool-call and tool-response content, tool declarations, `samplingMode`, `topK`, `temperature`, `params()`, `inputUsage`, and `inputQuota`.
 
 ## Exercise the preview
 
@@ -204,17 +203,17 @@ These native previews fail explicitly if the model is unavailable. They are sepa
 
 ## Errors and limits
 
-| Failure | JavaScript result |
-| --- | --- |
-| Missing model grant | `NotAllowedError`; an uncaught denial is a Bento permission diagnostic |
-| Unsupported capability, schema feature, or locale | `NotSupportedError` |
-| Invalid message or supported schema shape | `TypeError`; invalid prefix role or position uses `SyntaxError` |
-| Valid assistant-prefix continuation request | `NotSupportedError` |
-| Native refusal or safety filtering | `NotReadableError` |
-| Context exhaustion | `QuotaExceededError`; `requested` and `quota` carry Bento's measurement, or are null when the model reported the exhaustion; an existing session also gets a `contextoverflow` event |
-| Cancellation | The applicable abort reason; explicit destruction uses `AbortError` |
-| Failure to determine model readiness | `UnknownError` |
-| Other native initialization failure during creation or cloning | `OperationError` |
-| Other generation failure, including a rewritten prefix already delivered by a stream | `UnknownError` |
+| Failure                                                                              | JavaScript result                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Missing model grant                                                                  | `NotAllowedError`; an uncaught denial is a Bento permission diagnostic                                                                                                               |
+| Unsupported capability, schema feature, or locale                                    | `NotSupportedError`                                                                                                                                                                  |
+| Invalid message or supported schema shape                                            | `TypeError`; invalid prefix role or position uses `SyntaxError`                                                                                                                      |
+| Valid assistant-prefix continuation request                                          | `NotSupportedError`                                                                                                                                                                  |
+| Native refusal or safety filtering                                                   | `NotReadableError`                                                                                                                                                                   |
+| Context exhaustion                                                                   | `QuotaExceededError`; `requested` and `quota` carry Bento's measurement, or are null when the model reported the exhaustion; an existing session also gets a `contextoverflow` event |
+| Cancellation                                                                         | The applicable abort reason; explicit destruction uses `AbortError`                                                                                                                  |
+| Failure to determine model readiness                                                 | `UnknownError`                                                                                                                                                                       |
+| Other native initialization failure during creation or cloning                       | `OperationError`                                                                                                                                                                     |
+| Other generation failure, including a rewritten prefix already delivered by a stream | `UnknownError`                                                                                                                                                                       |
 
 Apple's default safety settings remain enabled. Model output is probabilistic and can be incorrect even when it satisfies a schema. The typed error categories come from the native framework; Bento does not infer them from localized messages. Session history stays in memory and is not automatically persisted, exported, or logged.

@@ -1,7 +1,6 @@
 ---
 id: guide.running-with-bento
 title: Running with Bento
-describes: [proposal.0001, proposal.0002]
 ---
 
 # Running with Bento
@@ -52,14 +51,14 @@ Arguments for a task go after `--`, and Bento appends them, shell-quoted, to the
 
 Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, load native addons, or access the local language model. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
 
-| Flag | Grants | Items |
-| --- | --- | --- |
-| `--allow-read[=PATH,...]` | Reading files and directories | Paths; each covers everything beneath it |
-| `--allow-write[=PATH,...]` | Creating, changing, and removing files | Paths; each covers everything beneath it |
-| `--allow-net[=HOST[:PORT],...]` | Connecting and listening | A hostname, an IPv4 address, or an IPv6 address in brackets, as in `[::1]:8080`; a host without a port covers all its ports |
-| `--allow-env[=NAME,...]` | Seeing and setting environment variables | Exact variable names |
-| `--allow-addons[=PATH,...]` | Loading native Node-API addons | Paths; each covers everything beneath it |
-| `--allow-language-model[=true\|false]` | Accessing the local language model | Boolean capability; no model identifiers |
+| Flag                                   | Grants                                   | Items                                                                                                                       |
+| -------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--allow-read[=PATH,...]`              | Reading files and directories            | Paths; each covers everything beneath it                                                                                    |
+| `--allow-write[=PATH,...]`             | Creating, changing, and removing files   | Paths; each covers everything beneath it                                                                                    |
+| `--allow-net[=HOST[:PORT],...]`        | Connecting and listening                 | A hostname, an IPv4 address, or an IPv6 address in brackets, as in `[::1]:8080`; a host without a port covers all its ports |
+| `--allow-env[=NAME,...]`               | Seeing and setting environment variables | Exact variable names                                                                                                        |
+| `--allow-addons[=PATH,...]`            | Loading native Node-API addons           | Paths; each covers everything beneath it                                                                                    |
+| `--allow-language-model[=true\|false]` | Accessing the local language model       | Boolean capability; no model identifiers                                                                                    |
 
 For the scoped flags above, a flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
 
@@ -204,15 +203,15 @@ A second Ctrl-C or termination signal does not wait: `bento` exits immediately w
 
 ### Exit codes
 
-| Code | When |
-| --- | --- |
-| `0` | The script or task finished successfully. |
-| The script's code | The script called `process.exit(code)` before the deadline, including from a signal listener or while Bento shut it down. |
-| The command's code | A task command failed, or ended after Bento forwarded a signal to it; a command killed by signal `N` gives `128 + N`, as shells report it. |
-| pnpm's code | `pnpm install` failed. |
-| `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
-| `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
-| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
+| Code               | When                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`                | The script or task finished successfully.                                                                                                                                                                                                                                                                                                                    |
+| The script's code  | The script called `process.exit(code)` before the deadline, including from a signal listener or while Bento shut it down.                                                                                                                                                                                                                                    |
+| The command's code | A task command failed, or ended after Bento forwarded a signal to it; a command killed by signal `N` gives `128 + N`, as shells report it.                                                                                                                                                                                                                   |
+| pnpm's code        | `pnpm install` failed.                                                                                                                                                                                                                                                                                                                                       |
+| `130`              | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time.                                                                                                |
+| `143`              | A termination signal (SIGTERM) stopped the run, in the same cases.                                                                                                                                                                                                                                                                                           |
+| `1`                | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
 
 ## Worked example
 

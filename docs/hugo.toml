@@ -1,0 +1,102 @@
+# The documentation site: this project's vision, records, and guides, rendered in place by the
+# Workbench theme from the package at `.workbench`.
+#
+# Build with `mise run docs:build` (Hugo, then Pagefind) into docs/public, or serve with
+# `mise run docs:dev`. A deployed build sets its base URL through HUGO_BASEURL, which Hugo
+# reads in place of `baseURL` below, so a preview can be served from any path. `docs/layouts/`
+# and `docs/static/` override the theme.
+
+baseURL = "http://localhost:1313/"
+title = "Bento"
+themesDir = "../.workbench"
+theme = "site"
+disableKinds = ["taxonomy", "term", "rss", "sitemap"]
+
+[params]
+description = "A TypeScript runtime that belongs to the application using it."
+tagline = "A TypeScript runtime that belongs to the application using it. Bento makes execution an embeddable capability and development tooling a set of cooperating services around it."
+# Links to repository files the site does not publish resolve to `<repository>/blob/main/<path>`.
+repository = "https://github.com/bento-js/bento"
+logo = "bento.png"
+favicon = "bento.png"
+# The theme scales the hero image to cover its panel. bento.png is a 320-pixel icon, so the hero
+# is the same icon centred on a transparent 720-pixel canvas: it shows near its own size rather
+# than enlarged and blurred.
+heroImage = "bento-hero.png"
+
+[menus]
+[[menus.main]]
+name = "Vision"
+pageRef = "/vision"
+weight = 10
+[[menus.main]]
+name = "Architecture"
+pageRef = "/architecture"
+weight = 20
+[[menus.main]]
+name = "Guides"
+pageRef = "/guides"
+weight = 30
+[[menus.main]]
+name = "Change history"
+pageRef = "/proposals"
+weight = 40
+[[menus.main]]
+name = "Policies"
+pageRef = "/policies"
+weight = 50
+[[menus.main]]
+name = "Decisions"
+pageRef = "/decisions"
+weight = 60
+
+# The records are published from where they live; nothing is copied into docs/. Each
+# directory's README is that section's index page.
+[module]
+[[module.mounts]]
+source = "../VISION.md"
+target = "content/VISION.md"
+[[module.mounts]]
+source = "../ARCHITECTURE.md"
+target = "content/ARCHITECTURE.md"
+[[module.mounts]]
+source = "../guides"
+target = "content/guides"
+files = ["! README.md"]
+[[module.mounts]]
+source = "../guides/README.md"
+target = "content/guides/_index.md"
+[[module.mounts]]
+source = "../proposals"
+target = "content/proposals"
+files = ["! README.md"]
+[[module.mounts]]
+source = "../proposals/README.md"
+target = "content/proposals/_index.md"
+[[module.mounts]]
+source = "../policies"
+target = "content/policies"
+files = ["! README.md"]
+[[module.mounts]]
+source = "../policies/README.md"
+target = "content/policies/_index.md"
+[[module.mounts]]
+source = "../decisions"
+target = "content/decisions"
+files = ["! README.md"]
+[[module.mounts]]
+source = "../decisions/README.md"
+target = "content/decisions/_index.md"
+# The theme checks that a link to an unpublished file names a file in the repository. The
+# repository is only looked up, never published.
+[[module.mounts]]
+source = ".."
+target = "assets/repository"
+files = [
+    "! .git/**",
+    "! .workbench/**",
+    "! target/**",
+    "! node_modules/**",
+    "! docs/public/**",
+    "! docs/resources/**",
+]
