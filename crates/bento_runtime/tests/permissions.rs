@@ -398,6 +398,44 @@ assert.equal(spawnSync('/bin/sh', ['-c', 'printf %s "${BENTO_PERMISSION_CEILING-
 }
 
 #[test]
+fn a_worker_reads_beneath_the_working_directory_but_hands_on_only_the_launchs_permissions() {
+    let directory = project();
+    let root = canonical(directory.path());
+    std::fs::write(root.join("beside.txt"), "beside").unwrap();
+    let settings = restricted(
+        &root,
+        PermissionSet {
+            fs_read: Scope::only([pattern("worker-ceiling.mjs", &root)]),
+            worker: true,
+            child_process: true,
+            ..PermissionSet::default()
+        },
+    );
+    completed(run(
+        settings,
+        "worker-ceiling.mjs",
+        &format!(
+            r#"
+import assert from 'node:assert/strict';
+import {{ Worker }} from 'node:worker_threads';
+const worker = new Worker(`
+    const fs = require('node:fs');
+    const {{ spawnSync }} = require('node:child_process');
+    const ceiling = spawnSync('/bin/sh', ['-c', 'printf %s "$BENTO_PERMISSION_CEILING"'], {{ encoding: 'utf8' }}).stdout;
+    require('node:worker_threads').parentPort.postMessage([fs.readFileSync('beside.txt', 'utf8'), ceiling]);
+`, {{ eval: true }});
+const [read, ceiling] = await new Promise((resolve) => worker.once('message', resolve));
+assert.equal(read, 'beside', 'a worker reads beneath the working directory, as in Node');
+assert.ok(ceiling.length > 0);
+assert.ok(!ceiling.includes({beneath:?}), 'its child inherits only what the launch allowed');
+await worker.terminate();
+"#,
+            beneath = format!("\"prefix\":\"{}/\"", root.display()),
+        ),
+    ));
+}
+
+#[test]
 fn workers_addons_and_the_network_are_denied_with_nodes_errors() {
     let directory = project();
     let root = canonical(directory.path());

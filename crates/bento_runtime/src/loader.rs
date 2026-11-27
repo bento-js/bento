@@ -261,18 +261,23 @@ impl ModuleLoader for Loader {
                     "only local source files can be loaded",
                 )
             })?;
-            let checked = match permissions.check_open(
+            let readable = match permissions.check_open(
                 Cow::Borrowed(&path),
                 OpenAccessKind::Read,
                 Some("module import"),
             ) {
-                Ok(checked) => checked,
+                Ok(checked) => checked.into_path(),
+                // Node's resolution looks for the file before it reads it, so a module that
+                // does not exist fails as missing rather than as denied.
+                Err(PermissionCheckError::PermissionDenied(_)) if !path.exists() => {
+                    Cow::Borrowed(path.as_path())
+                }
                 Err(PermissionCheckError::PermissionDenied(_)) => {
                     return Err(read_denial(&path, dynamic, worker));
                 }
                 Err(error) => return Err(JsErrorBox::from_err(error)),
             };
-            let text = match std::fs::read_to_string(checked) {
+            let text = match std::fs::read_to_string(&readable) {
                 Ok(text) => {
                     node.inputs.record(&path);
                     text

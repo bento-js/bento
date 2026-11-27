@@ -93,6 +93,17 @@ fn the_text_after_the_first_wildcard_covers_nothing_but_stays_part_of_the_value(
 }
 
 #[test]
+fn the_text_from_the_wildcards_segment_on_is_normalized_as_node_normalizes_it() {
+    let layout = layout();
+
+    for same in ["test*ing/", "test*ing//", "test*ing/.", "test*ing/x/..", "x*/../test*ing"] {
+        assert_eq!(layout.pattern(same), layout.pattern("test*ing"), "{same}");
+    }
+    assert_ne!(layout.pattern("test*in/g/.."), layout.pattern("test*ing"));
+    assert_eq!(layout.pattern("test*/.."), layout.pattern("."));
+}
+
+#[test]
 fn absolute_values_ignore_the_base() {
     let layout = layout();
     let elsewhere = tempfile::tempdir().unwrap();

@@ -3,6 +3,8 @@ import { core, primordials } from "ext:core/mod.js";
 let { ObjectEntries, ObjectFromEntries } = primordials;
 let { op_bento_own_environment } = core.ops;
 
+let ownsCopy = false;
+
 /**
  * A worker's `process.env` starts as a copy of its creator's, as in Node, unless the worker
  * shares the environment. Moving the copy into an environment of the worker's own makes every
@@ -15,4 +17,13 @@ export function install() {
     if (process.env === shared) return;
     op_bento_own_environment(ObjectFromEntries(ObjectEntries(process.env)));
     process.env = shared;
+    ownsCopy = true;
+}
+
+/**
+ * Whether this thread owns the environment it reads, as Node says: the main thread, or a
+ * worker with its own copy rather than one created with `SHARE_ENV`.
+ */
+export function ownsEnvironment() {
+    return ownsCopy || core.createLazyLoader("node:worker_threads")().default.isMainThread;
 }

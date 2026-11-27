@@ -27,10 +27,40 @@ pub(crate) struct Authority {
     container: PermissionsContainer,
     model: Access,
     cwd: PathBuf,
+    /// A read this isolate holds that the processes it starts do not inherit: a worker's
+    /// reading beneath the working directory.
+    own_read: Option<PathPattern>,
 }
 
 impl Authority {
     pub(crate) fn new(permissions: Permissions, cwd: PathBuf) -> Arc<Authority> {
+        Authority::holding(permissions, cwd, None)
+    }
+
+    /// A worker's authority: the permissions the instance was launched with and, as in Node,
+    /// reading everything beneath the working directory. A process the worker starts inherits
+    /// only what the launch allowed, as a Node child process inherits only its flags.
+    pub(crate) fn for_worker(launch: &Permissions, cwd: PathBuf) -> Arc<Authority> {
+        let beneath = PathPattern::resolve("*", &cwd).ok().filter(|beneath| {
+            launch.is_restricted()
+                && match launch.allowed_paths(Permission::FsRead) {
+                    Scope::All => false,
+                    Scope::None => true,
+                    Scope::Only(patterns) => !patterns.contains(beneath),
+                }
+        });
+        let permissions = match &beneath {
+            Some(beneath) => launch.clone().reading(beneath.clone()),
+            None => launch.clone(),
+        };
+        Authority::holding(permissions, cwd, beneath)
+    }
+
+    fn holding(
+        permissions: Permissions,
+        cwd: PathBuf,
+        own_read: Option<PathPattern>,
+    ) -> Arc<Authority> {
         let parser = Arc::new(PathParser {
             inner: RuntimePermissionDescriptorParser::new(RealSys),
             cwd: cwd.clone(),
@@ -38,7 +68,8 @@ impl Authority {
         let container = PermissionsContainer::new(parser, deno_permissions(&permissions))
             .with_node_unix_sockets();
         let model = Access::new(permissions.holds(Permission::LanguageModel));
-        Arc::new(Authority { permissions: Mutex::new(permissions), container, model, cwd })
+        let permissions = Mutex::new(permissions);
+        Arc::new(Authority { permissions, container, model, cwd, own_read })
     }
 
     pub(crate) fn container(&self) -> &PermissionsContainer {
@@ -52,6 +83,16 @@ impl Authority {
     /// The permissions as they are now.
     pub(crate) fn current(&self) -> Permissions {
         self.permissions.lock().clone()
+    }
+
+    /// The permissions a process this isolate starts may hold at most: the current ones, less
+    /// the read this isolate holds for itself alone.
+    pub(crate) fn ceiling(&self) -> Permissions {
+        let mut ceiling = self.current();
+        if let Some(own_read) = &self.own_read {
+            ceiling.drop_pattern(Permission::FsRead, own_read);
+        }
+        ceiling
     }
 
     pub(crate) fn holds(&self, permission: Permission) -> bool {
@@ -70,7 +111,7 @@ impl Authority {
         PathPattern::resolve(reference, &self.cwd).ok()
     }
 
-    /// Takes away part of the permissions for good, in every isolate of the instance.
+    /// Takes away part of this isolate's permissions for good.
     pub(crate) fn give_up(&self, change: impl FnOnce(&mut Permissions)) {
         let mut permissions = self.permissions.lock();
         change(&mut permissions);

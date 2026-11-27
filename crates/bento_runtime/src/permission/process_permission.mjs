@@ -1,8 +1,10 @@
 // `process.permission`: what this thread holds, and giving part of it up.
 import { nodeCode } from "ext:bento_instance/permission/errors.mjs";
+import { ownsEnvironment } from "ext:bento_instance/worker_environment.mjs";
 import { core, primordials } from "ext:core/mod.js";
 
 let {
+    Error,
     ErrorCaptureStackTrace,
     ObjectKeys,
     ObjectPrototypeIsPrototypeOf,
@@ -70,7 +72,10 @@ export function has(scope, reference) {
 export function drop(scope, reference) {
     validateString(scope, "scope");
     let normalized = normalizeReference(scope, reference);
-    if (scope === "env") validateVariableReference(reference, normalized);
+    if (scope === "env") {
+        validateVariableReference(reference, normalized);
+        refuseSharedEnvironment();
+    }
     // Node 26 reads an empty reference as none, and drops the whole scope.
     if (normalized === "") normalized = undefined;
     op_bento_permission_drop(scope, normalized);
@@ -89,6 +94,16 @@ function validateVariableReference(reference, name) {
     }
     let error = new TypeError(message);
     nodeCode(error, "ERR_INVALID_ARG_VALUE");
+    throw error;
+}
+
+/** Node 27 lets only a thread that owns its environment drop variables from it. */
+function refuseSharedEnvironment() {
+    if (ownsEnvironment()) return;
+    let error = new Error(
+        "Environment variables can only be dropped from an Environment that owns the process state",
+    );
+    nodeCode(error, "ERR_INVALID_STATE");
     throw error;
 }
 

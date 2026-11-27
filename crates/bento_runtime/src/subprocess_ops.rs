@@ -131,9 +131,9 @@ fn spawn<'s>(
     let mut env: BTreeMap<String, String> =
         if clear { BTreeMap::new() } else { environment.values.lock().clone() };
     env.extend(given);
-    let permissions = authority.current();
-    if permissions.withholds_anything() {
-        let ceiling = permissions
+    let ceiling = authority.ceiling();
+    if ceiling.withholds_anything() {
+        let ceiling = ceiling
             .to_ceiling_value()
             .map_err(|error| JsErrorBox::type_error(error.to_string()))?;
         env.insert(CEILING_ENV.to_owned(), ceiling);

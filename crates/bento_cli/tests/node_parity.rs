@@ -320,7 +320,7 @@ fn dropping_a_pattern_compares_the_text_after_its_wildcard_as_node_does() {
     let project = project();
     let script = r#"
 const { has, drop } = process.permission;
-for (const reference of ['existing/*ignored', 'existing/**', 'existing', 'existing/*']) {
+for (const reference of ['./existing/*ignored/.', 'existing/**', 'existing', 'existing/*']) {
     drop('fs.read', reference);
     report(`after dropping ${reference}`, has('fs.read', 'existing/sub/file.txt'));
 }
@@ -650,6 +650,52 @@ report('error event', [error.name, error.message]);
 report('exit', code);
 "#
     .replace("OUTSIDE", &format!("{:?}", outside_script.display().to_string()));
+    project.same(NODE, &["--permission", "--allow-worker"], &script, &[]);
+}
+
+/// A worker created with `SHARE_ENV` does not own the environment it reads, so, as in Node 27,
+/// it may not drop variables from it.
+#[test]
+fn a_worker_sharing_the_environment_may_not_drop_variables() {
+    let project = project();
+    project.same(
+        NODE_ENVIRONMENT,
+        &["--permission", "--allow-worker", "--allow-env=A"],
+        r#"
+import { Worker, SHARE_ENV } from 'node:worker_threads';
+const worker = new Worker(`
+    const { parentPort } = require('node:worker_threads');
+    const attempt = (action) => { try { action(); return 'dropped'; } catch (error) { return [error.name, error.code, error.message]; } };
+    parentPort.postMessage([
+        attempt(() => process.permission.drop('env', 'A')),
+        attempt(() => process.permission.drop('env')),
+        process.env.A ?? null,
+        process.permission.has('env', 'A'),
+    ]);
+`, { eval: true, env: SHARE_ENV });
+report('worker', await new Promise((resolve) => worker.once('message', resolve)));
+report('main', [process.env.A ?? null, process.permission.has('env', 'A')]);
+await worker.terminate();
+"#,
+        &[("A", "a")],
+    );
+}
+
+/// Node looks for a worker's script before reading it, so a missing script outside what the
+/// instance may read fails as missing, not as denied. Bento's not-found message is its own, so
+/// the case compares the kind of failure.
+#[test]
+fn a_missing_worker_script_fails_as_missing_rather_than_denied() {
+    let project = project();
+    let outside = tempfile::tempdir().unwrap();
+    let missing = outside.path().canonicalize().unwrap().join("missing.mjs");
+    let script = r#"
+import { Worker } from 'node:worker_threads';
+const worker = new Worker(MISSING);
+const error = await new Promise((resolve) => worker.once('error', resolve));
+report('failure', [error.name, error.code === 'ERR_ACCESS_DENIED', error.message.includes('restricted')]);
+"#
+    .replace("MISSING", &format!("{:?}", missing.display().to_string()));
     project.same(NODE, &["--permission", "--allow-worker"], &script, &[]);
 }
 

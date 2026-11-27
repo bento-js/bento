@@ -39,23 +39,31 @@ impl PathPattern {
     /// `--allow-fs-read=VALUE` against the directory it runs in.
     ///
     /// A value containing `*` covers every path that begins with the text before the first
-    /// `*`; the text after it is kept but covers nothing, and the directory part of the text is
-    /// resolved to its real location. Any other value is resolved to its real location, and
-    /// covers everything beneath it when it is an existing directory, or else exactly itself.
-    /// The value `*` alone is all of the permission ([`crate::Scope::All`]), not a pattern; here
-    /// it would mean the paths beneath `base`.
+    /// `*`; the text after it is kept but covers nothing. The directory part of the text is
+    /// resolved to its real location, and the rest is normalized as Node's `path.resolve()`
+    /// normalizes it, so `dir/x*foo/` and `dir/x*foo` name one value. Any other value is
+    /// resolved to its real location, and covers everything beneath it when it is an existing
+    /// directory, or else exactly itself. The value `*` alone is all of the permission
+    /// ([`crate::Scope::All`]), not a pattern; here it would mean the paths beneath `base`.
     ///
     /// # Errors
     ///
     /// Whatever [`canonical_path`] reports for the resolved path.
     pub fn resolve(value: impl AsRef<OsStr>, base: &Path) -> io::Result<PathPattern> {
         let value = value.as_ref().as_bytes();
-        match value.iter().position(|byte| *byte == b'*') {
-            Some(wildcard) => wildcard_prefix(&value[..wildcard], &value[wildcard + 1..], base),
-            None => {
-                let path = canonical_path(&base.join(OsStr::from_bytes(value)))?;
-                Ok(if path.is_dir() { directory(path) } else { PathPattern::Exact(path) })
-            }
+        let Some(wildcard) = value.iter().position(|byte| *byte == b'*') else {
+            return named(&base.join(OsStr::from_bytes(value)));
+        };
+        let split = value[..wildcard].iter().rposition(|byte| *byte == b'/').map_or(0, |at| at + 1);
+        let (directory_part, rest) = value.split_at(split);
+        let (parents, rest) = lexical(rest);
+        let mut directory = base.join(OsStr::from_bytes(directory_part));
+        for _ in 0..parents {
+            directory.push("..");
+        }
+        match rest.iter().position(|byte| *byte == b'*') {
+            Some(wildcard) => wildcard_prefix(&rest[..wildcard], &rest[wildcard + 1..], &directory),
+            None => named(&directory.join(OsStr::from_bytes(&rest))),
         }
     }
 
@@ -67,6 +75,33 @@ impl PathPattern {
             PathPattern::Prefix { prefix, .. } => prefix_covers(prefix_bytes(prefix), path),
         }
     }
+}
+
+/// The pattern a path without `*` names: an existing directory and everything beneath it, or
+/// exactly the path.
+fn named(path: &Path) -> io::Result<PathPattern> {
+    let path = canonical_path(path)?;
+    Ok(if path.is_dir() { directory(path) } else { PathPattern::Exact(path) })
+}
+
+/// `text` with its segments normalized as `path.resolve()` normalizes them: empty and `.`
+/// segments dropped, and each `..` removing the segment before it. Returns how many `..`
+/// segments reached above the start of `text`, and the normalized text.
+fn lexical(text: &[u8]) -> (usize, Vec<u8>) {
+    let mut parents = 0;
+    let mut segments: Vec<&[u8]> = Vec::new();
+    for segment in text.split(|byte| *byte == b'/') {
+        match segment {
+            b"" | b"." => {}
+            b".." => {
+                if segments.pop().is_none() {
+                    parents += 1;
+                }
+            }
+            segment => segments.push(segment),
+        }
+    }
+    (parents, segments.join(&b'/'))
 }
 
 fn prefix_bytes(prefix: &Path) -> &[u8] {
