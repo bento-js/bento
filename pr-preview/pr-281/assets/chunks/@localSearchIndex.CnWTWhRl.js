@@ -1,1 +1,0 @@
-import{t as e}from"./framework.DOODWC8v.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.B5P7nZPO.js`),[])};export{t as default};
