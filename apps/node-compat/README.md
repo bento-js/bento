@@ -49,7 +49,7 @@ A behavioral pass requires both a passing Node control and a passing Bento execu
 
 Bento does not implement every Node command-line flag. Tests requiring unsupported flags are marked **unsupported**, not silently run without their requirements. Each case shows the original flags, exact invocation, exit code or signal, duration, stdout, and stderr. Logs are bounded and explicitly marked when truncated.
 
-**Availability** compares globals and public built-in module exports against Node, including prefix-only built-ins. Internal underscore-prefixed modules are excluded. It reports present, missing, type mismatch, or inspection error; it does not call every API or infer behavioral support. One failed module import does not erase the remaining inventory.
+**Availability** compares globals and public built-in module exports against Node, including prefix-only built-ins. Internal underscore-prefixed modules are excluded. It reports present, missing, type mismatch, or inspection error; it does not call every API or infer behavioral support. When Bento's `node:module.isBuiltin()` reports a built-in absent, every Node export from that module is missing. Other import failures are inspection errors. One failed module import does not erase the remaining inventory.
 
 **History** preserves runs in SQLite. A regression is a previously passing case that no longer passes under comparable conditions. Comparisons require complete behavior runs with the same corpus revision, selection, platform, Node control, launch arguments, and execution deadline. Changing the Bento build is allowed; changing the measurement conditions is not silently treated as a regression. Interrupted or failed collection remains incomplete rather than becoming a smaller, inflated pass rate.
 

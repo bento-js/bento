@@ -80,7 +80,11 @@ it("keeps Bento import and inspection failures distinct from missing exports", (
         ] as [string, string][],
         errors: [],
     };
-    let failed = compareModule("node:x", node, { ok: false, message: "Error: Cannot load node:x" });
+    let failed = compareModule("node:x", node, {
+        ok: false,
+        missingModule: false,
+        message: "Error: Cannot load node:x",
+    });
     assert.deepEqual(
         failed.map(entry => [entry.name, entry.status, entry.bento]),
         [
@@ -103,8 +107,35 @@ it("keeps Bento import and inspection failures distinct from missing exports", (
     );
 });
 
+it("marks every export missing when Bento lacks the built-in module", () => {
+    let node = {
+        ok: true as const,
+        symbols: [
+            ["dlopen", "function"],
+            ["dlclose", "function"],
+        ] as [string, string][],
+        errors: [],
+    };
+    let entries = compareModule("node:ffi", node, {
+        ok: false,
+        missingModule: true,
+        message: 'TypeError: Cannot resolve "node:ffi"',
+    });
+    assert.deepEqual(
+        entries.map(entry => [entry.name, entry.status, entry.bento, entry.error]),
+        [
+            ["dlclose", "missing", null, null],
+            ["dlopen", "missing", null, null],
+        ],
+    );
+});
+
 it("records a Node baseline failure as an inspection error rather than an empty module", () => {
-    let entries = compareModule("node:x", { ok: false, message: "exit code 1" }, null);
+    let entries = compareModule(
+        "node:x",
+        { ok: false, missingModule: false, message: "exit code 1" },
+        null,
+    );
     assert.equal(entries.length, 1);
     assert.equal(entries[0]?.status, "error");
     assert.equal(entries[0]?.bento, null);
@@ -158,7 +189,7 @@ it(
                 pathModule.symbols.some(([name, type]) => name === "join" && type === "function"),
         );
         let unknown = await probe([process.execPath], "node:not-a-builtin", options);
-        assert.equal(unknown?.ok, false);
+        assert.deepEqual(unknown && !unknown.ok ? unknown.missingModule : null, true);
         let globals = await probe([process.execPath], null, options);
         assert.ok(
             globals?.ok &&

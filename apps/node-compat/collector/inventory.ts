@@ -23,7 +23,7 @@ const PROBE_STDOUT_BYTES = 1024 * 1024;
 
 export type ProbeOutcome =
     | { ok: true; symbols: [string, string][]; errors: [string, string][] }
-    | { ok: false; message: string };
+    | { ok: false; missingModule: boolean; message: string };
 
 export interface ProbeOptions {
     directory: string;
@@ -116,11 +116,13 @@ export async function probe(
 
 export function readProbe(result: ProcessResult): ProbeOutcome {
     let value = markedValue(result);
-    if (value === undefined) return { ok: false, message: failure(result) };
+    if (value === undefined) return { ok: false, missingModule: false, message: failure(result) };
     if (typeof value !== "object" || value === null)
-        return { ok: false, message: "The probe printed a malformed result" };
-    if ("error" in value && typeof value.error === "string")
-        return { ok: false, message: value.error };
+        return { ok: false, missingModule: false, message: "The probe printed a malformed result" };
+    if ("error" in value && typeof value.error === "string") {
+        let missingModule = "missingModule" in value && value.missingModule === true;
+        return { ok: false, missingModule, message: value.error };
+    }
     if (
         "symbols" in value &&
         "errors" in value &&
@@ -129,7 +131,7 @@ export function readProbe(result: ProcessResult): ProbeOutcome {
     ) {
         return { ok: true, symbols: value.symbols, errors: value.errors };
     }
-    return { ok: false, message: "The probe printed a malformed result" };
+    return { ok: false, missingModule: false, message: "The probe printed a malformed result" };
 }
 
 export function compareModule(
@@ -178,7 +180,9 @@ function bentoError(
     bento: ProbeOutcome,
     readError: string | undefined,
 ): string | null {
-    if (!bento.ok) return `Bento could not import ${module}: ${bento.message}`;
+    if (!bento.ok) {
+        return bento.missingModule ? null : `Bento could not import ${module}: ${bento.message}`;
+    }
     return readError === undefined ? null : `Bento could not read this export: ${readError}`;
 }
 
@@ -259,7 +263,16 @@ try {
     }
     result = { symbols, errors };
 } catch (error) {
-    result = { error: describe(error) };
+    let missingModule = false;
+    if (specifier !== null) {
+        try {
+            const { isBuiltin } = await import("node:module");
+            missingModule = !isBuiltin(specifier);
+        } catch {
+            // Without node:module, the import failure remains an inspection error.
+        }
+    }
+    result = { error: describe(error), missingModule };
 }
 console.log(${JSON.stringify(MARKER)} + JSON.stringify(result));
 `;
