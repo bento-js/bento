@@ -9,6 +9,23 @@ import { CORPUS_DIRECTORIES } from "./corpus.ts";
 import { SetupError, describeError, errorCode, errorOutput } from "./errors.ts";
 
 const EXEC_FILE = promisify(execFile);
+const LOCAL_GIT_VARIABLES = [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+];
 
 export const NODE_VERSION = "26.12.1";
 export const NODE_TAG = `v${NODE_VERSION}`;
@@ -43,7 +60,7 @@ export async function git(cwd: string, args: string[]): Promise<string> {
         let { stdout } = await EXEC_FILE("git", args, {
             cwd,
             encoding: "utf8",
-            env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+            env: gitEnvironment(),
             maxBuffer: 64 * 1024 * 1024,
         });
         return stdout;
@@ -52,6 +69,13 @@ export async function git(cwd: string, args: string[]): Promise<string> {
             `git ${args.join(" ")} failed in ${cwd}: ${errorOutput(error) || describeError(error)}`,
         );
     }
+}
+
+function gitEnvironment(): NodeJS.ProcessEnv {
+    let environment: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+    // Hooks export repository-selecting GIT_* variables that would override each command's cwd.
+    for (let name of LOCAL_GIT_VARIABLES) delete environment[name];
+    return environment;
 }
 
 export async function verifyCheckout(

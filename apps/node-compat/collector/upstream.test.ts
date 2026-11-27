@@ -12,6 +12,10 @@ import { createScratch, SCRATCH_MANIFEST } from "./scratch.ts";
 import { verifyCheckout } from "./upstream.ts";
 
 function git(cwd: string, ...args: string[]): string {
+    let environment = { ...process.env };
+    for (let name of Object.keys(environment)) {
+        if (name.startsWith("GIT_")) delete environment[name];
+    }
     let isolated = [
         "-c",
         "core.hooksPath=/dev/null",
@@ -25,7 +29,7 @@ function git(cwd: string, ...args: string[]): string {
     return execFileSync("git", [...isolated, ...args], {
         cwd,
         encoding: "utf8",
-        env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null" },
+        env: { ...environment, GIT_CONFIG_GLOBAL: "/dev/null" },
     }).trim();
 }
 
@@ -53,6 +57,20 @@ it("accepts only the pinned, unmodified checkout", { timeout: 30_000 }, async t 
     await rm(path.join(directory, "test/parallel/test-new.js"));
     await writeFile(path.join(directory, "test/parallel/test-a.js"), "patched\n");
     await assert.rejects(verifyCheckout(directory, commit, ["test"]), SetupError);
+});
+
+it("verifies the intended checkout when invoked inside another repository's hook", async t => {
+    let { directory, commit } = await checkout(t);
+    let source = `import { verifyCheckout } from ${JSON.stringify(new URL("./upstream.ts", import.meta.url).href)};
+await verifyCheckout(${JSON.stringify(directory)}, ${JSON.stringify(commit)}, ["test"]);`;
+    execFileSync(process.execPath, ["--input-type=module", "--eval", source], {
+        env: {
+            ...process.env,
+            GIT_DIR: path.join(directory, "not-a-repository"),
+            GIT_WORK_TREE: path.join(directory, "not-a-worktree"),
+            GIT_INDEX_FILE: path.join(directory, "not-an-index"),
+        },
+    });
 });
 
 it(
