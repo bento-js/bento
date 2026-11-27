@@ -1,7 +1,7 @@
 ---
 id: guide.guest-book-embedding-example
 title: Guest Book Embedding Example
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0003]
 ---
 
 # Guest Book Embedding Example
@@ -10,11 +10,11 @@ describes: [proposal.0001]
 
 `bento-guestbook-host` is a small Rust application that runs the Remix 3 guest book inside its own process. It is the worked example for embedding Bento: the same runtime, module loader, TypeScript transform, and Node compatibility that the `bento` command uses, driven from Rust instead of from a command line.
 
-The example demonstrates four embedding features through one application:
+Where `bento run` without permission flags runs code unrestricted, and untrusted code needs `--permission`, a Rust host must choose for every instance it creates. This host runs the guest book restricted. The example demonstrates four embedding features through one application:
 
 - **A host module.** The host registers `host:guestbook` for its runtime instance before loading the application. The guest book's embedded entrypoint, `server.embedded.ts`, imports it and awaits `list()` and `append({ name, message })`. The module is ordinary embedding API: a name, and asynchronous Rust functions that take and return JSON values. Nothing in the runtime knows what a guest book is.
-- **Rust-owned storage.** Entries live in a SQLite database that Rust opens through `rusqlite`, with the host's own table (`id`, `name`, `message`, `createdAt`). The guest never learns the database path, has no write grant, and cannot read the file through `node:fs`; it only sees the entries the host chooses to return.
-- **Grants and lifecycle control.** The host decides what the guest may do: read the project and the package lookup locations above it, open network listeners, see `PORT`, `NODE_ENV`, and `DATABASE_URL`, and load the native compiler addons under the project's `node_modules`. The host also owns shutdown: Ctrl-C or `SIGTERM` to the host asks the runtime to stop, waits for the application's own `SIGTERM` handler, and reports the outcome. The runtime installs no OS signal handlers of its own.
+- **Rust-owned storage.** Entries live in a SQLite database that Rust opens through `rusqlite`, with the host's own table (`id`, `name`, `message`, `createdAt`). The guest never learns the database path, has no write permission, and cannot read the file through `node:fs`; it only sees the entries the host chooses to return.
+- **Permissions and lifecycle control.** The host decides what the guest may do: read the project and the package lookup locations above it, open network listeners, see `PORT`, `NODE_ENV`, and `DATABASE_URL`, and load native addons. The host also owns shutdown: Ctrl-C or `SIGTERM` to the host asks the runtime to stop, waits for the application's own `SIGTERM` handler, and reports the outcome. The runtime installs no OS signal handlers of its own.
 - **Persistence across instances.** Because Rust owns the database, entries survive disposing and recreating the runtime and restarting the host process. `entries` reads them back without starting a runtime at all.
 
 The stock `bento` command does not provide `host:guestbook`; `bento run server.embedded.ts` fails to resolve the import. The CLI entrypoint, `server.ts`, keeps the application's `node:sqlite` storage instead.
@@ -55,17 +55,29 @@ target/release/bento-guestbook-host serve --project fixtures/remix-guest-book --
 | `--read-only` | Refuse `append` at the Rust boundary. `list` still works. The database must already exist. |
 | `--mode development\|production` | The `NODE_ENV` the guest sees. `development` logs each request and serves unminified assets with source maps; `production` serves minified, fingerprinted, immutable assets. Default `production`. |
 
-The host starts `server.embedded.ts` with these grants and nothing more:
+The host starts `server.embedded.ts` with `Permissions::restricted`, allowing these and nothing more:
 
-- **Read:** the project directory, plus Node's package lookup locations above it: `<ancestor>/node_modules` for the project and each of its ancestors up to `/`. The application's asset discovery probes those directories with `fs.realpathSync` while it resolves optional packages, and the runtime keeps a probe outside the grant a permission error rather than pretending the directory is absent. The host computes the list with `bento_runtime::package_lookup_paths` and grants it explicitly; the runtime adds no permissions on its own.
+- **Read:** the project directory, plus Node's package lookup locations above it: `<ancestor>/node_modules` for the project and each of its ancestors up to `/`. The application's asset discovery probes those directories with `fs.realpathSync` while it resolves optional packages, and the runtime keeps a probe outside the readable paths a permission error rather than pretending the directory is absent. The host computes the list with `bento_runtime::package_lookup_paths` and gives each location as a wildcard prefix, so it covers the directory and everything beneath it whether or not the directory exists; a probe of a missing one fails with `ENOENT`, not a denial. The project directory also covers `server.embedded.ts` itself, because a library instance gets no implied read of its entry. The runtime adds no permissions on its own.
 - **Write:** nothing. The application has nothing to write, because the host owns the database.
-- **Net:** all, so the application can listen on its port.
-- **Env:** `PORT`, `NODE_ENV`, and `DATABASE_URL`. The host sets the first two; it never sets `DATABASE_URL`, so the guest sees it as undefined and the database location stays on the Rust side.
-- **Addons:** `<project>/node_modules`, where the native compiler packages live.
+- **Network:** allowed, so the application can listen on its port. The network permission is all or nothing: the library cannot limit it to one port.
+- **Environment:** `PORT`, `NODE_ENV`, and `DATABASE_URL`. The host sets the first two; it never sets `DATABASE_URL`, so the guest sees it as undefined and the database location stays on the Rust side.
+- **Native addons:** allowed, so the native compiler packages under the project's `node_modules` load. The addon permission is all or nothing too, so it covers every addon, not only the ones under `node_modules`.
 
-The read grant is why the database must lie outside the project and outside every `node_modules` directory beside or above it: a store under any of those paths would be readable through `node:fs` like any other file there. `serve` refuses such a `--database` before it opens anything, naming the granted path the store would fall under, and compares resolved paths so a symlink cannot hide the placement.
+In outline, the instance's permissions are:
 
-Launch the host without `NODE_PATH` in its environment. The guest book's native resolver reads that variable from the host process, not from the guest's environment, and a value pointing at another project's packages sends resolution outside the project and into a permission error under these grants.
+```rust
+Permissions::restricted(PermissionSet {
+    fs_read: Scope::only(readable), // the project and each package lookup location, as `dir/*`
+    net: true,
+    env: Scope::only(["PORT", "NODE_ENV", "DATABASE_URL"].map(|name| EnvPattern::parse(name).unwrap())),
+    addons: true,
+    ..PermissionSet::default()
+})
+```
+
+The read permission is why the database must lie outside the project and outside every `node_modules` directory beside or above it: a store under any of those paths would be readable through `node:fs` like any other file there. `serve` refuses such a `--database` before it opens anything, naming the readable path the store would fall under, and compares resolved paths so a symlink cannot hide the placement.
+
+Launch the host without `NODE_PATH` in its environment. The guest book's native resolver reads that variable from the host process, not from the guest's environment, and a value pointing at another project's packages sends resolution outside the project and into a permission error under these permissions.
 
 Open `http://localhost:1612`. The page renders the saved entries and the sign form; the module scripts, import map, and stylesheet it references are served by the same instance. A valid submission answers `303 See Other` with `Location: /`, and the next page shows the entry and a blank form; blank or over-long fields answer `400` with field errors and write nothing. Plain HTML submission works without browser JavaScript.
 
@@ -142,7 +154,7 @@ Server running at http://localhost:1612
 
 A host module is the embedding API, not guest-book support in the runtime. Any Rust application registers its own modules the same way: choose a `host:` name, supply asynchronous functions over JSON values, and hand the registration to the runtime configuration before loading the entry module. The runtime resolves the specifier only for the instance that registered it; another instance in the same process, or the `bento` command, gets a resolution error with no package or network fallback, while the registering instance keeps serving.
 
-Errors cross the boundary as rejected promises carrying the Rust error's name, so a guest can distinguish a refused operation from a crashed one. Grants are enforced at the native boundary regardless of what a module exposes: handing the guest `host:guestbook` does not let it open the database file, and would not even if the module returned the path.
+Errors cross the boundary as rejected promises carrying the Rust error's name, so a guest can distinguish a refused operation from a crashed one. Permissions are enforced at the native boundary regardless of what a module exposes: handing the guest `host:guestbook` does not let it open the database file, and would not even if the module returned the path.
 
 Replacing the storage behind `host:guestbook` changes only this example. The runtime, the resolver, the transforms, and the application's router, validation, rendering, and browser components stay the same.
 
@@ -150,9 +162,9 @@ Replacing the storage behind `host:guestbook` changes only this example. The run
 
 - Building the example needs the pinned Rust toolchain. Preparing the project needs pnpm and Node, which the fixture's package tools use; serving it afterwards needs only the built executable, the project files, and its installed dependencies. The tests also need `rsync`.
 - `--read-only` opens the database read-only and therefore needs it to exist. Run `serve` without the flag once, or point at a store `entries` can already read.
-- The database must be outside every granted read path: the project directory and each `node_modules` directory beside or above it. `serve` refuses a `--database` whose resolved path lies under one of them, and the examples above use `/tmp/guest-book.db` for that reason.
-- Granting the package lookup locations grants whatever they resolve to. An ancestor whose `node_modules` is a symlink, as this repository's worktrees link theirs from the main checkout, makes the link's whole target tree readable; an ancestor other users can write to, such as a shared temporary directory, lets them place a readable `node_modules` there. Serve from a project whose ancestors you trust.
+- The database must be outside every readable path: the project directory and each `node_modules` directory beside or above it. `serve` refuses a `--database` whose resolved path lies under one of them, and the examples above use `/tmp/guest-book.db` for that reason.
+- Allowing reads of the package lookup locations allows whatever they resolve to. An ancestor whose `node_modules` is a symlink, as this repository's worktrees link theirs from the main checkout, makes the link's whole target tree readable; an ancestor other users can write to, such as a shared temporary directory, lets them place a readable `node_modules` there. Serve from a project whose ancestors you trust.
 - The host's table is its own. It does not read the application's `db/` migrations or the `guest_book` table that the `node:sqlite` path creates, and the two storage paths do not share a file.
 - The host module accepts entries, not SQL: `append` takes a `name` and a `message`; the host assigns `id` and `createdAt`. Validation of the fields stays in the application.
-- Enabling the native compiler addons runs trusted native code in the host process. The grants contain the application's JavaScript, not an arbitrary addon, and native code reads the host's own environment, which is why `NODE_PATH` must not be set.
+- Enabling native addons runs trusted native code in the host process. The permissions contain the application's JavaScript, not an addon, and native code reads the host's own environment, which is why `NODE_PATH` must not be set.
 - Shutdown that reaches the five-second deadline is reported as `interrupted`, never as graceful, and the interrupted instance is disposed rather than reused.

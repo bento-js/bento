@@ -1,7 +1,7 @@
 ---
 id: guide.tasks-and-environment
 title: Tasks and Environment
-describes: [proposal.0001, proposal.0002]
+describes: [proposal.0001, proposal.0002, proposal.0003]
 ---
 
 # Tasks and Environment
@@ -9,6 +9,8 @@ describes: [proposal.0001, proposal.0002]
 ## What it does
 
 `bento run <name>` runs a task declared in the top-level `tasks` field of your project's `package.json`, after the tasks it depends on. Before Bento starts a task or a script, it loads the project's `.env` files into that launch's environment. Both features read the files your project already has; nothing needs converting to a Bento-specific format.
+
+A launch without permission flags is unrestricted, as in Node, so running code you do not trust requires `--permission`. For a task, `--permission` and the `--allow-*` flags restrict the `bento` launches its commands start, never the commands themselves. [Running with Bento](running-with-bento.md#control-what-code-may-do) lists the flags; this guide covers what they do to the environment and to nested launches.
 
 For a task, Bento finds the project by looking for the nearest `package.json` in the current directory or one of its parents. For a script, it starts from the script's own directory instead. The directory holding that `package.json` is the project root: tasks run there, and `.env` files and `node_modules/.bin` are read from there. If no `package.json` is found, Bento reports an error.
 
@@ -44,7 +46,7 @@ Arguments after `--` are appended to the selected task's own command, shell-quot
 
 Each command runs with `/bin/sh -c` in the project root, so inline assignments such as `NODE_ENV=test remix test`, quoting, and operators like `&&`, `||`, `;`, and `|` behave as they do in your shell. `PATH` starts with `<root>/node_modules/.bin`, then the directory of the running `bento` executable, then the inherited `PATH`, so installed package tools are found by name. Ahead of all of these, Bento adds a private directory holding only a link to itself, so `bento` in a command always means the running `bento`, even when the project installs a `bento` of its own in `node_modules/.bin`. The command receives the launch environment described below, and its stdout and stderr pass straight through.
 
-Running a task is a trusted operation on your behalf. Its commands, and the executables they start, run with your user's full authority; Bento's grants do not sandbox them. Package tools such as `oxfmt`, `tsc`, or `remix db migrate` may run under Node.
+Running a task is a trusted operation on your behalf. Its commands, and the executables they start, run with your user's full authority whatever permission flags the launch has. Package tools such as `oxfmt`, `tsc`, or `remix db migrate` may run under Node.
 
 ### Cancel and clean up
 
@@ -56,12 +58,18 @@ A command finishes when its shell exits. If the shell leaves processes running i
 
 A task command that runs `bento` again receives two variables from the launch that started the task:
 
-- `BENTO_GRANT_CEILING` carries that launch's grants. The nested launch inherits them for any kind of grant it does not mention, and may narrow them; asking for a wider grant fails before any guest code runs.
+- `BENTO_PERMISSION_CEILING` carries that launch's permissions, unrestricted or restricted. The nested launch can never hold more.
 - `BENTO_ENV_FILE_KEYS` records which variables Bento loaded from `.env` files, with a fingerprint of each loaded value. The nested launch treats those variables as file values it may load again for its own mode, rather than as values you exported. A variable the task command assigns for the nested launch is left out, so it stays explicit even when it repeats the value from `.env`: `DATABASE_URL=base bento run --watch server.ts` keeps `DATABASE_URL=base`. A variable whose value no longer matches its fingerprint is explicit too.
 
 These variables describe the trusted host's policy; they are not authority that guest code can claim.
 
-The language-model capability follows the same ceiling: an omitted `--allow-language-model` inherits it, `--allow-language-model=false` narrows it, and `--allow-language-model` under a denying ceiling fails. Old ceilings without the field deny access. This applies to Bento guests; a trusted task's independent native programs retain the user's OS authority.
+The ceiling decides what a nested launch holds:
+
+- Without `--permission`, the nested launch holds exactly its ceiling's permissions. Under an unrestricted launch it is unrestricted; under a restricted one it is restricted the same way. This is how the guest book's `dev` task passes its launch's flags to `bento run --watch server.ts` without repeating them.
+- With `--permission`, the nested launch holds exactly what its own flags and its entrypoint allow, the same as a launch from your shell. Each flag must fit within the ceiling: a flag that asks for more fails before any guest code runs, naming the flag and the inherited limit, and the task fails with it. Permissions its flags do not mention are denied even when the ceiling holds them, so `bento run --permission --allow-net server.ts` under a launch that allowed reading files cannot read anything but its entrypoint.
+- The nested launch's entrypoint is readable without a flag only when the ceiling's read permission covers it.
+
+Every permission follows these rules, the local language model included. A process that a restricted guest starts receives the guest's permissions at that moment in `BENTO_PERMISSION_CEILING` too, so a `bento` it runs is bounded the same way. A launch started from your shell has no ceiling.
 
 Bento reads a command's own assignments from its text, following the shell's scoping rules:
 
@@ -106,9 +114,30 @@ Missing files are skipped. A `NODE_ENV` set inside `.env.<mode>` or `.env.local`
 
 The effective `NODE_ENV` is part of the launch environment. A watch launch gets `NODE_ENV=development` even when the project has no `.env` files at all. The default never replaces a value that you or a file set.
 
-Loading `.env` files never changes the environment of the process that started Bento or of a Rust host embedding it. A loaded value is not automatically visible to guest code either: a guest sees only the variables its grants allow. Task commands receive the whole prepared environment.
+Loading `.env` files never changes the environment of the process that started Bento or of a Rust host embedding it. An unrestricted guest sees the whole prepared environment, and task commands always receive all of it. A restricted guest sees what the next section describes.
 
 Bento reads `.env` files when a command starts. To pick up a change, restart the command; watch mode does not reload them.
+
+### Environment in a restricted launch
+
+When a launch with `--permission` starts, Bento removes every variable that `--allow-env` does not match, except:
+
+- the variables Node always keeps because Node and its dependencies read them, such as `PATH`, `HOME`, `TMPDIR`, `TZ`, `LANG`, the `LC_*` locale variables, `NODE_OPTIONS`, and `NODE_PATH`. The full list is Node's, from [`src/permission/env_permission.cc`](https://github.com/nodejs/node/blob/v27.0.0-alpha.0.2.0/src/permission/env_permission.cc) at v27.0.0-alpha.0.2.0;
+- the values Bento prepared for the launch: those read from the project's environment files, and the watch-mode `NODE_ENV` default. They are Bento's counterpart of the values Node keeps from the files its `--env-file` option names.
+
+When a variable comes from both an environment file and the inherited environment and `--allow-env` does not match it, the inherited value is removed and the file's value is kept. An inherited `NODE_ENV` is removed unless `--allow-env` matches it, as in Node, though it still chooses the mode file.
+
+`--allow-env` takes `*`, a variable name, or a name prefix followed by `*`, repeated or separated by commas: `--allow-env=PORT,DATABASE_URL` keeps two variables, and `--allow-env='APP_*'` keeps every variable whose name starts with `APP_`.
+
+Reading a removed variable returns `undefined`. The first read of each removed variable emits a process warning with Node's text:
+
+```text
+The permission model removed the environment variable "API_TOKEN" at startup. Use --allow-env to manage permissions.
+```
+
+Guest code may set, change, and delete any variable while it runs, whether or not `--allow-env` matches it. Those changes affect only that launch's environment, never the `bento` process's own. A subprocess the guest starts receives the guest's environment after the removal, while task commands always receive the whole prepared environment.
+
+`process.permission.has("env", "PORT")` answers for one variable. `process.permission.drop("env", "API_TOKEN")` removes that variable from the environment for the rest of the run, and `process.permission.drop("env")` removes every variable except the always-kept ones. A name passed to `drop` cannot contain `*`: `drop("env", "APP_*")` throws a `TypeError` with code `ERR_INVALID_ARG_VALUE`.
 
 ## Worked example
 
@@ -123,6 +152,14 @@ Suppose the project has `.env` containing `DATABASE_URL=base` and `.env.developm
 3. The `dev` command `bento run --watch server.ts` inherits `DATABASE_URL=base`, and `BENTO_ENV_FILE_KEYS` marks that value as loaded from a file. As a watch launch, it selects the `development` mode, loads `.env` and then `.env.development`, and starts the server with `DATABASE_URL=dev` and `NODE_ENV=development`.
 
 Running `DATABASE_URL=mine bento run dev` instead keeps `DATABASE_URL=mine` at both levels, because a value you set always beats the files.
+
+In the same project, a script `show-env.ts` containing `console.log(process.env.PORT, process.env.DATABASE_URL, process.env.API_TOKEN, process.env.HOME !== undefined)` shows what a restricted launch keeps:
+
+```sh
+PORT=3000 API_TOKEN=secret bento run --permission --allow-env=PORT show-env.ts
+```
+
+It prints `3000 base undefined true` and warns that the permission model removed `API_TOKEN`. `--allow-env` matches `PORT`, `DATABASE_URL` comes from `.env`, `API_TOKEN` was inherited and is not matched, and `HOME` is always kept. Without `--permission`, the same command prints `3000 base secret true`.
 
 `bento run test -- --reporter "dot matrix"` runs `NODE_ENV=test remix test --reporter 'dot matrix'`, while `bento run check:fix -- --verbose` fails because `check:fix` has no command of its own.
 

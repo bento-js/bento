@@ -1,14 +1,14 @@
 ---
 id: guide.benchmarks
 title: Benchmarks
-describes: [proposal.0001]
+describes: [proposal.0001, proposal.0003]
 ---
 
 # Benchmarks
 
 ## What it does
 
-The benchmark harness measures one real application, the Remix 3 guest book in `fixtures/remix-guest-book`, under Node, Bun, and Bento, and records raw samples plus a summary you can read and re-run. Every runtime receives the same source, the same locked packages, the same seeded database, the same environment mode, and equivalent authority.
+The benchmark harness measures one real application, the Remix 3 guest book in `fixtures/remix-guest-book`, under Node, Bun, and Bento, and records raw samples plus a summary you can read and re-run. Every runtime receives the same source, the same locked packages, the same seeded database, the same environment mode, and the authority the application needs.
 
 Correctness comes before timing. Before any workload that runs the application measures a runtime, an acceptance checker proves that the runtime serves the actual guest book: the full document, every asset, a valid submission, and the refusal of invalid ones. A runtime that fails a gate is reported as `incompatible`, with the failing check and the response that failed it; one that cannot be launched, exits, or never listens is reported the same way at a `startup` check, with the operating system's error or its output. It never gets a timing row, because an empty page returned quickly is not a fast result. `asset-operations`, which times the native compiler calls without the application, checks every call it times instead: a call that reports an error fails the runtime for that workload, with no timing.
 
@@ -66,7 +66,9 @@ The launch paths are the ones the proposal fixes:
 | --- | --- |
 | Node | `node --import remix/node-tsx server.ts` (adds `--watch` for watch reload) |
 | Bun | `bun server.ts` (`bun --watch server.ts`) |
-| Bento | `$BENTO_BIN run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts` (adds `--watch` before `server.ts`) |
+| Bento | `$BENTO_BIN run --permission --allow-fs-read='*' --allow-fs-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons server.ts` (adds `--watch` before `server.ts`) |
+
+Without permission flags, `bento run` is unrestricted, as `node` and `bun` are. The harness runs Bento restricted instead, with the permissions from the fixture's README, so Bento's numbers include its permission checks. The `asset-operations` probe runs restricted too, with `--permission --allow-fs-read='*' --allow-addons`, because it only reads files and loads the native packages.
 
 `NODE_ENV` is pinned per workload to `development` or `production`.
 
