@@ -2,7 +2,7 @@
 id: proposal.0004
 title: Remove the Task Runner
 authors: [Mark]
-status: draft
+status: awaiting-implementation
 pull-request: https://github.com/bento-js/bento/pull/268
 issues: [https://github.com/bento-js/bento/issues/170]
 supersedes: []
