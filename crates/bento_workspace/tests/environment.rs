@@ -1,8 +1,8 @@
 mod support;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use bento_workspace::{EnvironmentError, FILE_KEYS_ENV, LaunchEnvironment, LaunchKind};
+use bento_workspace::{EnvironmentError, LaunchEnvironment, LaunchKind};
 use support::TempProject;
 
 fn vars(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -15,23 +15,6 @@ fn load(temp: &TempProject, inherited: &[(&str, &str)], kind: LaunchKind) -> Lau
 
 fn get<'a>(environment: &'a LaunchEnvironment, name: &str) -> Option<&'a str> {
     environment.vars().get(name).map(String::as_str)
-}
-
-/// The environment a nested `bento` launch inherits from a task command, launched by
-/// this launch, that assigns the variables in `reassigned`.
-fn forwarded_through(
-    environment: &LaunchEnvironment,
-    reassigned: &[&str],
-) -> BTreeMap<String, String> {
-    let reassigned: BTreeSet<String> = reassigned.iter().map(|name| name.to_string()).collect();
-    let mut child = environment.vars().clone();
-    child.insert(FILE_KEYS_ENV.to_string(), environment.file_keys_value(&reassigned));
-    child
-}
-
-/// The environment a nested `bento` launch inherits from a task this launch runs.
-fn forwarded(environment: &LaunchEnvironment) -> BTreeMap<String, String> {
-    forwarded_through(environment, &[])
 }
 
 #[test]
@@ -187,68 +170,33 @@ fn mode_cannot_name_a_file_outside_the_project_root() {
     assert!(matches!(error, EnvironmentError::InvalidMode { .. }), "{error:?}");
 }
 
+/// `9a7ce19baa54c278` is the fingerprint of `base` in the format an older `bento` wrote for
+/// the launches it nested, so the entry is well formed rather than ignored as malformed.
 #[test]
-fn nested_watch_launch_rederives_file_values_for_its_own_mode() {
+fn an_inherited_bento_env_file_keys_entry_never_demotes_an_inherited_value() {
     let temp = TempProject::new();
     temp.write(".env", "DATABASE_URL=base\n");
     temp.write(".env.development", "DATABASE_URL=dev\n");
+    let file_keys = "DATABASE_URL:9a7ce19baa54c278";
 
-    let outer = load(&temp, &[("PATH", "/usr/bin")], LaunchKind::Run);
-    let child = forwarded(&outer);
-    let nested = LaunchEnvironment::load(temp.root(), child.clone(), LaunchKind::Watch).unwrap();
+    let environment = load(
+        &temp,
+        &[("DATABASE_URL", "base"), ("BENTO_ENV_FILE_KEYS", file_keys)],
+        LaunchKind::Watch,
+    );
 
-    assert_eq!(get(&outer, "DATABASE_URL"), Some("base"));
-    assert_eq!(get(&outer, "NODE_ENV"), None);
-    assert_eq!(child.get("DATABASE_URL").map(String::as_str), Some("base"));
-    assert!(child.contains_key(FILE_KEYS_ENV));
-    assert_eq!(get(&nested, "DATABASE_URL"), Some("dev"));
-    assert_eq!(get(&nested, "NODE_ENV"), Some("development"));
-    assert_eq!(get(&nested, "PATH"), Some("/usr/bin"));
-    assert_eq!(get(&nested, FILE_KEYS_ENV), None);
+    assert_eq!(get(&environment, "DATABASE_URL"), Some("base"));
+    assert!(!environment.file_keys().contains("DATABASE_URL"));
+    assert_eq!(get(&environment, "BENTO_ENV_FILE_KEYS"), Some(file_keys));
 }
 
 #[test]
-fn exported_values_win_at_every_level() {
+fn a_malformed_bento_env_file_keys_is_an_ordinary_inherited_variable() {
     let temp = TempProject::new();
-    temp.write(".env", "DATABASE_URL=base\n");
-    temp.write(".env.development", "DATABASE_URL=dev\n");
 
-    let outer = load(&temp, &[("DATABASE_URL", "exported")], LaunchKind::Run);
-    let nested =
-        LaunchEnvironment::load(temp.root(), forwarded(&outer), LaunchKind::Watch).unwrap();
-    let twice = LaunchEnvironment::load(temp.root(), forwarded(&nested), LaunchKind::Run).unwrap();
+    let environment = load(&temp, &[("BENTO_ENV_FILE_KEYS", "not:a:list")], LaunchKind::Run);
 
-    assert_eq!(get(&outer, "DATABASE_URL"), Some("exported"));
-    assert_eq!(get(&nested, "DATABASE_URL"), Some("exported"));
-    assert_eq!(get(&twice, "DATABASE_URL"), Some("exported"));
-}
-
-#[test]
-fn reassigned_forwarded_value_counts_as_explicit() {
-    let temp = TempProject::new();
-    temp.write(".env", "DATABASE_URL=base\n");
-    temp.write(".env.development", "DATABASE_URL=dev\n");
-
-    let outer = load(&temp, &[], LaunchKind::Run);
-    let mut child = forwarded(&outer);
-    child.insert("DATABASE_URL".to_string(), "inline".to_string());
-    let nested = LaunchEnvironment::load(temp.root(), child, LaunchKind::Watch).unwrap();
-
-    assert_eq!(get(&nested, "DATABASE_URL"), Some("inline"));
-}
-
-#[test]
-fn file_value_the_command_reassigns_counts_as_explicit_even_when_unchanged() {
-    let temp = TempProject::new();
-    temp.write(".env", "DATABASE_URL=base\nPORT=3000\n");
-    temp.write(".env.development", "DATABASE_URL=dev\nPORT=4000\n");
-
-    let outer = load(&temp, &[], LaunchKind::Run);
-    let child = forwarded_through(&outer, &["DATABASE_URL"]);
-    let nested = LaunchEnvironment::load(temp.root(), child, LaunchKind::Watch).unwrap();
-
-    assert_eq!(get(&nested, "DATABASE_URL"), Some("base"));
-    assert_eq!(get(&nested, "PORT"), Some("4000"));
+    assert_eq!(get(&environment, "BENTO_ENV_FILE_KEYS"), Some("not:a:list"));
 }
 
 #[test]

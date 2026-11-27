@@ -1,8 +1,10 @@
+use std::path::Path;
+
 use clap::{Args, Parser, Subcommand};
 
 use crate::grant_flags::GrantFlags;
 
-/// Run TypeScript applications and project tasks.
+/// Run TypeScript and JavaScript applications.
 #[derive(Debug, Parser)]
 #[command(name = "bento", version)]
 pub(crate) struct Cli {
@@ -12,7 +14,7 @@ pub(crate) struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
-    /// Run a script, or a task from the `tasks` field of package.json
+    /// Run a JavaScript or TypeScript source file
     Run(RunArguments),
     /// Install dependencies and devDependencies with the project's pnpm
     Install(InstallArguments),
@@ -23,21 +25,22 @@ pub(crate) struct RunArguments {
     /// Restart the script whenever its source changes
     #[arg(long)]
     pub watch: bool,
-    /// The script path or task name, then its arguments; task arguments go after `--`
-    #[arg(value_name = "TARGET", required = true, num_args = 1.., trailing_var_arg = true)]
-    target_and_arguments: Vec<String>,
+    /// The source file to run, then the arguments it receives
+    #[arg(value_name = "SCRIPT", required = true, num_args = 1.., trailing_var_arg = true)]
+    script_and_arguments: Vec<String>,
     #[command(flatten)]
     pub grants: GrantFlags,
 }
 
 impl RunArguments {
-    pub(crate) fn target(&self) -> &str {
-        &self.target_and_arguments[0]
+    /// The script's path, as given, relative to the directory `bento` runs in.
+    pub(crate) fn script(&self) -> &Path {
+        Path::new(&self.script_and_arguments[0])
     }
 
-    /// Every word after the target, exactly as given, including a leading `--`.
+    /// Every word after the script, exactly as given, including a leading `--`.
     pub(crate) fn arguments(&self) -> &[String] {
-        &self.target_and_arguments[1..]
+        &self.script_and_arguments[1..]
     }
 }
 

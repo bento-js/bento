@@ -101,7 +101,7 @@ test("does not mistake lookalike names for SWC crates", () => {
     let violations = findDisallowedDependencies(
         metadata([
             {
-                name: "bento_task",
+                name: "bento_workspace",
                 dependencies: [
                     { name: "swcheck", rename: null, kind: null },
                     { name: "deno_ast_lite", rename: null, kind: null },

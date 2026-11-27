@@ -85,6 +85,18 @@ impl GuestBook {
         assert!(migrated.status.success(), "{}", stderr(&migrated));
     }
 
+    /// `mise <arguments>` in the copy, which trusts the copy's `mise.toml` the way `mise trust`
+    /// would in a checkout. It inherits the test's environment, where `mise` and the Node that
+    /// package tools run under are found.
+    pub(crate) fn mise(&self, arguments: &[&str]) -> Command {
+        let mut command = Command::new("mise");
+        command
+            .args(arguments)
+            .current_dir(&self.root)
+            .env("MISE_TRUSTED_CONFIG_PATHS", self.path("mise.toml"));
+        command
+    }
+
     /// Saves an entry in the migrated database at `relative`, as signing the guest book would.
     pub(crate) fn add_entry(&self, database: &str, name: &str, message: &str) {
         let insert =
@@ -105,7 +117,8 @@ pub(crate) fn tool_path() -> String {
     env::var("PATH").unwrap()
 }
 
-/// `bento run` with the README's grants and `target`.
-pub(crate) fn run_with_readme_grants(target: &str) -> Vec<&str> {
-    [&["run"][..], &README_GRANTS[..], &[target]].concat()
+/// `bento run` with the README's grants, then `words`: options such as `--watch`, the script,
+/// and its arguments.
+pub(crate) fn run_with_readme_grants<'a>(words: &[&'a str]) -> Vec<&'a str> {
+    [&["run"][..], &README_GRANTS[..], words].concat()
 }

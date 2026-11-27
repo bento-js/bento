@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,10 +12,6 @@ pub struct Manifest {
     pub package_type: Option<PackageType>,
     /// `devEngines.packageManager`.
     pub package_manager: Option<PackageManager>,
-    /// Top-level `tasks` exactly as declared. `scripts` never appear here. Shapes are
-    /// validated when a launch plans the graph it selected, so an unrelated malformed
-    /// task does not block other work.
-    pub tasks: BTreeMap<String, Value>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,8 +47,6 @@ pub enum ManifestProblem {
         "`devEngines.packageManager` must be an object with a string `name` and an optional string `version`"
     )]
     InvalidPackageManager,
-    #[error("`tasks` must be an object that maps task names to tasks")]
-    InvalidTasks,
 }
 
 impl Manifest {
@@ -79,7 +72,7 @@ impl Manifest {
         };
         let package_type = package_type(fields.get("type"))?;
         let package_manager = package_manager(fields.remove("devEngines"))?;
-        Ok(Manifest { package_type, package_manager, tasks: tasks(fields.remove("tasks"))? })
+        Ok(Manifest { package_type, package_manager })
     }
 }
 
@@ -111,12 +104,4 @@ fn package_manager(dev_engines: Option<Value>) -> Result<Option<PackageManager>,
         Some(_) => return Err(ManifestProblem::InvalidPackageManager),
     };
     Ok(Some(PackageManager { name, version }))
-}
-
-fn tasks(field: Option<Value>) -> Result<BTreeMap<String, Value>, ManifestProblem> {
-    match field {
-        None => Ok(BTreeMap::new()),
-        Some(Value::Object(tasks)) => Ok(tasks.into_iter().collect()),
-        Some(_) => Err(ManifestProblem::InvalidTasks),
-    }
 }

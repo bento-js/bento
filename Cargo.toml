@@ -49,7 +49,6 @@ bento_host = { path = "crates/bento_host" }
 bento_package = { path = "crates/bento_package" }
 bento_prompt = { path = "crates/bento_prompt" }
 bento_runtime = { path = "crates/bento_runtime" }
-bento_task = { path = "crates/bento_task" }
 bento_test_support = { path = "crates/bento_test_support" }
 bento_workspace = { path = "crates/bento_workspace" }
 

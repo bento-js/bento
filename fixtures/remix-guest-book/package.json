@@ -40,34 +40,5 @@
     },
     "engines": {
         "node": ">=26"
-    },
-    "tasks": {
-        "dev": {
-            "dependsOn": [
-                "db:migrate"
-            ],
-            "command": "bento run --watch server.ts"
-        },
-        "start": "bento run server.ts",
-        "test": "NODE_ENV=test remix test",
-        "fmt": "oxfmt",
-        "lint": "oxlint --fix",
-        "typecheck": "tsc",
-        "check": [
-            "oxfmt --check",
-            "oxlint",
-            "tsc"
-        ],
-        "check:fix": {
-            "dependsOn": [
-                "fmt",
-                "lint",
-                "typecheck"
-            ]
-        },
-        "db:migrate": "remix db migrate",
-        "db:reset": "remix db reset --force",
-        "db:rollback": "remix db rollback",
-        "db:status": "remix db status"
     }
 }

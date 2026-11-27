@@ -11,16 +11,16 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use tempfile::TempDir;
 
 pub(crate) const SYSTEM_PATH: &str = "/usr/bin:/bin";
-const SCRATCH: &str = "/tmp/bento-cli-tasks";
+const SCRATCH: &str = "/tmp/bento-cli-projects";
 const OTHER_RUNTIMES: [&str; 4] = ["node", "bun", "deno", "pnpm"];
 
-/// A disposable project under `/tmp/bento-cli-tasks/`.
+/// A disposable project under `/tmp/bento-cli-projects/`.
 pub(crate) struct TempProject {
-    dir: TempDir,
+    _dir: TempDir,
     root: PathBuf,
 }
 
@@ -29,23 +29,14 @@ impl TempProject {
         fs::create_dir_all(SCRATCH).unwrap();
         let dir = tempfile::Builder::new().prefix("cli-").tempdir_in(SCRATCH).unwrap();
         let root = dir.path().canonicalize().unwrap();
-        let temp = TempProject { dir, root };
+        let temp = TempProject { _dir: dir, root };
         temp.write("package.json", &manifest.to_string());
         temp
-    }
-
-    pub(crate) fn with_tasks(tasks: Value) -> Self {
-        TempProject::new(json!({ "tasks": tasks }))
     }
 
     /// The canonical project root, which is how grants name it.
     pub(crate) fn root(&self) -> &Path {
         &self.root
-    }
-
-    /// The root as created, reached through the `/tmp` symlink on macOS.
-    pub(crate) fn linked_root(&self) -> &Path {
-        self.dir.path()
     }
 
     pub(crate) fn path(&self, relative: &str) -> PathBuf {
@@ -79,8 +70,7 @@ impl TempProject {
     }
 }
 
-/// `bento <arguments>` started in `directory` with nothing but a system `PATH`, so a nested
-/// `bento` is found only through the directory the running `bento` adds for its tasks.
+/// `bento <arguments>` started in `directory` with nothing but a system `PATH`.
 pub(crate) fn bento_in(directory: &Path, arguments: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_bento"));
     command.args(arguments).current_dir(directory).env_clear().env("PATH", SYSTEM_PATH);

@@ -46,29 +46,36 @@ node --run typecheck    # tsc
 
 ## Running with Bento
 
-[Bento](https://github.com/markmals/bento) runs the same TypeScript source directly, without `--import remix/node-tsx`. It reads the top-level `tasks` in `package.json`; the Node `scripts` above stay as they are, and Bento never runs them or their `pre`/`post` hooks.
+[Bento](https://github.com/markmals/bento) runs the same TypeScript source directly, without `--import remix/node-tsx`. Bento runs source files only, so this copy coordinates its workflow with [Mise](https://mise.jdx.dev): `mise.toml` defines tasks that call `bento` and the package tools. The Node `scripts` above stay as they are, and Bento never runs them.
 
 ```sh
 bento install --frozen-lockfile
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules start
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts
+mise run dev          # migrate, then serve server.ts and restart it on changes
+mise run start        # serve server.ts
+mise run check        # check formatting, linting, and typechecking
 ```
 
 - `bento install --frozen-lockfile` installs `dependencies` and `devDependencies` exactly as `pnpm-lock.yaml` locks them, with the pnpm 12 toolchain that `devEngines` declares, and leaves the lockfile unchanged. pnpm and Node must be on `PATH` to install.
-- `dev` runs the `db:migrate` task once, then `bento run --watch server.ts`. Watch mode sets `NODE_ENV=development` unless the environment or `.env` already sets it, so assets keep their source paths and come with source maps. Editing a module the server imports, such as `app/actions/guest-book/page.tsx`, or a browser module under `app/actions/public/` restarts the server, and the next request shows the change. Saving an entry writes the database, which never restarts the server, and entries survive restarts. A syntax error is reported at its line, and the server stays down until you fix it.
-- `start` runs `bento run server.ts`. Anything other than `NODE_ENV=development` serves minified assets under fingerprinted URLs, as `node --run start` does.
-- `server.ts` starts the server directly. Create the database first with `bento run db:migrate`, or let `dev` do it.
+- `mise run dev` runs the `db:migrate` task, then `bento run --watch server.ts` with the grants below. Watch mode sets `NODE_ENV=development` unless the environment or `.env` already sets it, so assets keep their source paths and come with source maps. Editing a module the server imports, such as `app/actions/guest-book/page.tsx`, or a browser module under `app/actions/public/` restarts the server, and the next request shows the change. Saving an entry writes the database, which never restarts the server, and entries survive restarts. A syntax error is reported at its line, and the server stays down until you fix it.
+- `mise run start` runs `bento run server.ts` with the same grants. Anything other than `NODE_ENV=development` serves minified assets under fingerprinted URLs, as `node --run start` does. Create the database first with `mise run db:migrate`, or let `dev` do it.
+- `mise run test`, `fmt`, `lint`, `typecheck`, `check:fix`, and the `db:*` tasks run the same package tools as the Node scripts above. `check` runs `oxfmt --check`, `oxlint`, and `tsc` in order and stops at the first that fails; `check:fix` runs `oxfmt`, `oxlint --fix`, and `tsc` in order.
+
+Mise is this project's choice, not Bento's: Bento reads no task configuration, and any task runner, or the commands typed by hand, works the same way:
+
+```sh
+pnpm exec remix db migrate
+bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules --watch server.ts
+```
 
 Running the server needs only Bento, not Node, Bun, Deno, or pnpm. Launch it without `NODE_PATH` set: the native Oxc resolver that `remix/assets` loads reads `NODE_PATH` from the Bento process and would look for packages outside the project.
 
-Ctrl-C reaches the server however you start it. `server.ts` hears it itself: it closes its server and database and exits with `0`. Run directly, `bento` exits with that code. Through `dev` or `start`, Bento forwards Ctrl-C to everything the task started, prints that the task was cancelled, and exits with the code the server's `bento` ended with, `0` here.
+Ctrl-C reaches the server however you start it. `server.ts` hears it itself: it closes its server and database and exits with `0`, and `bento` exits with that code.
 
-Bento loads `.env`, then `.env.<mode>`, then `.env.local` from the project root, beneath variables you set yourself. `dev` itself has no mode, so it and the `db:migrate` task it runs read only `.env`; the watch launch it starts selects the `development` mode and so also reads `.env.development`. With `PORT` in `.env` and `DATABASE_URL` in `.env.development`, `dev` migrates the default `db/data.db` but serves the database `.env.development` names, so migrate that one first with the mode set. `dev` then serves on the `.env` port from that database:
+Bento loads `.env`, then `.env.<mode>`, then `.env.local` from the project root, beneath variables you set yourself. Only `bento` reads these files: `remix db migrate` and the other package tools see just the environment you start them with. `mise run dev` therefore migrates the `DATABASE_URL` you set, or the default `db/data.db`, while the watch launch selects the `development` mode and also reads `.env.development`. With `PORT` in `.env` and `DATABASE_URL` in `.env.development`, migrate the database `.env.development` names yourself; `dev` then serves on the `.env` port from that database:
 
 ```sh
-NODE_ENV=development bento run db:migrate
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
+DATABASE_URL=db/development.db mise run db:migrate
+mise run dev
 ```
 
 Bento grants nothing by default. These flags give the app exactly what it uses:
@@ -83,7 +90,7 @@ Bento grants nothing by default. These flags give the app exactly what it uses:
 
 With only `--allow-read=.`, the asset pipeline's search outside the project is a permission denial and the server does not start. Without `--allow-addons`, startup fails with a permission denial that names the addon, before any native code loads. A `DATABASE_URL` outside `./db` needs its own write grant. Native addons run as native code in the Bento process, outside the reach of the other grants, so grant them only to dependencies you trust.
 
-A task's nested `bento` commands inherit these grants as a ceiling: `bento run --watch server.ts` inside `dev` gets the same access without repeating the flags and cannot ask for more. Task commands themselves are trusted host commands, not guest code. Package tools such as `remix db migrate`, `oxfmt`, `oxlint`, and `tsc` run from `node_modules/.bin` under Node, as they do with `node --run`, so the tasks that run them need Node on `PATH` but no grants. `bento run check` runs `oxfmt --check`, `oxlint`, and `tsc` in order and stops at the first that fails; `bento run check:fix` runs the `fmt`, `lint`, and `typecheck` tasks in order.
+Package tools such as `remix db migrate`, `oxfmt`, `oxlint`, and `tsc` run from `node_modules/.bin` under Node, as they do with `node --run`, so the tasks that run them need Node on `PATH` but no grants. `mise.toml` puts `node_modules/.bin` on their `PATH`.
 
 Under Bento, `server.ts` stores entries with `node:sqlite` through `remix/data-table/sqlite`, the same as under Node. A Rust application embedding Bento runs `server.embedded.ts` instead: it serves the same router, but the embedding host owns the storage and exposes it through a private `host:guestbook` module, so this entrypoint never opens a SQLite file. The stock `bento` CLI does not provide that module, so `bento run server.embedded.ts` fails to resolve it.
 

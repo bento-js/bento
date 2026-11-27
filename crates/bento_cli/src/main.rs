@@ -1,4 +1,4 @@
-//! The `bento` command: runs scripts and project tasks, and installs dependencies.
+//! The `bento` command: runs scripts and installs dependencies.
 
 mod arguments;
 mod diagnostic;
@@ -14,7 +14,6 @@ mod run;
 mod runtime_report;
 mod script;
 mod signals;
-mod task;
 mod watch;
 
 use std::process::ExitCode;
