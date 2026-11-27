@@ -13,8 +13,10 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    # `mise run check` is the one definition of the blocking gate. The pre-push hook
-    # runs the same task, so the local gate and this one cannot drift apart.
+    # `mise run check` is the one definition of the blocking gate, and this job is the only place
+    # it runs automatically: no git hook runs it. Agents wait for this job to pass before marking
+    # a pull request ready or merging it. Commit subjects and change files are checked by
+    # workbench.yml.
     check:
         name: Check
         runs-on: ubuntu-latest
@@ -22,43 +24,12 @@ jobs:
             - uses: actions/checkout@v7
               with:
                   fetch-depth: 0
+                  # Pull-request code runs here; it gets no token to push with.
+                  persist-credentials: false
             - uses: jdx/mise-action@v5
-            # Oxfmt, Oxlint, tsrs, tsc, Vitest and VitePress are devDependencies, so
-            # `check` needs them.
+            # Oxfmt, Oxlint, tsrs, tsc and Vitest are devDependencies, so `check` needs them.
             - run: mise run deps:install
             - run: mise run check
-
-    commits:
-        name: Commit messages
-        if: github.event_name == 'pull_request'
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  fetch-depth: 0
-            - uses: jdx/mise-action@v5
-            - name: Validate pull request commit messages
-              env:
-                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
-                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-              run: node tools/check-pr-commits.ts "$BASE_SHA" "$HEAD_SHA"
-
-    # The release pull request consumes changesets instead of adding one, so it is exempt.
-    changeset:
-        name: Changeset
-        if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v7
-              with:
-                  fetch-depth: 0
-            - uses: jdx/mise-action@v5
-            - run: mise run deps:install
-            - name: Require a changeset
-              env:
-                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
-                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-              run: node tools/require-changeset.ts "$BASE_SHA" "$HEAD_SHA"
 
     rust:
         # Bento supports only macOS on Apple silicon for now.
