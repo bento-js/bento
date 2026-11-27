@@ -137,7 +137,7 @@ Hard rules that are Bento's own, not the process's:
 
 **Oxfmt, Oxlint and tsrs** own TypeScript formatting, linting, and type checking; `cargo fmt` and `clippy` own the Rust side. **Vitest** runs the workflow tool's and the benchmark harness's suites, `node --test` runs the record tools', and `cargo test` runs the crates'.
 
-**Worktrunk (`wt`)** owns worktrees. `wt switch --create <name>` creates a parallel worktree that trusts and installs its own toolchain and copies the ignored files listed in `.worktreeinclude`. Run parallel feature work in a worktree rather than stashing.
+**Worktrunk (`wt`)** owns worktrees. `wt switch --create <name>` creates a parallel worktree that trusts and installs its own toolchain and copies the ignored files listed in `.worktreeinclude`. The Rust build cache is not among them: `mise run rust`, `build`, and `dev` clone the primary checkout's `target/` the first time they run in a worktree, so worktrees that never compile hold none of it. Run parallel feature work in a worktree rather than stashing.
 
 **GitHub Actions** runs the same `mise run check` the pre-push hook runs, plus the macOS Rust jobs and the documentation publish. If it passes locally and fails in CI, the difference is environmental — find it, do not special-case the workflow.
 
