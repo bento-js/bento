@@ -45,33 +45,33 @@ Bento is **not** a new JavaScript language, a new TypeScript syntax, a replaceme
 ## System architecture
 
 ```text
-             Native hosts and command-line consumers
-    +------------+------------+------------+-------------+
-    |  Bento CLI |  Servers   |   Hive X   |   iOS apps  |
-    +------------+------------+------------+-------------+
-                         |            |
-                 Bento public Rust / C APIs
-                         |
-       +-----------------+--------------------+
-       |                                      |
-       v                                      v
-  Project & toolchain                  Execution runtime
-  -------------------                  -----------------
-  Workspace / file graph              Runtime lifecycle
-  Resolver & dependencies             Module loader
-  Oxc / Rolldown                       Web / Node / Worker APIs
-  tsrs / Oxlint / Oxfmt                Host capability adapters
-  Vite / Vitest                        Isolates / event loop
-  CSS / Markdown                       Deno extensions
-  Tasks / pnpm / Mise                  deno_core
-       |                                      |
-       +--------- shared module identity ----+
-                                              |
-                                             v8x
-                                              |
-                                   +----------+---------+
-                                   |          |         |
-                                  V8         JSC    QuickJS-ng
+           Native hosts and command-line consumers
+  +------------+------------+------------+-------------+
+  |  Bento CLI |  Servers   |   Hive X   |   iOS apps  |
+  +------------+------------+------------+-------------+
+                       |            |
+               Bento public Rust / C APIs
+                       |
+     +-----------------+--------------------+
+     |                                      |
+     v                                      v
+Project & toolchain                  Execution runtime
+-------------------                  -----------------
+Workspace / file graph              Runtime lifecycle
+Resolver & dependencies             Module loader
+Oxc / Rolldown                       Web / Node / Worker APIs
+tsrs / Oxlint / Oxfmt                Host capability adapters
+Vite / Vitest                        Isolates / event loop
+CSS / Markdown                       Deno extensions
+Tasks / pnpm / Mise                  deno_core
+     |                                      |
+     +--------- shared module identity ----+
+                                            |
+                                           v8x
+                                            |
+                                 +----------+---------+
+                                 |          |         |
+                                V8         JSC    QuickJS-ng
 ```
 
 This is a dependency and responsibility diagram, not a claim that all components share one process, event loop, or engine instance. In particular, the tooling graph is a service usable without starting application execution, while a minimal runtime can execute prebuilt modules without constructing the tooling graph.
@@ -80,24 +80,24 @@ This is a dependency and responsibility diagram, not a claim that all components
 
 The following are proposed Bento-owned crates, not existing published packages.
 
-| Crate | Responsibility | Dependency rule |
-| --- | --- | --- |
-| `bento_host` | Host capabilities, policy, virtual resources, cancellation, limits | No dependency on toolchain or CLI |
-| `bento_engine` | Engine selection, adapter verification, engine-specific hooks | Encapsulates `v8x`; no application policy |
-| `bento_runtime` | Runtime construction, execution, isolates, lifecycle, module loading | Depends on core and host interfaces; not on dev tooling |
-| `bento_compat_web` | Web-standard globals and operations | Calls host capabilities for privileged operations |
-| `bento_compat_node` | Node globals, built-ins, CJS interop, npm resolution adapters | Uses Deno compatibility crates; no CLI dependency |
-| `bento_compat_workerd` | Optional Workers-style request handlers and service bindings | No distributed storage or placement engine |
-| `bento_resolve` | Canonical module specifiers, conditions, package/URL resolution | Usable by runtime and tooling |
-| `bento_workspace` | Files, overlays, revisions, dependency graph, invalidation | No JavaScript engine required |
-| `bento_compiler` | Oxc transforms, Rolldown builds, CSS, Markdown/MDX, source maps | Consumes workspace snapshots |
-| `bento_intelligence` | `tsrs`, diagnostics, LSP, lint and format coordination | Does not own runtime execution |
-| `bento_dev` | HTTP dev server, HMR, module runner, plugin host | May embed a runtime; not the reverse |
-| `bento_test` | Test discovery, workers, assertions, mocking and coverage | Uses runtime APIs and workspace snapshots |
-| `bento_package` | pnpm-backed package installation, registries, lockfiles | Not required for already-resolved production modules |
-| `bento_task` | Task graphs, environment injection, caching, process execution | Uses host process capabilities |
-| `bento_cli` | Argument parsing, configuration assembly, user interface | Thin composition layer over the libraries |
-| `bento_ffi` | Stable C-compatible embedding surface for Swift and other hosts | Wraps runtime handles, never exposes raw engine pointers |
+| Crate                  | Responsibility                                                       | Dependency rule                                          |
+| ---------------------- | -------------------------------------------------------------------- | -------------------------------------------------------- |
+| `bento_host`           | Host capabilities, policy, virtual resources, cancellation, limits   | No dependency on toolchain or CLI                        |
+| `bento_engine`         | Engine selection, adapter verification, engine-specific hooks        | Encapsulates `v8x`; no application policy                |
+| `bento_runtime`        | Runtime construction, execution, isolates, lifecycle, module loading | Depends on core and host interfaces; not on dev tooling  |
+| `bento_compat_web`     | Web-standard globals and operations                                  | Calls host capabilities for privileged operations        |
+| `bento_compat_node`    | Node globals, built-ins, CJS interop, npm resolution adapters        | Uses Deno compatibility crates; no CLI dependency        |
+| `bento_compat_workerd` | Optional Workers-style request handlers and service bindings         | No distributed storage or placement engine               |
+| `bento_resolve`        | Canonical module specifiers, conditions, package/URL resolution      | Usable by runtime and tooling                            |
+| `bento_workspace`      | Files, overlays, revisions, dependency graph, invalidation           | No JavaScript engine required                            |
+| `bento_compiler`       | Oxc transforms, Rolldown builds, CSS, Markdown/MDX, source maps      | Consumes workspace snapshots                             |
+| `bento_intelligence`   | `tsrs`, diagnostics, LSP, lint and format coordination               | Does not own runtime execution                           |
+| `bento_dev`            | HTTP dev server, HMR, module runner, plugin host                     | May embed a runtime; not the reverse                     |
+| `bento_test`           | Test discovery, workers, assertions, mocking and coverage            | Uses runtime APIs and workspace snapshots                |
+| `bento_package`        | pnpm-backed package installation, registries, lockfiles              | Not required for already-resolved production modules     |
+| `bento_task`           | Task graphs, environment injection, caching, process execution       | Uses host process capabilities                           |
+| `bento_cli`            | Argument parsing, configuration assembly, user interface             | Thin composition layer over the libraries                |
+| `bento_ffi`            | Stable C-compatible embedding surface for Swift and other hosts      | Wraps runtime handles, never exposes raw engine pointers |
 
 Crate names describe separation of responsibility. Internally, some may initially delegate to `deno_runtime` or other upstream assemblies; they must not expose those implementations as a permanent public contract.
 
@@ -147,13 +147,13 @@ The runtime's module loader may compile TypeScript through an optional transform
 
 A `BentoHost` provides privileged operations through narrowly scoped interfaces: filesystem, network, environment, clocks, random sources, processes, terminal/stdio, module and package access, storage, and host-defined functions. Runtime policies determine which capabilities a script can access and with what scope.
 
-| Runtime host | Filesystem | Network | Process execution |
-| --- | --- | --- | --- |
-| Desktop CLI | Native, policy-controlled | Native, policy-controlled | Optional native subprocesses |
-| Production server | Native/container or virtual | Configured server networking | Optional and explicitly granted |
-| Hive X | Workspace-scoped or virtual | Allowlisted or mediated | Harness-owned tool invocation |
-| iOS application | App container or virtual filesystem | App-mediated access | No general subprocess capability |
-| Worker-style profile | Binding/storage adapters | Fetch-like network model | Unavailable unless explicitly emulated |
+| Runtime host         | Filesystem                          | Network                      | Process execution                      |
+| -------------------- | ----------------------------------- | ---------------------------- | -------------------------------------- |
+| Desktop CLI          | Native, policy-controlled           | Native, policy-controlled    | Optional native subprocesses           |
+| Production server    | Native/container or virtual         | Configured server networking | Optional and explicitly granted        |
+| Hive X               | Workspace-scoped or virtual         | Allowlisted or mediated      | Harness-owned tool invocation          |
+| iOS application      | App container or virtual filesystem | App-mediated access          | No general subprocess capability       |
+| Worker-style profile | Binding/storage adapters            | Fetch-like network model     | Unavailable unless explicitly emulated |
 
 Availability and authority are separate: a module such as `node:fs` may resolve successfully even when its operations are denied by policy. Unsupported platform facilities fail with documented capability or compatibility errors; Bento must not pretend they work.
 
@@ -208,19 +208,19 @@ Content mappers connect generated, embedded, and original source positions for T
 
 ## Integrated tooling
 
-| Responsibility | Primary implementation | Bento integration |
-| --- | --- | --- |
-| Parse, resolve, transform, minify | Oxc | Shared compiler APIs and workspace revisions |
-| Format | Oxfmt | Native formatter with project-aware configuration |
-| Lint | Oxlint | Native rules plus JS rule/plugin compatibility when supported |
-| Type check and language intelligence | `tsrs` | Diagnostics, declarations, LSP, source content mapping |
-| Bundle and package build | Rolldown | In-process Rust API with a tsdown-style interface |
-| Dev server and HMR | Rust-native Vite-compatible layer | Workspace graph, module runner, plugin host |
-| Test runner | Rust-native Vitest-compatible layer | Runtime-backed workers, mock/coverage adapters |
-| CSS | Lightning CSS | Transforms, compatibility targeting, minification |
-| Markdown / MDX | Sätteri | Rust parser/compiler plus compatible JS plugin bridge |
-| Dependency installation | pnpm 12 Rust crates | Lockfile, registry, store, workspace operations |
-| Tasks and environments | Mise-derived concepts | Project task graph, tool paths, environment injection |
+| Responsibility                       | Primary implementation              | Bento integration                                             |
+| ------------------------------------ | ----------------------------------- | ------------------------------------------------------------- |
+| Parse, resolve, transform, minify    | Oxc                                 | Shared compiler APIs and workspace revisions                  |
+| Format                               | Oxfmt                               | Native formatter with project-aware configuration             |
+| Lint                                 | Oxlint                              | Native rules plus JS rule/plugin compatibility when supported |
+| Type check and language intelligence | `tsrs`                              | Diagnostics, declarations, LSP, source content mapping        |
+| Bundle and package build             | Rolldown                            | In-process Rust API with a tsdown-style interface             |
+| Dev server and HMR                   | Rust-native Vite-compatible layer   | Workspace graph, module runner, plugin host                   |
+| Test runner                          | Rust-native Vitest-compatible layer | Runtime-backed workers, mock/coverage adapters                |
+| CSS                                  | Lightning CSS                       | Transforms, compatibility targeting, minification             |
+| Markdown / MDX                       | Sätteri                             | Rust parser/compiler plus compatible JS plugin bridge         |
+| Dependency installation              | pnpm 12 Rust crates                 | Lockfile, registry, store, workspace operations               |
+| Tasks and environments               | Mise-derived concepts               | Project task graph, tool paths, environment injection         |
 
 ### Development server
 
@@ -273,12 +273,12 @@ Bento distinguishes **compiled feature sets** from **runtime profiles**.
 
 Compiled features determine whether a binary contains an engine backend, transforms, type checker, package manager, dev server, test runner, Node extensions, or platform adapters. Runtime profiles choose which APIs and capabilities an instance exposes from those available features.
 
-| Artifact | Contents | Intended use |
-| --- | --- | --- |
-| Full | Runtime plus compiler, type checker, package manager, formatting, linting, dev, test, and tasks | Development workstation |
-| Server | Runtime, Web/Node APIs, server host, prebuilt module loader | Containerized production deployment |
-| Embedded | Runtime, selected modules, policy and host adapter APIs | Agent harnesses and native software |
-| Apple/iOS | System JSC adapter, constrained runtime, selected APIs, Swift-facing ABI | App-integrated scripting and extensions |
+| Artifact  | Contents                                                                                        | Intended use                            |
+| --------- | ----------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Full      | Runtime plus compiler, type checker, package manager, formatting, linting, dev, test, and tasks | Development workstation                 |
+| Server    | Runtime, Web/Node APIs, server host, prebuilt module loader                                     | Containerized production deployment     |
+| Embedded  | Runtime, selected modules, policy and host adapter APIs                                         | Agent harnesses and native software     |
+| Apple/iOS | System JSC adapter, constrained runtime, selected APIs, Swift-facing ABI                        | App-integrated scripting and extensions |
 
 Production bundles may include generated code and assets alongside a minimal executable, or ship as files loaded at runtime. Feature selection must permit building the runtime without a dependency on TypeScript checking or package installation. Modules requiring dynamic TypeScript compilation need an explicitly enabled transform capability.
 

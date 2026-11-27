@@ -1,13 +1,13 @@
 [package]
 name = "bento_prompt"
-description = "Web Prompt API sessions backed by an on-device language model"
 version = "0.1.0"
+build = "build.rs"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-build = "build.rs"
+description = "Web Prompt API sessions backed by an on-device language model"
 
 [lints]
 workspace = true
