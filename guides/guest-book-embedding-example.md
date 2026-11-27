@@ -1,7 +1,6 @@
 ---
 id: guide.guest-book-embedding-example
 title: Guest Book Embedding Example
-describes: [proposal.0001]
 ---
 
 # Guest Book Embedding Example
@@ -47,12 +46,12 @@ The host does not install packages or run migrations. The application's own `db/
 target/release/bento-guestbook-host serve --project fixtures/remix-guest-book --database /tmp/guest-book.db
 ```
 
-| Flag | Meaning |
-| --- | --- |
-| `--project <dir>` | The guest book project: the fixture or a copy of it with installed dependencies. Required. |
-| `--database <path>` | The SQLite file the host owns, outside every path the guest may read. Created, with its table, when it does not exist. Required. |
-| `--port <N>` | The port the application listens on. Default `1612`, the application's own default. |
-| `--read-only` | Refuse `append` at the Rust boundary. `list` still works. The database must already exist. |
+| Flag                             | Meaning                                                                                                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--project <dir>`                | The guest book project: the fixture or a copy of it with installed dependencies. Required.                                                                                                         |
+| `--database <path>`              | The SQLite file the host owns, outside every path the guest may read. Created, with its table, when it does not exist. Required.                                                                   |
+| `--port <N>`                     | The port the application listens on. Default `1612`, the application's own default.                                                                                                                |
+| `--read-only`                    | Refuse `append` at the Rust boundary. `list` still works. The database must already exist.                                                                                                         |
 | `--mode development\|production` | The `NODE_ENV` the guest sees. `development` logs each request and serves unminified assets with source maps; `production` serves minified, fingerprinted, immutable assets. Default `production`. |
 
 The host starts `server.embedded.ts` with these grants and nothing more:
@@ -71,13 +70,13 @@ Open `http://localhost:1612`. The page renders the saved entries and the sign fo
 
 Press Ctrl-C (or send `SIGTERM`) to stop. The host takes Ctrl-C and `SIGTERM` over before it starts the runtime, so a signal that arrives while the application is still starting ends the instance the same way as one that arrives while it serves. The host asks the runtime to shut down, the application's `SIGTERM` handler closes its server and exits, and the host prints the outcome on one line, or reports the error when the shutdown failed:
 
-| Printed | Meaning | Host exit status |
-| --- | --- | --- |
-| `shutdown: graceful (exit code N)` | The application exited itself during the shutdown, with `N`. The guest book's handler exits with `0`. | `N` |
-| `shutdown: graceful (closed by the host on SIGTERM)` | The application had no handler for the signal, so the runtime closed its listeners and cancelled its work. | `143` after `SIGTERM`, `130` after Ctrl-C, as a process ended by that signal reports |
-| `shutdown: interrupted` | JavaScript had to be terminated at the five-second deadline. | `1` |
-| `shutdown: timed out` | Native code did not yield by the deadline. | `1` |
-| `error: <error>` on standard error, with no `shutdown:` line | The application failed during the shutdown, for example its `SIGTERM` handler threw. The runtime reports that failure as the instance's outcome, so the host prints it as it prints any guest error, naming the entry and where the error was thrown. | `1` |
+| Printed                                                      | Meaning                                                                                                                                                                                                                                               | Host exit status                                                                     |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `shutdown: graceful (exit code N)`                           | The application exited itself during the shutdown, with `N`. The guest book's handler exits with `0`.                                                                                                                                                 | `N`                                                                                  |
+| `shutdown: graceful (closed by the host on SIGTERM)`         | The application had no handler for the signal, so the runtime closed its listeners and cancelled its work.                                                                                                                                            | `143` after `SIGTERM`, `130` after Ctrl-C, as a process ended by that signal reports |
+| `shutdown: interrupted`                                      | JavaScript had to be terminated at the five-second deadline.                                                                                                                                                                                          | `1`                                                                                  |
+| `shutdown: timed out`                                        | Native code did not yield by the deadline.                                                                                                                                                                                                            | `1`                                                                                  |
+| `error: <error>` on standard error, with no `shutdown:` line | The application failed during the shutdown, for example its `SIGTERM` handler threw. The runtime reports that failure as the instance's outcome, so the host prints it as it prints any guest error, naming the entry and where the error was thrown. | `1`                                                                                  |
 
 After a graceful shutdown the port is free to bind again immediately, and the whole shutdown completes within the five-second deadline.
 

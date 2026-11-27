@@ -1,7 +1,6 @@
 ---
 id: guide.benchmarks
 title: Benchmarks
-describes: [proposal.0001]
 ---
 
 # Benchmarks
@@ -16,14 +15,14 @@ The harness is tooling, written in TypeScript and run by Node. It does not execu
 
 ### What each workload answers
 
-| Workload | What it answers |
-| --- | --- |
-| `cold-launch` | How long from spawning the process until the port accepts connections, and until the first response that passes the document gate. The two milestones are reported separately, because the second includes application initialization (imports, database, native asset compilation of the entry graph). Measured in development and production modes. |
-| `assets` | How long the first request for each JavaScript, TSX, and CSS asset the page references takes, compared with repeat requests in the same process, which hit the fixture's in-memory cache. Measured in development and production modes. The fixture compiles the entry graph while the server starts, so first requests can already be warm for those assets; the cold cost shows up in `cold-launch`. |
+| Workload           | What it answers                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cold-launch`      | How long from spawning the process until the port accepts connections, and until the first response that passes the document gate. The two milestones are reported separately, because the second includes application initialization (imports, database, native asset compilation of the entry graph). Measured in development and production modes.                                                                                                     |
+| `assets`           | How long the first request for each JavaScript, TSX, and CSS asset the page references takes, compared with repeat requests in the same process, which hit the fixture's in-memory cache. Measured in development and production modes. The fixture compiles the entry graph while the server starts, so first requests can already be warm for those assets; the cold cost shows up in `cold-launch`.                                                    |
 | `asset-operations` | Where time goes inside the asset pipeline: parsing, resolving, transforming, minifying, and Lightning CSS processing, each timed on the fixture's own files through the locked npm packages with identical options. It runs without the application, so it is valid for a runtime whose full-app render is still incompatible. In place of the application's gates, every native call it times must succeed; see [Correctness gates](#correctness-gates). |
-| `steady-state` | Throughput and latency percentiles for a rendered `GET /`, an asset `GET`, and a persisted valid `POST /` at fixed concurrency, after a warmup, in production mode. The database is reset for every trial, and persisted rows are counted afterwards so a response that was not really stored is caught. |
-| `watch-reload` | How long from editing a file until the first response that shows the change, with each runtime's watch mode running: once for a source file the entry imports (a visible string in `app/actions/guest-book/page.tsx`) and once for the entry itself (`server.ts`, observed through a response header). It also confirms that the database contents and the listener survive each reload. Edited files are restored afterwards. |
-| `memory` | Resident memory of the whole process tree: idle after startup, and the peak sampled from spawn through startup and the first request for every asset. This is the footprint of the usable application with its native dependencies, not an empty isolate. |
+| `steady-state`     | Throughput and latency percentiles for a rendered `GET /`, an asset `GET`, and a persisted valid `POST /` at fixed concurrency, after a warmup, in production mode. The database is reset for every trial, and persisted rows are counted afterwards so a response that was not really stored is caught.                                                                                                                                                  |
+| `watch-reload`     | How long from editing a file until the first response that shows the change, with each runtime's watch mode running: once for a source file the entry imports (a visible string in `app/actions/guest-book/page.tsx`) and once for the entry itself (`server.ts`, observed through a response header). It also confirms that the database contents and the listener survive each reload. Edited files are restored afterwards.                            |
+| `memory`           | Resident memory of the whole process tree: idle after startup, and the peak sampled from spawn through startup and the first request for every asset. This is the footprint of the usable application with its native dependencies, not an empty isolate.                                                                                                                                                                                                 |
 
 ## How to use it
 
@@ -44,29 +43,29 @@ Run from the repository root, in a quiet window with no builds or tests running,
 node bench/src/main.ts [--runtimes node,bun,bento] [--workloads cold-launch,assets,...] [--trials N]
 ```
 
-| Option | Meaning | Default |
-| --- | --- | --- |
-| `--runtimes` | Comma-separated runtimes to measure. | `node,bun,bento` |
-| `--workloads` | Comma-separated workloads to run. | all six |
-| `--trials N` | Trial count for every selected workload. | 15 cold launches; 10 for assets, asset operations, watch reloads, and memory; 5 for steady state |
-| `--duration S` | Measured seconds per steady-state scenario. | 10 |
-| `--warmup S` | Warmup seconds per steady-state scenario. | 3 |
-| `--concurrency N` | Steady-state connections. | 16 |
-| `--iterations N` | Passes per asset-operations trial (the first is the cold pass, the rest are warm) and repeat requests per asset in the `assets` workload. | 10 |
-| `--output DIR` | Where results are written. | `bench/results/<UTC timestamp>/` |
-| `--keep-fixtures` | Keep the disposable fixture copies under `/tmp/bento-bench/` for inspection. | remove them |
+| Option            | Meaning                                                                                                                                   | Default                                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `--runtimes`      | Comma-separated runtimes to measure.                                                                                                      | `node,bun,bento`                                                                                 |
+| `--workloads`     | Comma-separated workloads to run.                                                                                                         | all six                                                                                          |
+| `--trials N`      | Trial count for every selected workload.                                                                                                  | 15 cold launches; 10 for assets, asset operations, watch reloads, and memory; 5 for steady state |
+| `--duration S`    | Measured seconds per steady-state scenario.                                                                                               | 10                                                                                               |
+| `--warmup S`      | Warmup seconds per steady-state scenario.                                                                                                 | 3                                                                                                |
+| `--concurrency N` | Steady-state connections.                                                                                                                 | 16                                                                                               |
+| `--iterations N`  | Passes per asset-operations trial (the first is the cold pass, the rest are warm) and repeat requests per asset in the `assets` workload. | 10                                                                                               |
+| `--output DIR`    | Where results are written.                                                                                                                | `bench/results/<UTC timestamp>/`                                                                 |
+| `--keep-fixtures` | Keep the disposable fixture copies under `/tmp/bento-bench/` for inspection.                                                              | remove them                                                                                      |
 
 Each runtime gets a fresh copy of the fixture under `/tmp/bento-bench/`, installed with a frozen lockfile, migrated with `remix db migrate`, and seeded through the application's own `POST /` with the same fixed entries. Each trial starts from that seeded database. Servers listen on ports 17700 to 17799. Every process the harness starts runs in its own process group and is stopped when its measurement ends, when the run fails, and when the harness is interrupted.
 
 Interrupting the run with `Ctrl-C` (SIGINT) or SIGTERM unwinds it instead of exiting on the spot: the harness stops every process it started, lets the trial in progress restore any fixture file it edited, removes the disposable fixture copies unless `--keep-fixtures` is set, writes no results, and exits with 130 or 143. A second signal ends it immediately.
 
-The launch paths are the ones the proposal fixes:
+The launch paths are the ones [`bench/src/launch-commands.ts`](../bench/src/launch-commands.ts) builds:
 
-| Runtime | Command run in the fixture copy |
-| --- | --- |
-| Node | `node --import remix/node-tsx server.ts` (adds `--watch` for watch reload) |
-| Bun | `bun server.ts` (`bun --watch server.ts`) |
-| Bento | `$BENTO_BIN run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts` (adds `--watch` before `server.ts`) |
+| Runtime | Command run in the fixture copy                                                                                                                                                 |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node    | `node --import remix/node-tsx server.ts` (adds `--watch` for watch reload)                                                                                                      |
+| Bun     | `bun server.ts` (`bun --watch server.ts`)                                                                                                                                       |
+| Bento   | `$BENTO_BIN run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts` (adds `--watch` before `server.ts`) |
 
 `NODE_ENV` is pinned per workload to `development` or `production`.
 

@@ -1,7 +1,6 @@
 ---
 id: guide.node-compatibility
 title: Node Compatibility
-describes: [proposal.0001]
 ---
 
 # Node Compatibility
