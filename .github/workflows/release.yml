@@ -1,0 +1,90 @@
+# Merging Knope's release pull request is the explicit release authorization the process
+# requires. This workflow runs the gate and builds, smoke-tests and attests the two macOS archives,
+# all on the merge commit; only when all of that passes does `knope release` tag `v<version>` on
+# that commit and publish the GitHub release with both archives and the changelog entry. Bento
+# publishes to no registry, so the GitHub release is the last and only irreversible step.
+#
+# Credentials: `knope release` uses the workflow's built-in GITHUB_TOKEN (contents: write on that
+# job only). No stored secret is involved.
+
+name: Release
+
+on:
+    pull_request:
+        types: [closed]
+        branches: [main]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: release
+    cancel-in-progress: false
+
+jobs:
+    # Only the merge of Knope's own release branch, from this repository, releases.
+    authorize:
+        name: Authorize the release
+        if: >-
+            github.head_ref == 'release'
+            && github.event.pull_request.merged == true
+            && github.event.pull_request.head.repo.full_name == github.repository
+        runs-on: ubuntu-latest
+        permissions: {}
+        steps:
+            - run: echo "Knope's release pull request from this repository was merged."
+
+    # The pull request Knope opens with GITHUB_TOKEN triggers no CI, so the gate CI runs on every
+    # pull request runs here, on the merge commit, before anything is tagged or published.
+    check:
+        name: Check
+        needs: authorize
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: ${{ github.event.pull_request.merge_commit_sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: jdx/mise-action@v5
+              with:
+                  cache: false
+            - run: mise run deps:install
+            - run: mise run check
+
+    build:
+        needs: authorize
+        uses: ./.github/workflows/build-archives.yml
+        with:
+            ref: ${{ github.event.pull_request.merge_commit_sha }}
+        permissions:
+            contents: read
+            id-token: write
+            attestations: write
+
+    release:
+        name: Publish the GitHub release
+        needs: [check, build]
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            # Knope tags the checked-out commit, so this must be the merge commit on main.
+            - uses: actions/checkout@v7
+              with:
+                  ref: ${{ github.event.pull_request.merge_commit_sha }}
+                  fetch-depth: 0
+                  persist-credentials: false
+            - uses: actions/download-artifact@v8.0.2
+              with:
+                  path: artifacts
+                  pattern: bento-*
+                  merge-multiple: true
+            - uses: jdx/mise-action@v5
+              with:
+                  cache: false
+            - run: mise run release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,82 @@
+# Builds, smoke-tests and attests Bento's two release archives, each on the runner CI's matching
+# preview job uses: the default build (macOS 27 SDK, Foundation Models prompt backend) and the
+# backend-free build (--no-default-features). Each archive holds the `bento` executable under one
+# top-level directory; knope.toml explains the names. release.yml calls this workflow; run it by
+# hand (Actions → Build archives → Run workflow) to prove both release builds before merging a
+# release pull request.
+
+name: Build archives
+
+on:
+    workflow_call:
+        inputs:
+            ref:
+                description: The commit to build; empty builds the commit that triggered the run
+                type: string
+                required: false
+                default: ""
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        name: ${{ matrix.variant }}
+        strategy:
+            fail-fast: true
+            matrix:
+                include:
+                    - variant: default
+                      runner: xcode-27
+                      archive: bento-aarch64-apple-darwin
+                    - variant: backend-free
+                      runner: macos-26
+                      archive: bento-backend-free-aarch64-apple-darwin
+        runs-on: ${{ matrix.runner }}
+        timeout-minutes: 90
+        permissions:
+            contents: read
+            id-token: write
+            attestations: write
+        env:
+            VARIANT: ${{ matrix.variant }}
+            ARCHIVE: ${{ matrix.archive }}
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: ${{ inputs.ref }}
+                  persist-credentials: false
+            - uses: jdx/mise-action@v5
+              with:
+                  # A release workflow must not restore a cache: a lower-trust workflow that can
+                  # write to the default branch could otherwise plant files in it.
+                  cache: false
+            - name: Record platform and SDK
+              run: |
+                  sw_vers
+                  xcrun --sdk macosx --show-sdk-version
+            # Builds with --release --locked, and fails unless the default build declares minos 27.0.
+            - run: mise run package -- "$VARIANT"
+            # The shipped executable, unpacked from its archive, runs a TypeScript module in a
+            # project of its own, outside this repository's package.json.
+            - name: Smoke-test the archive
+              run: |
+                  smoke="$RUNNER_TEMP/smoke"
+                  mkdir "$smoke"
+                  tar -xzf "artifacts/$ARCHIVE.tar.gz" -C "$smoke"
+                  cd "$smoke"
+                  printf '{}\n' > package.json
+                  printf 'const sum: number = 1 + 1;\nconsole.log("1 + 1 =", sum);\n' > main.ts
+                  "$ARCHIVE/bento" --version
+                  output="$("$ARCHIVE/bento" run --allow-read=. main.ts)"
+                  printf '%s\n' "$output"
+                  test "$output" = "1 + 1 = 2"
+            - uses: actions/attest-build-provenance@v4.2.2
+              with:
+                  subject-path: artifacts/${{ matrix.archive }}.tar.gz
+            - uses: actions/upload-artifact@v7.0.2
+              with:
+                  name: ${{ matrix.archive }}
+                  path: artifacts/${{ matrix.archive }}.tar.gz
+                  if-no-files-found: error

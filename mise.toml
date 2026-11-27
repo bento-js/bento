@@ -174,5 +174,50 @@ run = ["hugo build --source docs --cleanDestinationDir", "pagefind --site docs/p
 description = "Serve the site with live reload; search needs `mise run docs:build`"
 run = "hugo server --source docs"
 
+# ── Releases ─────────────────────────────────────────────────────────────────
+
+[tasks.package]
+description = "Build one release archive of the `bento` CLI into artifacts/ (default: the macOS 27 build with the Prompt API backend)"
+usage = '''
+arg "[variant]" help="`default` (macOS 27, Foundation Models backend) or `backend-free` (--no-default-features)" default="default" {
+    choices "default" "backend-free"
+}
+'''
+# Writes `artifacts/<name>.tar.gz` holding `<name>/bento`, with `<name>` either `bento-<target>`
+# or `bento-backend-free-<target>`; knope.toml explains why Mise installs the first.
+# build-archives.yml builds each variant on the runner CI uses for it.
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+target="$(rustc -vV | sed -n 's/^host: //p')"
+case "$usage_variant" in
+    default) name="bento-$target" features="" ;;
+    backend-free) name="bento-backend-free-$target" features="--no-default-features" ;;
+esac
+cargo build --release --locked -p bento_cli ${features:+"$features"}
+bento="${CARGO_TARGET_DIR:-target}/release/bento"
+build="$(xcrun vtool -show-build "$bento")"
+printf '%s\n' "$build"
+# crates/bento_cli/build.rs links the default build for macOS 27.0, as CI's preview asserts.
+if [ "$usage_variant" = default ] && [[ "$build" != *"minos 27.0"* ]]; then
+    echo "The default CLI must declare minos 27.0" >&2
+    exit 1
+fi
+stage="$(mktemp -d)"
+trap 'rm -rf "$stage"' EXIT
+mkdir -p "$stage/$name" artifacts
+cp "$bento" "$stage/$name/bento"
+# COPYFILE_DISABLE keeps macOS from adding `._` metadata entries beside the directory.
+COPYFILE_DISABLE=1 tar -czf "artifacts/$name.tar.gz" -C "$stage" "$name"
+echo "artifacts/$name.tar.gz"
+'''
+
+[tasks.release]
+description = "Publish the GitHub release with the archives in artifacts/ (release.yml runs this)"
+# `knope release` reads GITHUB_TOKEN; Varlock checks it against .env.schema and redacts it.
+# `--filter` loads that item alone, so a required item added to .env.schema later never
+# blocks a release.
+run = "varlock run --filter GITHUB_TOKEN -- knope release --verbose"
+
 [hooks]
 postinstall = 'ln -sfn "$(mise where github:markmals/workbench)" "{{config_root}}/.workbench"'

@@ -1,0 +1,70 @@
+# Knope owns the `bento` CLI's version, changelog, and releases. Change files in `.changeset/` are
+# the only source of version bumps: Scoped Commits subjects are not Conventional Commits.
+
+[package]
+versioned_files = ["crates/bento_cli/Cargo.toml", "Cargo.lock"]
+changelog = "CHANGELOG.md"
+
+# The archives `mise run package -- <variant>` builds; release.yml builds both before
+# `knope release` attaches them to the GitHub release. Both run only on Apple silicon, and their
+# names carry the Rust target triple that Mise's `github:` backend matches to the installing
+# machine. Of two archives that match it, the backend prefers the one whose name is the repository
+# name plus platform tokens, so `mise use github:bento-js/bento` installs the default build, which
+# needs macOS 27. `mise use 'github:bento-js/bento[matching=backend-free]'` installs the other.
+[[package.assets]]
+path = "artifacts/bento-aarch64-apple-darwin.tar.gz"
+
+[[package.assets]]
+path = "artifacts/bento-backend-free-aarch64-apple-darwin.tar.gz"
+
+[changes]
+ignore_conventional_commits = true
+
+[release_notes]
+change_templates = [
+    "### $summary\n\n$details",
+    "* $summary by @$pr_author_login in #$pr_number",
+    "* $summary",
+]
+
+[github]
+owner = "bento-js"
+repo = "bento"
+
+# `.github/workflows/prepare-release.yml` runs this on every push to `main`: it keeps one release
+# pull request open from the `release` branch, showing the next version and its changelog entry.
+[[workflows]]
+name = "prepare-release"
+
+[[workflows.steps]]
+type = "Command"
+command = "git switch -c release"
+
+[[workflows.steps]]
+type = "PrepareRelease"
+
+[[workflows.steps]]
+type = "Command"
+command = "git commit -m \"release: prepare $version\""
+
+[[workflows.steps]]
+type = "Command"
+command = "git push --force --set-upstream origin release"
+
+[[workflows.steps]]
+type = "CreatePullRequest"
+base = "main"
+
+[workflows.steps.title]
+template = "release: prepare $version"
+
+[workflows.steps.body]
+template = "Merging this pull request releases Bento $version: it builds the two macOS archives, tags `v$version`, and publishes the GitHub release with these notes and both archives attached.\n\n$changelog"
+
+# `.github/workflows/release.yml` runs this (through `mise run release`) when the release pull
+# request merges, after it has built the archives into `artifacts/`.
+[[workflows]]
+name = "release"
+
+[[workflows.steps]]
+type = "Release"

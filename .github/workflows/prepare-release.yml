@@ -1,0 +1,52 @@
+# Keeps one release pull request open from the `release` branch, showing the next version, its
+# changelog entry, and the version-file changes Knope will make. Merging it runs release.yml.
+
+name: Prepare release
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: prepare-release
+    cancel-in-progress: true
+
+jobs:
+    prepare-release:
+        # The merge of the release pull request itself has nothing left to prepare.
+        if: "!startsWith(github.event.head_commit.message, 'release: prepare')"
+        runs-on: ubuntu-latest
+        # Pushes the `release` branch and opens its pull request with the built-in GITHUB_TOKEN;
+        # no stored secret is involved. Runs only for pushes to main, never pull-request code.
+        permissions:
+            contents: write
+            pull-requests: write
+        steps:
+            # Keeps the checkout's credentials: Knope's workflow pushes the `release` branch.
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+            - uses: jdx/mise-action@v5
+              with:
+                  # A release workflow must not restore a cache: a lower-trust workflow
+                  # that can write to the default branch could otherwise plant files in it.
+                  cache: false
+            - name: Configure Git
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            # With no change files there is nothing to release, and Knope exits nonzero.
+            - name: Prepare the release pull request
+              run: |
+                  if ! ls .changeset/*.md >/dev/null 2>&1; then
+                      echo "::notice::No change files on main; nothing to release."
+                      exit 0
+                  fi
+                  mise exec -- knope prepare-release --verbose
+              env:
+                  # Pull requests opened with GITHUB_TOKEN do not trigger other workflows, and
+                  # the repository must allow Actions to create pull requests.
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
