@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Prefer VoidZero Crates for JavaScript Tooling · Bento</title>
+<meta name="description" content="A TypeScript runtime that belongs to the application using it.">
+<link rel="icon" href="/bento/pr-preview/pr-278/bento.png">
+<link rel="stylesheet" href="/bento/pr-preview/pr-278/css/site.min.6858dcfd9ef536c6838cfcac556c73c4c9472c5186119967c658c25bd331e2b8.css" integrity="sha256-aFjc/Z71NsaDjPysVWxzxMlHLFGGEZlnxljCW9Mx4rg=">
+<script src="/bento/pr-preview/pr-278/js/search.min.91c03ab0618e873fdf0408644ae4cec995e27513bfe7aefce72be2867e757830.js" integrity="sha256-kcA6sGGOhz/fBAhkSuTOyZXidRO/56785yvihn51eDA=" defer></script>
+
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="site-header__brand" href="/bento/pr-preview/pr-278/"><img src="/bento/pr-preview/pr-278/bento.png" alt="" width="32" height="32"><span>Bento</span>
+  </a>
+  <nav class="site-header__nav" aria-label="Main">
+    <a href="/bento/pr-preview/pr-278/vision/">Vision</a>
+    <a href="/bento/pr-preview/pr-278/architecture/">Architecture</a>
+    <a href="/bento/pr-preview/pr-278/guides/">Guides</a>
+    <a href="/bento/pr-preview/pr-278/proposals/">Change history</a>
+    <a href="/bento/pr-preview/pr-278/policies/" class="is-active">Policies</a>
+    <a href="/bento/pr-preview/pr-278/decisions/">Decisions</a>
+  </nav>
+  <button class="site-header__search" type="button" data-search-open aria-haspopup="dialog">
+    <span>Search</span><kbd>/</kbd>
+  </button>
+</header>
+
+    <main id="main">
+<div class="layout">
+<nav class="sidebar" aria-label="Policies">
+  <a class="sidebar__section" href="/bento/pr-preview/pr-278/policies/">Policies</a>
+  <ul>
+    <li><a href="/bento/pr-preview/pr-278/policies/0001-prefer-voidzero-crates/" aria-current="page">Prefer VoidZero Crates for JavaScript Tooling</a></li>
+  </ul>
+</nav>
+
+  <article class="content" data-pagefind-body><h1 id="prefer-voidzero-crates-for-javascript-tooling">Prefer VoidZero Crates for JavaScript Tooling</h1>
+<aside class="record-header" aria-label="Record metadata" data-pagefind-ignore>
+  <div class="record-header__summary"><code class="record-header__id">policy.0001</code><span class="status status--active">Active</span>
+  </div>
+  <dl class="record-header__details">
+    <div><dt>Established by</dt><dd><a href="/bento/pr-preview/pr-278/proposals/0001-embeddable-typescript-runtime/"><code>proposal.0001</code></a></dd></div>
+  </dl>
+</aside>
+
+<h2 id="introduction">Introduction <a class="heading-anchor" href="#introduction" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>Bento reuses two upstream ecosystems that overlap: Deno&rsquo;s runtime crates, which bring their own SWC-based parsing and Deno&rsquo;s resolver, and VoidZero&rsquo;s toolchain (Oxc, <code>oxc_resolver</code>, Rolldown). This policy settles which one Bento&rsquo;s own code builds on whenever both could do the job. Bento then has one parser, one transformer, and one resolver family that behave identically in the runtime and in future tooling.</p>
+<h2 id="the-rule">The rule <a class="heading-anchor" href="#the-rule" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>Bento code must use VoidZero crates for parsing, transformation, source maps, minification, module resolution, and bundling wherever they provide the capability, and must not add Deno- or SWC-based crates for those roles.</p>
+<h2 id="why-this-exists">Why this exists <a class="heading-anchor" href="#why-this-exists" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>The first runtime design adapted Deno&rsquo;s standalone runtime wholesale, which would have pulled in <code>deno_ast</code> (SWC) to analyze CommonJS exports and kept Deno&rsquo;s resolver for every import. Meanwhile, the transformer already used Oxc. Every application module would have been parsed by two different parsers whose syntax support, error messages, and edge cases differ. tsconfig would have been read by a different implementation than the one Oxc-based tools use. Each duplicate is another place where the runtime and future Bento tooling can disagree about the same source file, and another dependency stack to upgrade.</p>
+<h2 id="what-it-applies-to">What it applies to <a class="heading-anchor" href="#what-it-applies-to" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ul>
+<li>Applies to: dependencies that Bento crates declare, and the code paths Bento owns: TypeScript and JSX transformation, tsconfig loading, CommonJS/ESM export analysis, ESM import resolution, source maps, and any future minifier, bundler, or development server.</li>
+<li>Does not apply to: crates that a reused upstream component requires internally. For example, <code>deno_node</code> links <code>deno_ast</code>, and its CommonJS <code>require</code> and CJS-to-ESM translation are built on <code>node_resolver</code>. Those stay until Bento owns that component. It also does not apply to the application&rsquo;s own npm dependencies (a fixture&rsquo;s <code>oxc-transform</code>, <code>lightningcss</code>, or <code>typescript</code> packages) or to capabilities no VoidZero crate offers, such as CSS (Lightning CSS) or the JavaScript engine itself.</li>
+</ul>
+<h2 id="enforcement">Enforcement <a class="heading-anchor" href="#enforcement" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ul>
+<li>Tier: check, with prose for role choices.</li>
+<li>Mechanism: <code>mise run check</code> runs <code>mise run deps:policy</code>, which is <code>node tools/crate-dependencies.ts</code>. It fails when any workspace crate declares a direct dependency on <code>deno_ast</code>, <code>deno_graph</code>, <code>dprint-swc-ext</code>, or any <code>swc</code>/<code>swc_*</code> package, under any dependency kind or rename.</li>
+<li>Prose justification: the check catches the SWC stack, which has a VoidZero replacement for every role Bento owns. Whether a Deno crate is required or replaceable depends on what it does. A crate like <code>node_resolver</code> is legitimate when <code>deno_node</code> requires it, so reviewers judge Deno crates against this policy rather than a denylist.</li>
+</ul>
+<h2 id="how-to-comply">How to comply <a class="heading-anchor" href="#how-to-comply" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ol>
+<li>Before adding a dependency for a parsing, transformation, resolution, source-map, minification, or bundling role, look for the VoidZero crate that provides it (<code>oxc</code>, <code>oxc_resolver</code>, <code>oxc_sourcemap</code>, Rolldown) and use that.</li>
+<li>If only a Deno or SWC crate can fill the role, record why in the dependent crate&rsquo;s <code>Cargo.toml</code> next to the dependency. If the check rejects it, change this policy through a proposal rather than working around the check.</li>
+<li>Run <code>mise run check</code> before submitting.</li>
+</ol>
+<h2 id="revision-history">Revision history <a class="heading-anchor" href="#revision-history" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<table>
+	<thead>
+			<tr>
+					<th>Date</th>
+					<th>Change</th>
+					<th>Proposal</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>2026-10-10</td>
+					<td>Established this policy.</td>
+					<td>proposal.0001</td>
+			</tr>
+	</tbody>
+</table>
+
+<p class="source-link" data-pagefind-ignore><a href="https://github.com/bento-js/bento/blob/main/policies/0001-prefer-voidzero-crates.md">View source</a></p>
+
+  </article>
+<aside class="toc" aria-label="On this page">
+  <p class="toc__title">On this page</p>
+  <nav id="TableOfContents">
+  <ul>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#the-rule">The rule</a></li>
+    <li><a href="#why-this-exists">Why this exists</a></li>
+    <li><a href="#what-it-applies-to">What it applies to</a></li>
+    <li><a href="#enforcement">Enforcement</a></li>
+    <li><a href="#how-to-comply">How to comply</a></li>
+    <li><a href="#revision-history">Revision history</a></li>
+  </ul>
+</nav>
+</aside>
+
+</div>
+
+    </main><footer class="site-footer">
+  <span>Bento</span>
+  <a href="https://github.com/bento-js/bento">Repository</a>
+</footer>
+<dialog class="search" aria-label="Search" data-search-base="/bento/pr-preview/pr-278/" data-search-bundle="/bento/pr-preview/pr-278/pagefind/">
+  <div class="search__ui" id="search-ui"></div>
+  <p class="search__unavailable" hidden>Search runs over a built site. Build it with <code>mise run docs:build</code> and serve <code>docs/public</code>.</p>
+</dialog>
+
+  </body>
+</html>

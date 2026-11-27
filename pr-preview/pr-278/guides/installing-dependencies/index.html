@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Installing Dependencies · Bento</title>
+<meta name="description" content="A TypeScript runtime that belongs to the application using it.">
+<link rel="icon" href="/bento/pr-preview/pr-278/bento.png">
+<link rel="stylesheet" href="/bento/pr-preview/pr-278/css/site.min.6858dcfd9ef536c6838cfcac556c73c4c9472c5186119967c658c25bd331e2b8.css" integrity="sha256-aFjc/Z71NsaDjPysVWxzxMlHLFGGEZlnxljCW9Mx4rg=">
+<script src="/bento/pr-preview/pr-278/js/search.min.91c03ab0618e873fdf0408644ae4cec995e27513bfe7aefce72be2867e757830.js" integrity="sha256-kcA6sGGOhz/fBAhkSuTOyZXidRO/56785yvihn51eDA=" defer></script>
+
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="site-header__brand" href="/bento/pr-preview/pr-278/"><img src="/bento/pr-preview/pr-278/bento.png" alt="" width="32" height="32"><span>Bento</span>
+  </a>
+  <nav class="site-header__nav" aria-label="Main">
+    <a href="/bento/pr-preview/pr-278/vision/">Vision</a>
+    <a href="/bento/pr-preview/pr-278/architecture/">Architecture</a>
+    <a href="/bento/pr-preview/pr-278/guides/" class="is-active">Guides</a>
+    <a href="/bento/pr-preview/pr-278/proposals/">Change history</a>
+    <a href="/bento/pr-preview/pr-278/policies/">Policies</a>
+    <a href="/bento/pr-preview/pr-278/decisions/">Decisions</a>
+  </nav>
+  <button class="site-header__search" type="button" data-search-open aria-haspopup="dialog">
+    <span>Search</span><kbd>/</kbd>
+  </button>
+</header>
+
+    <main id="main">
+<div class="layout">
+<nav class="sidebar" aria-label="Guides">
+  <a class="sidebar__section" href="/bento/pr-preview/pr-278/guides/">Guides</a>
+  <ul>
+    <li><a href="/bento/pr-preview/pr-278/guides/benchmarks/">Benchmarks</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/embedding-bento/">Embedding Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/guest-book-embedding-example/">Guest Book Embedding Example</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/installing-dependencies/" aria-current="page">Installing Dependencies</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/node-compatibility/">Node Compatibility</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/running-with-bento/">Running with Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/tasks-and-environment/">Tasks and Environment</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/typescript-and-jsx/">TypeScript and JSX</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/prompt-api/">Using the Prompt API</a></li>
+  </ul>
+</nav>
+
+  <article class="content" data-pagefind-body><h1 id="installing-dependencies">Installing Dependencies</h1>
+
+<h2 id="what-it-does">What it does <a class="heading-anchor" href="#what-it-does" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p><code>bento install</code> installs a project&rsquo;s <code>dependencies</code> and <code>devDependencies</code> by running the project&rsquo;s declared pnpm toolchain in the project root. Bento does not implement a second package manager or lockfile writer: pnpm reads and writes <code>pnpm-lock.yaml</code>, including the document that pins pnpm&rsquo;s own version, and applies <code>pnpm-workspace.yaml</code>.</p>
+<p>Installing is a separate step from running. <code>bento run</code> never installs packages, resolves new versions, or downloads modules.</p>
+<h2 id="how-to-use-it">How to use it <a class="heading-anchor" href="#how-to-use-it" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ol>
+<li>
+<p>Declare pnpm in <code>package.json</code>, if the project does not already:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-json" data-lang="json"><span class="line"><span class="cl"><span class="s2">&#34;devEngines&#34;</span><span class="err">:</span> <span class="p">{</span> <span class="nt">&#34;packageManager&#34;</span><span class="p">:</span> <span class="p">{</span> <span class="nt">&#34;name&#34;</span><span class="p">:</span> <span class="s2">&#34;pnpm&#34;</span><span class="p">,</span> <span class="nt">&#34;version&#34;</span><span class="p">:</span> <span class="s2">&#34;12&#34;</span> <span class="p">}</span> <span class="p">}</span></span></span></code></pre></div></li>
+<li>
+<p>Make sure <code>pnpm</code> is on your <code>PATH</code>. Bento looks it up the way your shell does: a relative entry such as <code>./tools</code> is taken from the directory you run <code>bento install</code> in, and an empty entry means that directory itself. Bento runs the <code>pnpm</code> it finds there, and pnpm switches to the version the project pins, which may need registry access the first time.</p>
+</li>
+<li>
+<p>Run <code>bento install</code> anywhere inside the project. Bento finds the nearest <code>package.json</code>, runs <code>pnpm install</code> in that directory, shows pnpm&rsquo;s output, and exits with pnpm&rsquo;s exit status when the installation fails.</p>
+</li>
+<li>
+<p>Use <code>bento install --frozen-lockfile</code> to reproduce exactly the locked dependency graph. If <code>package.json</code> and <code>pnpm-lock.yaml</code> disagree, the installation fails and <code>pnpm-lock.yaml</code> is left byte-for-byte unchanged.</p>
+</li>
+</ol>
+<p>Without <code>--frozen-lockfile</code>, pnpm&rsquo;s normal behavior applies: it updates <code>pnpm-lock.yaml</code> to match <code>package.json</code>. That includes pnpm&rsquo;s own rule that a lockfile is frozen by default when the <code>CI</code> environment variable is set.</p>
+<p>Bento stops before running anything when <code>devEngines.packageManager</code> is missing or names another package manager, and tells you what to declare. When <code>pnpm</code> is not on <code>PATH</code>, it reports pnpm as a missing prerequisite.</p>
+<h3 id="development-dependencies">Development dependencies <a class="heading-anchor" href="#development-dependencies" aria-label="Link to this section" data-pagefind-ignore>#</a></h3>
+<p><code>devDependencies</code> are always installed, even when <code>NODE_ENV=production</code> is set in your environment: Bento runs pnpm with <code>--production=false</code>. Project tasks rely on them for formatting, linting, type checking, and migrations.</p>
+<h3 id="build-scripts">Build scripts <a class="heading-anchor" href="#build-scripts" aria-label="Link to this section" data-pagefind-ignore>#</a></h3>
+<p>Bento never approves dependency build scripts. It passes no flag or environment variable that allows them, so pnpm applies the project&rsquo;s own policy, the <code>allowBuilds</code> entries in <code>pnpm-workspace.yaml</code>. A dependency whose build script is not approved does not run it, and pnpm 12 fails the installation and names the package. If you trust that package, approve it in <code>pnpm-workspace.yaml</code>, for example with <code>pnpm approve-builds</code>, and install again.</p>
+<h3 id="running-without-the-installer">Running without the installer <a class="heading-anchor" href="#running-without-the-installer" aria-label="Link to this section" data-pagefind-ignore>#</a></h3>
+<p>Once dependencies are installed, <code>bento run</code> and an embedding Rust host execute the project without pnpm, Node, Bun, or Deno on the <code>PATH</code>. A dependency that is not installed fails at the import that needs it; run <code>bento install</code> and try again.</p>
+<h2 id="worked-example">Worked example <a class="heading-anchor" href="#worked-example" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>The guest-book fixture declares <code>&quot;devEngines&quot;: { &quot;packageManager&quot;: { &quot;name&quot;: &quot;pnpm&quot;, &quot;version&quot;: &quot;12&quot;, &quot;onFail&quot;: &quot;download&quot; } }</code> and its <code>pnpm-lock.yaml</code> pins pnpm 12.11.2.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="nb">cd</span> fixtures/remix-guest-book
+</span></span><span class="line"><span class="cl">bento install --frozen-lockfile</span></span></code></pre></div><p>pnpm switches to 12.11.2 and installs <code>remix@3.0.0</code> with the formatter, linter, and type checker from <code>devDependencies</code>, exactly as locked. If someone had added a dependency to <code>package.json</code> without updating the lockfile, the same command would fail with pnpm&rsquo;s outdated-lockfile error and leave <code>pnpm-lock.yaml</code> untouched.</p>
+<h2 id="limits-and-edge-cases">Limits and edge cases <a class="heading-anchor" href="#limits-and-edge-cases" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ul>
+<li>pnpm is the only supported package manager, declared as a single <code>devEngines.packageManager</code> object.</li>
+<li>Installing may need Node, pnpm, and registry access. Only running the installed project is free of them.</li>
+<li><code>bento install</code> passes pnpm the environment it was started with. It does not load <code>.env</code> files, and pnpm settings from <code>.npmrc</code> files or <code>pnpm_config_*</code> variables still apply.</li>
+</ul>
+
+<p class="source-link" data-pagefind-ignore><a href="https://github.com/bento-js/bento/blob/main/guides/installing-dependencies.md">View source</a></p>
+
+  </article>
+<aside class="toc" aria-label="On this page">
+  <p class="toc__title">On this page</p>
+  <nav id="TableOfContents">
+  <ul>
+    <li><a href="#what-it-does">What it does</a></li>
+    <li><a href="#how-to-use-it">How to use it</a>
+      <ul>
+        <li><a href="#development-dependencies">Development dependencies</a></li>
+        <li><a href="#build-scripts">Build scripts</a></li>
+        <li><a href="#running-without-the-installer">Running without the installer</a></li>
+      </ul>
+    </li>
+    <li><a href="#worked-example">Worked example</a></li>
+    <li><a href="#limits-and-edge-cases">Limits and edge cases</a></li>
+  </ul>
+</nav>
+</aside>
+
+</div>
+
+    </main><footer class="site-footer">
+  <span>Bento</span>
+  <a href="https://github.com/bento-js/bento">Repository</a>
+</footer>
+<dialog class="search" aria-label="Search" data-search-base="/bento/pr-preview/pr-278/" data-search-bundle="/bento/pr-preview/pr-278/pagefind/">
+  <div class="search__ui" id="search-ui"></div>
+  <p class="search__unavailable" hidden>Search runs over a built site. Build it with <code>mise run docs:build</code> and serve <code>docs/public</code>.</p>
+</dialog>
+
+  </body>
+</html>

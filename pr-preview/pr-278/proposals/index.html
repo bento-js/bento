@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Proposals · Bento</title>
+<meta name="description" content="A TypeScript runtime that belongs to the application using it.">
+<link rel="icon" href="/bento/pr-preview/pr-278/bento.png">
+<link rel="stylesheet" href="/bento/pr-preview/pr-278/css/site.min.6858dcfd9ef536c6838cfcac556c73c4c9472c5186119967c658c25bd331e2b8.css" integrity="sha256-aFjc/Z71NsaDjPysVWxzxMlHLFGGEZlnxljCW9Mx4rg=">
+<script src="/bento/pr-preview/pr-278/js/search.min.91c03ab0618e873fdf0408644ae4cec995e27513bfe7aefce72be2867e757830.js" integrity="sha256-kcA6sGGOhz/fBAhkSuTOyZXidRO/56785yvihn51eDA=" defer></script>
+
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="site-header__brand" href="/bento/pr-preview/pr-278/"><img src="/bento/pr-preview/pr-278/bento.png" alt="" width="32" height="32"><span>Bento</span>
+  </a>
+  <nav class="site-header__nav" aria-label="Main">
+    <a href="/bento/pr-preview/pr-278/vision/">Vision</a>
+    <a href="/bento/pr-preview/pr-278/architecture/">Architecture</a>
+    <a href="/bento/pr-preview/pr-278/guides/">Guides</a>
+    <a href="/bento/pr-preview/pr-278/proposals/" class="is-active" aria-current="page">Change history</a>
+    <a href="/bento/pr-preview/pr-278/policies/">Policies</a>
+    <a href="/bento/pr-preview/pr-278/decisions/">Decisions</a>
+  </nav>
+  <button class="site-header__search" type="button" data-search-open aria-haspopup="dialog">
+    <span>Search</span><kbd>/</kbd>
+  </button>
+</header>
+
+    <main id="main">
+<div class="layout">
+<nav class="sidebar" aria-label="Proposals">
+  <a class="sidebar__section" href="/bento/pr-preview/pr-278/proposals/" aria-current="page">Proposals</a>
+  <ul>
+    <li><a href="/bento/pr-preview/pr-278/proposals/0002-web-prompt-api/">Web Prompt API with macOS Foundation Models</a></li>
+    <li><a href="/bento/pr-preview/pr-278/proposals/0001-embeddable-typescript-runtime/">An Embeddable TypeScript Runtime</a></li>
+  </ul>
+</nav>
+
+  <article class="content" data-pagefind-body><h1 id="proposals">Proposals</h1>
+
+<p>This directory holds one change record per file: what the change was, why it was made, and how it was reviewed. A completed proposal is history. Current requirements live in the specifications, policies, and decisions it changed; see Workbench&rsquo;s <a href="https://markmals.github.io/workbench/guides/current-specifications/">Keeping Current Specifications</a>.</p>
+<p>Name each file <code>&lt;NNNN&gt;-&lt;slug&gt;.md</code>, using the next four-digit number and a kebab-case slug. Required frontmatter is <code>id: proposal.&lt;NNNN&gt;</code>, <code>title</code>, <code>authors</code> as a non-empty list, <code>status</code>, <code>pull-request</code>, and <code>supersedes</code>. Optional <code>issues</code> is a list of issue references or URLs. The normal lifecycle is <code>draft</code> → <code>awaiting-implementation</code> → <code>active-review</code> → <code>accepted</code> → <code>implemented</code>.</p>
+<table>
+	<thead>
+			<tr>
+					<th>Status</th>
+					<th>Meaning</th>
+					<th>Decided by</th>
+					<th>Phase</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>draft</code></td>
+					<td>Being written and iterated on in the draft pull request. May carry <code>[NEEDS CLARIFICATION:</code>.</td>
+					<td>agent</td>
+					<td>2</td>
+			</tr>
+			<tr>
+					<td><code>awaiting-implementation</code></td>
+					<td>The human settled the proposal. Implementation is underway or not yet started; the feature pull request becomes ready once the complete implementation is verified and pushed.</td>
+					<td>human</td>
+					<td>3</td>
+			</tr>
+			<tr>
+					<td><code>active-review</code></td>
+					<td>The readiness report is posted after Phase 3 reviews and preview; the pull request was made ready earlier.</td>
+					<td>agent</td>
+					<td>4</td>
+			</tr>
+			<tr>
+					<td><code>returned-for-revisions</code></td>
+					<td>The human requested changes. Back to implementation, or to the proposal if the design changed.</td>
+					<td>human</td>
+					<td>4 → 3 or 2</td>
+			</tr>
+			<tr>
+					<td><code>accepted</code></td>
+					<td>The human accepted the work. Vision update, merge and release are underway.</td>
+					<td>human</td>
+					<td>5</td>
+			</tr>
+			<tr>
+					<td><code>implemented</code></td>
+					<td>The accepted implementation and final records are committed in the feature pull request before merge. Merge and any required release remain separate.</td>
+					<td>agent</td>
+					<td>5</td>
+			</tr>
+			<tr>
+					<td><code>rejected</code></td>
+					<td>The human declined the change. Kept as record.</td>
+					<td>human</td>
+					<td>terminal</td>
+			</tr>
+			<tr>
+					<td><code>withdrawn</code></td>
+					<td>The author pulled it. Kept as record.</td>
+					<td>either</td>
+					<td>terminal</td>
+			</tr>
+			<tr>
+					<td><code>superseded</code></td>
+					<td>A later proposal replaced it.</td>
+					<td>either</td>
+					<td>terminal</td>
+			</tr>
+	</tbody>
+</table>
+<p>Pull-request readiness and proposal status track different facts. A ready feature PR exposes implemented code for inspection while its proposal may still be <code>awaiting-implementation</code>; <code>active-review</code> records the later readiness-report handoff to human review.</p>
+<p><strong>Decided by</strong> is about judgement, not keystrokes. The human may ask the agent to make the edit — that is fine. What an agent must never do is decide on its own that a proposal is settled enough to implement, or that finished work is good enough to accept. An agent that can reach those two conclusions unaided is an agent approving its own work.</p>
+<p>After acceptance and the vision update, the agent records <code>implemented</code> in the original feature pull request before merging it. This status does not claim that the pull request has merged or that a required release happened. The pull request records integration; keep any remaining delivery visible in the proposal or pull request until separately authorized and performed. A merge-only change needs no release.</p>
+<p>A proposal stays <code>draft</code> for as long as it takes. It is published to the draft pull request as soon as there is something to react to, and the human edits it there — directly, or by asking for changes — until they are satisfied. Iteration is the normal case, not a sign of a bad first draft.</p>
+<p>Proposals are kept after they close. When a later proposal replaces an earlier one as a change, it names it in <code>supersedes</code> and the earlier one becomes <code>superseded</code>. That relationship records how the changes were made; it does not say which requirements apply now.</p>
+
+    <div class="section-pages" data-pagefind-ignore>
+      <h2 id="in-this-section">In this section</h2><ul class="page-list">
+  <li>
+    <a href="/bento/pr-preview/pr-278/proposals/0002-web-prompt-api/">Web Prompt API with macOS Foundation Models</a> <code>proposal.0002</code> <span class="status status--implemented">Implemented</span>
+  </li>
+  <li>
+    <a href="/bento/pr-preview/pr-278/proposals/0001-embeddable-typescript-runtime/">An Embeddable TypeScript Runtime</a> <code>proposal.0001</code> <span class="status status--implemented">Implemented</span>
+  </li>
+</ul>
+
+    </div>
+<p class="source-link" data-pagefind-ignore><a href="https://github.com/bento-js/bento/blob/main/proposals/README.md">View source</a></p>
+
+  </article>
+</div>
+
+    </main><footer class="site-footer">
+  <span>Bento</span>
+  <a href="https://github.com/bento-js/bento">Repository</a>
+</footer>
+<dialog class="search" aria-label="Search" data-search-base="/bento/pr-preview/pr-278/" data-search-bundle="/bento/pr-preview/pr-278/pagefind/">
+  <div class="search__ui" id="search-ui"></div>
+  <p class="search__unavailable" hidden>Search runs over a built site. Build it with <code>mise run docs:build</code> and serve <code>docs/public</code>.</p>
+</dialog>
+
+  </body>
+</html>

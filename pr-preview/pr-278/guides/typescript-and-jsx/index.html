@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>TypeScript and JSX · Bento</title>
+<meta name="description" content="A TypeScript runtime that belongs to the application using it.">
+<link rel="icon" href="/bento/pr-preview/pr-278/bento.png">
+<link rel="stylesheet" href="/bento/pr-preview/pr-278/css/site.min.6858dcfd9ef536c6838cfcac556c73c4c9472c5186119967c658c25bd331e2b8.css" integrity="sha256-aFjc/Z71NsaDjPysVWxzxMlHLFGGEZlnxljCW9Mx4rg=">
+<script src="/bento/pr-preview/pr-278/js/search.min.91c03ab0618e873fdf0408644ae4cec995e27513bfe7aefce72be2867e757830.js" integrity="sha256-kcA6sGGOhz/fBAhkSuTOyZXidRO/56785yvihn51eDA=" defer></script>
+
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="site-header__brand" href="/bento/pr-preview/pr-278/"><img src="/bento/pr-preview/pr-278/bento.png" alt="" width="32" height="32"><span>Bento</span>
+  </a>
+  <nav class="site-header__nav" aria-label="Main">
+    <a href="/bento/pr-preview/pr-278/vision/">Vision</a>
+    <a href="/bento/pr-preview/pr-278/architecture/">Architecture</a>
+    <a href="/bento/pr-preview/pr-278/guides/" class="is-active">Guides</a>
+    <a href="/bento/pr-preview/pr-278/proposals/">Change history</a>
+    <a href="/bento/pr-preview/pr-278/policies/">Policies</a>
+    <a href="/bento/pr-preview/pr-278/decisions/">Decisions</a>
+  </nav>
+  <button class="site-header__search" type="button" data-search-open aria-haspopup="dialog">
+    <span>Search</span><kbd>/</kbd>
+  </button>
+</header>
+
+    <main id="main">
+<div class="layout">
+<nav class="sidebar" aria-label="Guides">
+  <a class="sidebar__section" href="/bento/pr-preview/pr-278/guides/">Guides</a>
+  <ul>
+    <li><a href="/bento/pr-preview/pr-278/guides/benchmarks/">Benchmarks</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/embedding-bento/">Embedding Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/guest-book-embedding-example/">Guest Book Embedding Example</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/installing-dependencies/">Installing Dependencies</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/node-compatibility/">Node Compatibility</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/running-with-bento/">Running with Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/tasks-and-environment/">Tasks and Environment</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/typescript-and-jsx/" aria-current="page">TypeScript and JSX</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/prompt-api/">Using the Prompt API</a></li>
+  </ul>
+</nav>
+
+  <article class="content" data-pagefind-body><h1 id="typescript-and-jsx">TypeScript and JSX</h1>
+
+<h2 id="what-it-does">What it does <a class="heading-anchor" href="#what-it-does" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>Bento runs TypeScript, TSX, and JSX source files directly. Before a module is evaluated, Bento removes type syntax and compiles JSX natively with Oxc, inside the Bento process, using the execution-relevant settings from the project&rsquo;s <code>tsconfig.json</code>. There is no build step, no emitted <code>.js</code> files, and no <code>--import remix/node-tsx</code> loader.</p>
+<p>Transforming is not type checking. Bento never reports type errors: a file with a type error that is still valid syntax runs, and the mistake surfaces only when the type checker runs. Keep the project&rsquo;s type checker as a task (for example <code>&quot;typecheck&quot;: &quot;tsc --noEmit&quot;</code> in <code>package.json#tasks</code>) and run it with <code>bento run typecheck</code>.</p>
+<p>Every transformed module carries a source map, so stack traces and error locations point at the original line and column of the TypeScript or TSX source rather than at generated JavaScript.</p>
+<h2 id="how-to-use-it">How to use it <a class="heading-anchor" href="#how-to-use-it" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ol>
+<li>Write the application in <code>.ts</code>, <code>.tsx</code>, <code>.mts</code>, <code>.cts</code>, or <code>.jsx</code> files. <code>.js</code>, <code>.mjs</code>, and <code>.cjs</code> files are evaluated as they are, without transformation.</li>
+<li>Keep the project&rsquo;s <code>tsconfig.json</code> next to its <code>package.json</code>. Bento reads it, follows every <code>extends</code> entry (relative files, package specifiers such as <code>@tsconfig/node22/tsconfig.json</code>, and packages that export a <code>tsconfig.json</code>), and accepts comments and trailing commas. Settings in the extending file win over settings it inherits; in an <code>extends</code> array, later entries win over earlier ones.</li>
+<li>For JSX, set <code>&quot;jsx&quot;</code> to <code>&quot;react-jsx&quot;</code>, <code>&quot;react-jsxdev&quot;</code>, or <code>&quot;react&quot;</code>, plus <code>&quot;jsxImportSource&quot;</code> (automatic runtime) or <code>&quot;jsxFactory&quot;</code> and <code>&quot;jsxFragmentFactory&quot;</code> (classic runtime). The same settings apply to <code>.tsx</code> and <code>.jsx</code> files.</li>
+<li>Run <code>bento run server.ts</code>. The entry module and everything it imports are transformed on load.</li>
+</ol>
+<p>A project without a <code>tsconfig.json</code> runs with TypeScript&rsquo;s defaults: no JSX runtime is selected (plain TypeScript still runs), imports used only as types are elided, decorators are not transformed, and class fields follow the JavaScript specification.</p>
+<p>Bento applies the project&rsquo;s settings to every non-dependency source it transforms, including workspace siblings such as <code>../shared/view.tsx</code>, whether or not <code>tsconfig.json#include</code> lists them. Dependency sources use TypeScript&rsquo;s defaults instead. Within the project root, a <code>node_modules</code> directory in the source&rsquo;s relative path marks it as a dependency; outside the project root, any <code>node_modules</code> directory in the full path does. A project located beneath <code>node_modules</code> still uses its own settings for its own source files.</p>
+<h2 id="worked-example">Worked example <a class="heading-anchor" href="#worked-example" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>The guest-book fixture&rsquo;s <code>tsconfig.json</code> sets <code>&quot;jsx&quot;: &quot;react-jsx&quot;</code>, <code>&quot;jsxImportSource&quot;: &quot;remix/component&quot;</code>, and <code>&quot;verbatimModuleSyntax&quot;: true</code>. Loading it produces no errors; the only options it contains that Bento does not act on are type-checker and tooling options that have no runtime meaning.</p>
+<p>Given <code>app/greeting.tsx</code>:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-tsx" data-lang="tsx"><span class="line"><span class="cl"><span class="kr">import</span> <span class="kr">type</span> <span class="p">{</span> <span class="nx">User</span> <span class="p">}</span> <span class="kr">from</span> <span class="s2">&#34;#app/user.ts&#34;</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kr">export</span> <span class="kd">function</span> <span class="nx">Greeting</span><span class="p">({</span> <span class="nx">user</span> <span class="p">}</span><span class="o">:</span> <span class="p">{</span> <span class="nx">user</span>: <span class="kt">User</span> <span class="p">})</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="p">&lt;</span><span class="nt">h1</span> <span class="na">className</span><span class="o">=</span><span class="s">&#34;title&#34;</span><span class="p">&gt;{</span><span class="nx">user</span><span class="p">.</span><span class="nx">name</span><span class="p">}&lt;/</span><span class="nt">h1</span><span class="p">&gt;;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span></span></span></code></pre></div><p>Bento evaluates the equivalent of:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-js" data-lang="js"><span class="line"><span class="cl"><span class="kr">import</span> <span class="p">{</span> <span class="nx">jsx</span> <span class="p">}</span> <span class="nx">from</span> <span class="s2">&#34;remix/component/jsx-runtime&#34;</span><span class="p">;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kr">export</span> <span class="kd">function</span> <span class="nx">Greeting</span><span class="p">({</span> <span class="nx">user</span> <span class="p">})</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="k">return</span> <span class="nx">jsx</span><span class="p">(</span><span class="s2">&#34;h1&#34;</span><span class="p">,</span> <span class="p">{</span> <span class="nx">className</span><span class="o">:</span> <span class="s2">&#34;title&#34;</span><span class="p">,</span> <span class="nx">children</span><span class="o">:</span> <span class="nx">user</span><span class="p">.</span><span class="nx">name</span> <span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span></span></span></code></pre></div><p>The <code>import type</code> is removed, the annotation is removed, and the JSX element becomes a call into Remix&rsquo;s JSX runtime rather than React&rsquo;s. Elements with several children call <code>jsxs</code>, fragments pass <code>Fragment</code>, and only the names a file uses are imported. With <code>&quot;react-jsxdev&quot;</code> the import comes from <code>remix/component/jsx-dev-runtime</code> and each <code>jsxDEV</code> call carries its source location.</p>
+<h2 id="which-tsconfigjson-options-bento-honors">Which <code>tsconfig.json</code> options Bento honors <a class="heading-anchor" href="#which-tsconfigjson-options-bento-honors" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>These options change how a file executes, so Bento applies them during transformation:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Option</th>
+					<th>Effect at execution time</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>jsx</code></td>
+					<td><code>react-jsx</code> and <code>react-jsxdev</code> select the automatic runtime; <code>react</code> selects the classic runtime.</td>
+			</tr>
+			<tr>
+					<td><code>jsxImportSource</code></td>
+					<td>Module the automatic runtime imports <code>jsx</code>, <code>jsxs</code>, <code>Fragment</code>, or <code>jsxDEV</code> from (<code>&lt;source&gt;/jsx-runtime</code> or <code>&lt;source&gt;/jsx-dev-runtime</code>). Defaults to <code>react</code>.</td>
+			</tr>
+			<tr>
+					<td><code>jsxFactory</code>, <code>jsxFragmentFactory</code></td>
+					<td>Call targets for the classic runtime. Default to <code>React.createElement</code> and <code>React.Fragment</code>. Imports of those names are kept even when they appear only in JSX.</td>
+			</tr>
+			<tr>
+					<td><code>verbatimModuleSyntax</code></td>
+					<td>When <code>true</code>, only <code>import type</code>, <code>export type</code>, and inline <code>type</code> specifiers are removed; every other import stays, including ones whose bindings are unused. When <code>false</code> or unset, imports whose bindings are used only as types are elided, as TypeScript does by default.</td>
+			</tr>
+			<tr>
+					<td><code>experimentalDecorators</code></td>
+					<td>Transforms TypeScript&rsquo;s legacy decorators. The output imports its helpers from <code>@oxc-project/runtime</code>, so a project that uses decorators must have that package installed.</td>
+			</tr>
+			<tr>
+					<td><code>emitDecoratorMetadata</code></td>
+					<td>Adds <code>design:type</code>, <code>design:paramtypes</code>, and <code>design:returntype</code> metadata next to legacy decorators. Types that need inference fall back to <code>Object</code>. <code>strictNullChecks</code> (or <code>strict</code>) decides whether <code>null</code> and <code>undefined</code> are elided from union types in that metadata.</td>
+			</tr>
+			<tr>
+					<td><code>useDefineForClassFields</code></td>
+					<td><code>true</code> keeps class fields as specified by JavaScript (<code>[[Define]]</code> semantics; uninitialized fields exist as <code>undefined</code>). <code>false</code> moves initialized fields into the constructor as assignments and removes fields that have no initializer, matching TypeScript&rsquo;s output. When unset, it follows <code>target</code>: <code>false</code> for an explicit target below ES2022, otherwise <code>true</code>.</td>
+			</tr>
+			<tr>
+					<td><code>extends</code></td>
+					<td>Followed to build the effective options.</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="which-options-bento-ignores-and-why">Which options Bento ignores, and why <a class="heading-anchor" href="#which-options-bento-ignores-and-why" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<table>
+	<thead>
+			<tr>
+					<th>Option</th>
+					<th>Why it has no runtime effect</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>paths</code>, <code>baseUrl</code>, <code>rootDirs</code></td>
+					<td>Bento resolves imports the way Node does: relative paths, <code>package.json</code> <code>imports</code> (<code>#app/*</code>) and <code>exports</code>, and <code>node_modules</code>. Rewriting specifiers from <code>paths</code> would make the running program disagree with every other Node-compatible runtime. Bento warns when these could change resolution; <code>paths</code> entries that start with <code>#</code> are not warned about because Node resolves those through <code>package.json#imports</code>.</td>
+			</tr>
+			<tr>
+					<td><code>target</code></td>
+					<td>Bento runs on a current V8, so no syntax is downleveled. <code>target</code> only decides the default of <code>useDefineForClassFields</code>.</td>
+			</tr>
+			<tr>
+					<td><code>module</code>, <code>moduleResolution</code></td>
+					<td>Module syntax is kept as written; whether a file is ESM or CommonJS follows its extension and the nearest <code>package.json#type</code>, as in Node. Bento warns when <code>module</code> names a format it would have converted to (<code>commonjs</code>, <code>amd</code>, <code>umd</code>, <code>system</code>, <code>none</code>).</td>
+			</tr>
+			<tr>
+					<td><code>noEmit</code>, <code>allowImportingTsExtensions</code>, <code>rewriteRelativeImportExtensions</code></td>
+					<td>Bento transforms in memory and loads <code>.ts</code> specifiers directly, so there is nothing to emit or rewrite.</td>
+			</tr>
+			<tr>
+					<td><code>strict</code> and the other type-checking flags, <code>types</code>, <code>lib</code>, <code>skipLibCheck</code>, <code>isolatedModules</code>, <code>esModuleInterop</code>, <code>allowJs</code>, <code>checkJs</code>, <code>resolveJsonModule</code></td>
+					<td>They configure the type checker or an emitter Bento does not run.</td>
+			</tr>
+			<tr>
+					<td><code>preserveValueImports</code>, <code>importsNotUsedAsValues</code></td>
+					<td>Removed in TypeScript 6. Bento warns and ignores them; use <code>verbatimModuleSyntax</code>.</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="limits-and-edge-cases">Limits and edge cases <a class="heading-anchor" href="#limits-and-edge-cases" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<ul>
+<li><code>&quot;jsx&quot;: &quot;preserve&quot;</code> and <code>&quot;jsx&quot;: &quot;react-native&quot;</code> leave JSX in the output, which no JavaScript engine can run. Loading such a <code>tsconfig.json</code> reports an error-level diagnostic, and transforming a file that contains JSX fails with <code>path:line:column: compilerOptions &quot;jsx&quot;: &quot;preserve&quot; leaves JSX untransformed …</code>, pointing at the first JSX element. Files without JSX still run. A <code>.tsx</code> or <code>.jsx</code> file that contains JSX while <code>jsx</code> is unset fails the same way, naming the setting to add.</li>
+<li>Standard (TC39) decorators are not transformed. Without <code>experimentalDecorators</code>, a file that uses a decorator fails with an error at the decorator&rsquo;s position asking for <code>experimentalDecorators: true</code>, rather than being passed through to the engine as a syntax error.</li>
+<li>A syntax error stops the module from loading with <code>path:line:column: &lt;parser message&gt;</code>; nothing is evaluated.</li>
+<li>A malformed <code>tsconfig.json</code>, or a malformed file in its <code>extends</code> chain, is a configuration error that names the offending file and the JSON position. An <code>extends</code> target that cannot be found, or a circular <code>extends</code>, is reported the same way. So is a <code>tsconfig.json</code> that exists but cannot be read as a file: a directory of that name, a symbolic link whose target is gone, or a file without read permission. Only a <code>tsconfig.json</code> that does not exist at all is not an error.</li>
+<li>Each file is transformed on its own, as with <code>isolatedModules</code>. <code>const enum</code> values are not inlined across files, and namespaces have the limits of Oxc&rsquo;s per-file support.</li>
+<li><code>.mts</code> and <code>.cts</code> files have their types removed and keep their module syntax; Bento does not convert <code>import</code>/<code>export</code> to <code>require</code>, nor the reverse.</li>
+<li><code>.js</code>, <code>.mjs</code>, and <code>.cjs</code> files that contain JSX are not transformed; rename them to <code>.jsx</code>.</li>
+</ul>
+
+<p class="source-link" data-pagefind-ignore><a href="https://github.com/bento-js/bento/blob/main/guides/typescript-and-jsx.md">View source</a></p>
+
+  </article>
+<aside class="toc" aria-label="On this page">
+  <p class="toc__title">On this page</p>
+  <nav id="TableOfContents">
+  <ul>
+    <li><a href="#what-it-does">What it does</a></li>
+    <li><a href="#how-to-use-it">How to use it</a></li>
+    <li><a href="#worked-example">Worked example</a></li>
+    <li><a href="#which-tsconfigjson-options-bento-honors">Which <code>tsconfig.json</code> options Bento honors</a></li>
+    <li><a href="#which-options-bento-ignores-and-why">Which options Bento ignores, and why</a></li>
+    <li><a href="#limits-and-edge-cases">Limits and edge cases</a></li>
+  </ul>
+</nav>
+</aside>
+
+</div>
+
+    </main><footer class="site-footer">
+  <span>Bento</span>
+  <a href="https://github.com/bento-js/bento">Repository</a>
+</footer>
+<dialog class="search" aria-label="Search" data-search-base="/bento/pr-preview/pr-278/" data-search-bundle="/bento/pr-preview/pr-278/pagefind/">
+  <div class="search__ui" id="search-ui"></div>
+  <p class="search__unavailable" hidden>Search runs over a built site. Build it with <code>mise run docs:build</code> and serve <code>docs/public</code>.</p>
+</dialog>
+
+  </body>
+</html>

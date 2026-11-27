@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Using the Prompt API · Bento</title>
+<meta name="description" content="A TypeScript runtime that belongs to the application using it.">
+<link rel="icon" href="/bento/pr-preview/pr-278/bento.png">
+<link rel="stylesheet" href="/bento/pr-preview/pr-278/css/site.min.6858dcfd9ef536c6838cfcac556c73c4c9472c5186119967c658c25bd331e2b8.css" integrity="sha256-aFjc/Z71NsaDjPysVWxzxMlHLFGGEZlnxljCW9Mx4rg=">
+<script src="/bento/pr-preview/pr-278/js/search.min.91c03ab0618e873fdf0408644ae4cec995e27513bfe7aefce72be2867e757830.js" integrity="sha256-kcA6sGGOhz/fBAhkSuTOyZXidRO/56785yvihn51eDA=" defer></script>
+
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <a class="site-header__brand" href="/bento/pr-preview/pr-278/"><img src="/bento/pr-preview/pr-278/bento.png" alt="" width="32" height="32"><span>Bento</span>
+  </a>
+  <nav class="site-header__nav" aria-label="Main">
+    <a href="/bento/pr-preview/pr-278/vision/">Vision</a>
+    <a href="/bento/pr-preview/pr-278/architecture/">Architecture</a>
+    <a href="/bento/pr-preview/pr-278/guides/" class="is-active">Guides</a>
+    <a href="/bento/pr-preview/pr-278/proposals/">Change history</a>
+    <a href="/bento/pr-preview/pr-278/policies/">Policies</a>
+    <a href="/bento/pr-preview/pr-278/decisions/">Decisions</a>
+  </nav>
+  <button class="site-header__search" type="button" data-search-open aria-haspopup="dialog">
+    <span>Search</span><kbd>/</kbd>
+  </button>
+</header>
+
+    <main id="main">
+<div class="layout">
+<nav class="sidebar" aria-label="Guides">
+  <a class="sidebar__section" href="/bento/pr-preview/pr-278/guides/">Guides</a>
+  <ul>
+    <li><a href="/bento/pr-preview/pr-278/guides/benchmarks/">Benchmarks</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/embedding-bento/">Embedding Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/guest-book-embedding-example/">Guest Book Embedding Example</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/installing-dependencies/">Installing Dependencies</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/node-compatibility/">Node Compatibility</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/running-with-bento/">Running with Bento</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/tasks-and-environment/">Tasks and Environment</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/typescript-and-jsx/">TypeScript and JSX</a></li>
+    <li><a href="/bento/pr-preview/pr-278/guides/prompt-api/" aria-current="page">Using the Prompt API</a></li>
+  </ul>
+</nav>
+
+  <article class="content" data-pagefind-body><h1 id="using-the-prompt-api">Using the Prompt API</h1>
+
+<h2 id="what-it-does">What it does <a class="heading-anchor" href="#what-it-does" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>Bento exposes <code>LanguageModel</code> in its main isolate and workers. It provides text conversations, incremental text responses, context measurement, independent session clones, and JSON constrained by a supported schema. Apple&rsquo;s default on-device Foundation Models model runs the inference. Bento never falls back to a cloud service or Private Cloud Compute.</p>
+<p>This is a server-side adaptation of the <a href="https://webmachinelearning.github.io/prompt-api/">Prompt API draft</a>, with host grants instead of browser permissions or user activation. A browser visiting a server written in Bento does not acquire this API. The supported surface excludes image and audio input, tools, assistant-prefix continuation, experimental sampling controls, and deprecated quota and sampling properties.</p>
+<h2 id="build-and-grant-access">Build and grant access <a class="heading-anchor" href="#build-and-grant-access" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>The native backend requires Apple silicon, macOS 27.0 or newer, Apple Intelligence enabled, and the system model ready. Building requires Xcode with the macOS 27 SDK or newer, its Swift toolchain, and Bento&rsquo;s pinned Rust toolchain. The CLI enables the native backend by default:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">cargo install --locked --path crates/bento_cli
+</span></span><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. --allow-language-model prompt.ts</span></span></code></pre></div><p><code>--allow-language-model</code> grants access to the model. It grants no file, network, environment, or native-addon access. Without it, <code>LanguageModel.availability()</code> resolves to <code>&quot;unavailable&quot;</code> and <code>LanguageModel.create()</code> rejects with a <code>NotAllowedError</code> DOMException before probing the native model. No interactive permission prompt appears.</p>
+<p>Nested Bento task launches inherit this capability as a ceiling. An omitted flag inherits the ceiling, <code>--allow-language-model=false</code> denies it explicitly, and requesting it under a denying ceiling fails before running the guest. An older serialized ceiling without the capability denies it. Native programs started by a trusted task retain the task&rsquo;s operating-system authority; Bento grants are not an OS sandbox.</p>
+<p>To build without the native dependency or new SDK requirement:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">cargo install --locked --path crates/bento_cli --no-default-features</span></span></code></pre></div><p>A backend-free build still exposes the JavaScript API and validates its arguments, but reports <code>&quot;unavailable&quot;</code> even when the host grants model access. Windows and Linux model backends are not implemented.</p>
+<p>For a Rust host embedding <code>bento_runtime</code>, enable its <code>prompt-foundation-models</code> Cargo feature and set <code>RuntimeConfig.grants.language_model = true</code>. Library embeddings enable neither by default. Workers inherit the immutable grant, while each isolate owns its own sessions.</p>
+<h2 id="start-a-conversation">Start a conversation <a class="heading-anchor" href="#start-a-conversation" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>Save this as <code>prompt.ts</code> in a project with a <code>package.json</code>, then run it with the grant shown above.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-typescript" data-lang="typescript"><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">availability</span> <span class="o">=</span> <span class="k">await</span> <span class="nx">LanguageModel</span><span class="p">.</span><span class="nx">availability</span><span class="p">({</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">expectedInputs</span><span class="o">:</span> <span class="p">[{</span> <span class="kr">type</span><span class="o">:</span> <span class="s2">&#34;text&#34;</span><span class="p">,</span> <span class="nx">languages</span><span class="o">:</span> <span class="p">[</span><span class="s2">&#34;en&#34;</span><span class="p">]</span> <span class="p">}],</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">expectedOutputs</span><span class="o">:</span> <span class="p">[{</span> <span class="kr">type</span><span class="o">:</span> <span class="s2">&#34;text&#34;</span><span class="p">,</span> <span class="nx">languages</span><span class="o">:</span> <span class="p">[</span><span class="s2">&#34;en&#34;</span><span class="p">]</span> <span class="p">}],</span>
+</span></span><span class="line"><span class="cl"><span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="p">(</span><span class="nx">availability</span> <span class="o">!==</span> <span class="s2">&#34;available&#34;</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="k">throw</span> <span class="k">new</span> <span class="nb">Error</span><span class="p">(</span><span class="s2">&#34;The local language model is unavailable&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">session</span> <span class="o">=</span> <span class="k">await</span> <span class="nx">LanguageModel</span><span class="p">.</span><span class="nx">create</span><span class="p">({</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">initialPrompts</span><span class="o">:</span> <span class="p">[{</span> <span class="nx">role</span><span class="o">:</span> <span class="s2">&#34;system&#34;</span><span class="p">,</span> <span class="nx">content</span><span class="o">:</span> <span class="s2">&#34;Answer briefly and plainly.&#34;</span> <span class="p">}],</span>
+</span></span><span class="line"><span class="cl"><span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="k">try</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">prompt</span><span class="p">(</span><span class="s2">&#34;Explain what a tide pool is.&#34;</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">prompt</span><span class="p">(</span><span class="s2">&#34;Name one animal that lives there.&#34;</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="k">finally</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">session</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span></span></span></code></pre></div><p>Availability is advisory. Creation checks readiness again. Bento reports only <code>&quot;available&quot;</code> or <code>&quot;unavailable&quot;</code>; a model that is not ready is unavailable, without implying that a download is running. Check the grant, build features, macOS version, and Apple Intelligence settings when it is unavailable. Bento does not download model assets or change system settings.</p>
+<p>Expected text languages use canonical BCP 47 tags and the native model&rsquo;s locale support. An invalid tag rejects; a valid unsupported language makes availability unavailable and creation reject with <code>NotSupportedError</code>. Omitting language expectations leaves language selection to the model. Requesting an unsupported expected content type also reports unavailable.</p>
+<p><code>LanguageModel</code> cannot be constructed with <code>new</code>. Sessions are <code>EventTarget</code> instances. A <code>monitor</code> callback passed to <code>create()</code> receives an <code>EventTarget</code> on which <code>downloadprogress</code> reports the specified initialization endpoints: loaded zero, then one, with total one and <code>lengthComputable</code> true. Those events do not describe an OS download. Throwing from the callback rejects creation without retaining a session.</p>
+<p>For an available model, the notifications run in separate tasks before native initialization. Creation can still fail after both notifications. Unavailable or failed readiness produces neither. Aborting creation rejects with the signal&rsquo;s reason and prevents later progress notifications, including when the abort is queued as a microtask by a progress listener. Native initialization already under way stays owned until it settles; the immediate rejection does not abandon it.</p>
+<h2 id="messages-and-context">Messages and context <a class="heading-anchor" href="#messages-and-context" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>A prompt can be a string or an array of messages. Message roles are <code>system</code>, <code>user</code>, and <code>assistant</code>; content is a string or an array of <code>{ type: &quot;text&quot;, value: &quot;...&quot; }</code> items. Initial user and assistant messages restore conversation history without generating responses. A system message may occur only once, first in a previously empty conversation. Later system messages reject with <code>TypeError</code>. That rule governs input a session commits, so <code>measureContextUsage()</code> still measures a system message on a session that already has history.</p>
+<p>Inputs follow WebIDL conversion. For example, a text-content <code>value</code> of <code>7</code> becomes <code>&quot;7&quot;</code>; <code>ArrayBuffer</code>, typed-array, <code>Blob</code>, and image values cannot be relabelled as text. Message and content sequences accept iterable objects, including callable objects. An iterator property of <code>null</code> selects the string branch instead.</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-typescript" data-lang="typescript"><span class="line"><span class="cl"><span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">append</span><span class="p">([</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span> <span class="nx">role</span><span class="o">:</span> <span class="s2">&#34;user&#34;</span><span class="p">,</span> <span class="nx">content</span><span class="o">:</span> <span class="s2">&#34;Remember the code word: kelp.&#34;</span> <span class="p">},</span>
+</span></span><span class="line"><span class="cl">    <span class="p">{</span> <span class="nx">role</span><span class="o">:</span> <span class="s2">&#34;assistant&#34;</span><span class="p">,</span> <span class="nx">content</span><span class="o">:</span> <span class="s2">&#34;The code word is kelp.&#34;</span> <span class="p">},</span>
+</span></span><span class="line"><span class="cl"><span class="p">]);</span>
+</span></span><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">addedUsage</span> <span class="o">=</span> <span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">measureContextUsage</span><span class="p">(</span><span class="s2">&#34;What is the code word?&#34;</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">({</span> <span class="nx">addedUsage</span><span class="p">,</span> <span class="nx">used</span>: <span class="kt">session.contextUsage</span><span class="p">,</span> <span class="nx">capacity</span>: <span class="kt">session.contextWindow</span> <span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">prompt</span><span class="p">(</span><span class="s2">&#34;What is the code word?&#34;</span><span class="p">));</span></span></span></code></pre></div><p><code>append()</code> commits messages without generating a response. <code>measureContextUsage()</code> measures the supplied input and relevant constraint overhead without changing history. It validates that input as if the conversation were empty, so a system message is measurable even on a session that already has history; nothing is committed either way. An empty prompt, including <code>prompt([])</code>, is an empty user message. Adjacent text content is canonicalized before processing.</p>
+<p>Usage and capacity are measured with the native tokenizer for the representation sent to the model. The empty transcript&rsquo;s serialization overhead is reserved in the advertised capacity, so an empty session starts at zero public usage. Capacity is queried from the model; it is not a fixed token count. Usage updates before an operation settles and includes successful generated output. An included response constraint remains part of its prompt&rsquo;s context cost on later turns and in clones; it is not a one-time surcharge.</p>
+<p>An oversized initial conversation or prompt rejects with <code>QuotaExceededError</code> before committing its input. That rejection is the WebIDL <code>QuotaExceededError</code>: <code>requested</code> is the public usage the whole conversation would have occupied, and <code>quota</code> is the public context window. Creation counts what the initial conversation needs against an empty session, a prefill counts current usage plus its input, and generation exhaustion counts usage plus input plus the generated response. When the model itself reports exhaustion instead of Bento&rsquo;s accounting, both fields are null, because Bento has no public figures for the model&rsquo;s own measurement. An existing session also dispatches one <code>contextoverflow</code> event for the failing operation; <code>oncontextoverflow</code> is available as an event-handler property. Generation can itself exhaust capacity. In that case the promise rejects or the stream errors, and chunks already delivered remain delivered. Bento never evicts history, summarizes it, or retries automatically.</p>
+<p>State-changing operations and clone snapshots on one session run in invocation order. Different sessions can progress independently. After input passes preflight, failed or cancelled generation retains that input but discards any partial assistant response. A queued cancellation and failed validation or preflight leave history unchanged.</p>
+<h2 id="stream-and-cancel">Stream and cancel <a class="heading-anchor" href="#stream-and-cancel" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-typescript" data-lang="typescript"><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">controller</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">AbortController</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">stream</span> <span class="o">=</span> <span class="nx">session</span><span class="p">.</span><span class="nx">promptStreaming</span><span class="p">(</span><span class="s2">&#34;Describe three tide-pool habitats.&#34;</span><span class="p">,</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">signal</span>: <span class="kt">controller.signal</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="k">for</span> <span class="k">await</span> <span class="p">(</span><span class="kr">const</span> <span class="nx">chunk</span> <span class="k">of</span> <span class="nx">stream</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">chunk</span><span class="p">);</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span></span></span></code></pre></div><p><code>promptStreaming()</code> returns a <code>ReadableStream</code> immediately. Ordinary text streams deliver incremental strings whose concatenation is the response. Bento errors the stream if the native model rewrites a prefix that was already delivered. It does not append a replacement as if it were a new suffix. A non-streaming <code>prompt()</code> has delivered nothing to its caller, so the same rewrite is not a failure there: the promise resolves with the model&rsquo;s final text.</p>
+<p>An operation&rsquo;s <code>signal</code> cancels only that operation. JavaScript abort reasons are preserved, including non-Error values. An already-aborted <code>promptStreaming()</code> call throws synchronously; promise-returning operations reject. Guest code that aborts the signal or destroys the session from inside a <code>responseConstraint</code> getter gets the same synchronous throw, with the abort or destruction reason. Cancelling a reader stops native generation without inventing an error for the cancelled stream. Backpressure keeps transport buffering bounded, and cancellation still works when the consumer stops reading. Bounded transport also means an unread stream holds its session: later operations on it wait until that stream is read, cancelled, or the session is destroyed.</p>
+<p>The signal passed to <code>create()</code> controls the session&rsquo;s lifetime. Aborting it destroys that session and cancels pending work. <code>destroy()</code> is synchronous and idempotent: the session becomes unusable immediately, pending work is cancelled, and native cleanup settles safely in the background. Later operations fail with the destruction reason. Runtime shutdown and worker termination cancel owned sessions even when guest code forgets to destroy them; an idle session does not keep the CLI running.</p>
+<h2 id="clone-a-conversation">Clone a conversation <a class="heading-anchor" href="#clone-a-conversation" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-typescript" data-lang="typescript"><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">branch</span> <span class="o">=</span> <span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">clone</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl"><span class="k">try</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="k">await</span> <span class="nx">branch</span><span class="p">.</span><span class="nx">prompt</span><span class="p">(</span><span class="s2">&#34;Suggest a different explanation.&#34;</span><span class="p">));</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span> <span class="k">finally</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">branch</span><span class="p">.</span><span class="nx">destroy</span><span class="p">();</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span></span></span></code></pre></div><p>A clone starts with the source&rsquo;s committed history, context usage, and capacity at its ordered snapshot point. Later changes and destruction are independent. A clone&rsquo;s signal cancels the cloning operation; it does not control a successfully completed clone. A cloning that its signal abandoned destroys the clone that arrives afterwards rather than leaving it live. Cloning an already full conversation does not create extra capacity.</p>
+<h2 id="constrain-json-output">Constrain JSON output <a class="heading-anchor" href="#constrain-json-output" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-typescript" data-lang="typescript"><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">responseConstraint</span> <span class="o">=</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="kr">type</span><span class="o">:</span> <span class="s2">&#34;object&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">properties</span><span class="o">:</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">        <span class="nx">habitat</span><span class="o">:</span> <span class="p">{</span> <span class="kr">type</span><span class="o">:</span> <span class="s2">&#34;string&#34;</span> <span class="p">},</span>
+</span></span><span class="line"><span class="cl">        <span class="nx">animal</span><span class="o">:</span> <span class="p">{</span> <span class="kr">type</span><span class="o">:</span> <span class="s2">&#34;string&#34;</span><span class="p">,</span> <span class="kr">enum</span><span class="o">:</span> <span class="p">[</span><span class="s2">&#34;crab&#34;</span><span class="p">,</span> <span class="s2">&#34;anemone&#34;</span><span class="p">,</span> <span class="s2">&#34;snail&#34;</span><span class="p">]</span> <span class="p">},</span>
+</span></span><span class="line"><span class="cl">    <span class="p">},</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">required</span><span class="o">:</span> <span class="p">[</span><span class="s2">&#34;habitat&#34;</span><span class="p">,</span> <span class="s2">&#34;animal&#34;</span><span class="p">],</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">additionalProperties</span>: <span class="kt">false</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">};</span>
+</span></span><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">text</span> <span class="o">=</span> <span class="k">await</span> <span class="nx">session</span><span class="p">.</span><span class="nx">prompt</span><span class="p">(</span><span class="s2">&#34;Choose a tide-pool animal and its habitat.&#34;</span><span class="p">,</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">    <span class="nx">responseConstraint</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">});</span>
+</span></span><span class="line"><span class="cl"><span class="kr">const</span> <span class="nx">answer</span> <span class="o">=</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">text</span><span class="p">);</span></span></span></code></pre></div><p>The response is JSON text. Bento translates the accepted schema into native guided decoding and validates the completed result before reporting success. The supported subset is closed:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Schema element</th>
+					<th>Supported behavior</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>type</code></td>
+					<td><code>object</code>, <code>array</code>, <code>string</code>, <code>integer</code>, <code>number</code>, or <code>boolean</code></td>
+			</tr>
+			<tr>
+					<td><code>properties</code>, <code>required</code></td>
+					<td>Nested object properties; omitted <code>required</code> makes them optional</td>
+			</tr>
+			<tr>
+					<td><code>additionalProperties</code></td>
+					<td>Only <code>false</code>; when omitted, output may still contain only declared properties</td>
+			</tr>
+			<tr>
+					<td><code>items</code></td>
+					<td>One schema for every array item</td>
+			</tr>
+			<tr>
+					<td><code>minItems</code>, <code>maxItems</code></td>
+					<td>Nonnegative array length bounds in the signed 64-bit range</td>
+			</tr>
+			<tr>
+					<td><code>minimum</code>, <code>maximum</code></td>
+					<td>Numeric bounds; integer bounds must fit the native signed 64-bit range, and number bounds use binary64</td>
+			</tr>
+			<tr>
+					<td><code>enum</code></td>
+					<td>String-valued choices</td>
+			</tr>
+			<tr>
+					<td><code>title</code>, <code>description</code></td>
+					<td>Schema annotations</td>
+			</tr>
+	</tbody>
+</table>
+<p>Each schema node requires an explicit supported <code>type</code>; an array also requires its homogeneous <code>items</code> schema. Names in <code>required</code> must be unique and declared in <code>properties</code>. An integer is a number with no fractional part, so <code>1.0</code> is valid both as an integer result and as an array length bound. A fractional <code>minimum</code> or <code>maximum</code> on an integer schema narrows inward to the integers it permits: <code>minimum: 1.2</code> permits 2 and above, and <code>maximum: 4.7</code> permits 4 and below. Bounds that leave no permitted integer, such as <code>minimum: 1.2</code> with <code>maximum: 1.8</code>, reject with <code>TypeError</code>. Empty enums, repeated required names, negative or fractional array bounds, inverted bounds, and incorrectly typed annotations are malformed. Tuple <code>items</code>, non-string enum values, and <code>additionalProperties: true</code> are outside the supported subset.</p>
+<p>The native backend uses signed 64-bit integers and binary64 floating-point numbers. Integer bounds and array length bounds outside the signed 64-bit range reject with <code>NotSupportedError</code> rather than being rounded or dropped. For <code>type: &quot;number&quot;</code>, a Rust caller&rsquo;s exact integer bound that binary64 cannot represent also rejects instead of silently changing the constraint; use <code>type: &quot;integer&quot;</code> for exact signed 64-bit integer bounds. Supported keywords used outside their listed type, such as <code>enum</code> on an integer schema, are also outside the supported subset.</p>
+<p>Malformed supported keywords reject with <code>TypeError</code> before changing history. Unsupported keywords or types reject with <code>NotSupportedError</code>, including references, composition, regex constraints, nullable unions, and arbitrary additional-property schemas. Unknown keywords are never silently discarded. A constraint must be a JSON-serializable object: <code>null</code> rejects with <code>TypeError</code>, while omitting the option or passing <code>undefined</code> leaves generation unconstrained.</p>
+<p><code>omitResponseConstraintInput: true</code> suppresses the schema&rsquo;s instructional input while retaining constrained decoding. Measurement uses the same choice. Setting it without a constraint rejects with <code>TypeError</code> in <code>measureContextUsage()</code>; it has no effect in <code>prompt()</code> or <code>promptStreaming()</code> without a constraint.</p>
+<p>Constrained <code>promptStreaming()</code> buffers native structured snapshots and emits one final validated JSON string. Partial JSON snapshots can rewrite earlier text, so constrained streaming has different latency and chunk behavior from ordinary text streaming. Invalid model output fails rather than being retried or replaced.</p>
+<h2 id="reuse-from-rust">Reuse from Rust <a class="heading-anchor" href="#reuse-from-rust" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>The <code>bento_prompt</code> crate works independently of Bento&rsquo;s runtime. Its default feature set depends on neither Deno/V8 nor Swift. Enable <code>foundation-models</code> for native inference; enable the separate <code>deno</code> feature only when embedding the web adapter. The crate is a workspace, path, or Git dependency; no registry publication is required.</p>
+<p>For a native-enabled embedding executable, set <code>MACOSX_DEPLOYMENT_TARGET=27.0</code> when building so the final Mach-O declares its requirement. A library cannot set its consumer&rsquo;s final deployment target. Bento&rsquo;s CLI sets that target in its own linker configuration; backend-free consumers retain their existing deployment requirements. <code>bento_prompt::MACOS_DEPLOYMENT_FLOOR</code> is the lowest macOS release the native backend supports, <code>&quot;27.0&quot;</code>. <code>bento_prompt::NATIVE_SDK_VERSION</code> is <code>Some</code> with the macOS SDK version this build&rsquo;s backend was compiled against, and <code>None</code> when no backend is compiled in, so a host can report both instead of repeating them.</p>
+<p>The public Rust API uses <code>Session</code>, typed text <code>Message</code> values, <code>CreateOptions</code>, <code>PromptOptions</code>, and <code>Cancellation</code>. It provides availability, creation, append, generation, streaming, measurement, independent forks, destruction, and awaited disposal. Direct Rust callers own model authority; the JavaScript adapter is where host grants are enforced. Await disposal when the caller needs proof that native inference and callbacks have settled.</p>
+<p><code>bento_prompt::TYPESCRIPT_DECLARATIONS</code> contains the ambient declarations from <a href="https://github.com/bento-js/bento/blob/main/crates/bento_prompt/types/prompt.d.ts"><code>crates/bento_prompt/types/prompt.d.ts</code></a>. Embedders can write that text into a guest project&rsquo;s type inputs. The declarations describe the implemented surface rather than the whole draft: message and expected content types are narrowed to <code>&quot;text&quot;</code>, and members Bento does not implement are absent instead of declared. Those absent members are image, audio, tool-call and tool-response content, tool declarations, <code>samplingMode</code>, <code>topK</code>, <code>temperature</code>, <code>params()</code>, <code>inputUsage</code>, and <code>inputQuota</code>.</p>
+<h2 id="exercise-the-preview">Exercise the preview <a class="heading-anchor" href="#exercise-the-preview" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<p>From this repository, run the TypeScript preview with a native-enabled Bento:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. --allow-language-model examples/prompt-api/main.ts
+</span></span><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. examples/prompt-api/main.ts --denied
+</span></span><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. --allow-language-model examples/prompt-api/shutdown.ts
+</span></span><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. --allow-language-model examples/prompt-api/idle.ts</span></span></code></pre></div><p>The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling <code>destroy()</code>, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Work that has not settled by the shutdown deadline is reported as incomplete disposal instead, and <code>bento</code> exits with status 1.</p>
+<p>On a backend-free build, the same preview exercises genuine unavailability:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">bento run --allow-read<span class="o">=</span>. --allow-language-model examples/prompt-api/main.ts</span></span></code></pre></div><p>It prints <code>Availability unavailable</code>, then fails with an uncaught <code>Error</code>: <code>LanguageModel is unavailable. Check the --allow-language-model grant, that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready.</code> The process exits with status 1.</p>
+<p>The Rust example uses the reusable crate directly:</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="nv">MACOSX_DEPLOYMENT_TARGET</span><span class="o">=</span>27.0 cargo run --locked -p bento_prompt --features foundation-models --example prompt_session</span></span></code></pre></div><p>These native previews fail explicitly if the model is unavailable. They are separate from deterministic CI tests and must be run on an eligible Mac with Apple Intelligence ready. CI provides native <code>bento-macos27-arm64-prompt</code> and backend-free <code>bento-macos26-arm64-backend-free</code> archive artifacts; extracting the archive preserves the executable&rsquo;s permissions.</p>
+<h2 id="errors-and-limits">Errors and limits <a class="heading-anchor" href="#errors-and-limits" aria-label="Link to this section" data-pagefind-ignore>#</a></h2>
+<table>
+	<thead>
+			<tr>
+					<th>Failure</th>
+					<th>JavaScript result</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>Missing model grant</td>
+					<td><code>NotAllowedError</code>; an uncaught denial is a Bento permission diagnostic</td>
+			</tr>
+			<tr>
+					<td>Unsupported capability, schema feature, or locale</td>
+					<td><code>NotSupportedError</code></td>
+			</tr>
+			<tr>
+					<td>Invalid message or supported schema shape</td>
+					<td><code>TypeError</code>; invalid prefix role or position uses <code>SyntaxError</code></td>
+			</tr>
+			<tr>
+					<td>Valid assistant-prefix continuation request</td>
+					<td><code>NotSupportedError</code></td>
+			</tr>
+			<tr>
+					<td>Native refusal or safety filtering</td>
+					<td><code>NotReadableError</code></td>
+			</tr>
+			<tr>
+					<td>Context exhaustion</td>
+					<td><code>QuotaExceededError</code>; <code>requested</code> and <code>quota</code> carry Bento&rsquo;s measurement, or are null when the model reported the exhaustion; an existing session also gets a <code>contextoverflow</code> event</td>
+			</tr>
+			<tr>
+					<td>Cancellation</td>
+					<td>The applicable abort reason; explicit destruction uses <code>AbortError</code></td>
+			</tr>
+			<tr>
+					<td>Failure to determine model readiness</td>
+					<td><code>UnknownError</code></td>
+			</tr>
+			<tr>
+					<td>Other native initialization failure during creation or cloning</td>
+					<td><code>OperationError</code></td>
+			</tr>
+			<tr>
+					<td>Other generation failure, including a rewritten prefix already delivered by a stream</td>
+					<td><code>UnknownError</code></td>
+			</tr>
+	</tbody>
+</table>
+<p>Apple&rsquo;s default safety settings remain enabled. Model output is probabilistic and can be incorrect even when it satisfies a schema. The typed error categories come from the native framework; Bento does not infer them from localized messages. Session history stays in memory and is not automatically persisted, exported, or logged.</p>
+
+<p class="source-link" data-pagefind-ignore><a href="https://github.com/bento-js/bento/blob/main/guides/prompt-api.md">View source</a></p>
+
+  </article>
+<aside class="toc" aria-label="On this page">
+  <p class="toc__title">On this page</p>
+  <nav id="TableOfContents">
+  <ul>
+    <li><a href="#what-it-does">What it does</a></li>
+    <li><a href="#build-and-grant-access">Build and grant access</a></li>
+    <li><a href="#start-a-conversation">Start a conversation</a></li>
+    <li><a href="#messages-and-context">Messages and context</a></li>
+    <li><a href="#stream-and-cancel">Stream and cancel</a></li>
+    <li><a href="#clone-a-conversation">Clone a conversation</a></li>
+    <li><a href="#constrain-json-output">Constrain JSON output</a></li>
+    <li><a href="#reuse-from-rust">Reuse from Rust</a></li>
+    <li><a href="#exercise-the-preview">Exercise the preview</a></li>
+    <li><a href="#errors-and-limits">Errors and limits</a></li>
+  </ul>
+</nav>
+</aside>
+
+</div>
+
+    </main><footer class="site-footer">
+  <span>Bento</span>
+  <a href="https://github.com/bento-js/bento">Repository</a>
+</footer>
+<dialog class="search" aria-label="Search" data-search-base="/bento/pr-preview/pr-278/" data-search-bundle="/bento/pr-preview/pr-278/pagefind/">
+  <div class="search__ui" id="search-ui"></div>
+  <p class="search__unavailable" hidden>Search runs over a built site. Build it with <code>mise run docs:build</code> and serve <code>docs/public</code>.</p>
+</dialog>
+
+  </body>
+</html>
