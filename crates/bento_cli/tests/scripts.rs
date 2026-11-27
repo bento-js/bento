@@ -108,9 +108,12 @@ fn words_after_the_script_are_its_arguments_unchanged() {
     let temp = project_with("args.mjs", "console.log(JSON.stringify(process.argv.slice(2)));\n");
 
     let output = run_reading_project(&temp, &["args.mjs", "one", "--allow-net", "two words", "--"]);
+    let leading = run_reading_project(&temp, &["args.mjs", "--", "--port", "3000"]);
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(stdout(&output), "[\"one\",\"--allow-net\",\"two words\",\"--\"]\n");
+    assert!(leading.status.success(), "{}", stderr(&leading));
+    assert_eq!(stdout(&leading), "[\"--\",\"--port\",\"3000\"]\n");
 }
 
 #[test]
