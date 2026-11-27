@@ -141,11 +141,29 @@ run = "pnpm install --frozen-lockfile"
 description = "Check that no crate depends on the SWC stack (policy.0001)"
 run = "node tools/crate-dependencies.ts"
 
+[tasks."rust:seed"]
+description = "Clone the primary checkout's Rust build cache into a worktree that has none"
+hide = true
+# `.worktreeinclude` leaves `target` out on purpose. An APFS clone shares blocks only
+# until the primary checkout rebuilds, so cloning `target` into every new worktree
+# kept the primary's replaced artifacts on disk even in worktrees that never compile.
+# Cloning on the first Rust task limits that cost to worktrees that build and still
+# skips the cold V8 build. It does nothing in the primary checkout, in CI, or once
+# `target` exists.
+run = '''
+primary=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
+if [ "$(git rev-parse --show-toplevel)" != "$primary" ] && [ ! -e target ] && [ -d "$primary/target" ]; then
+  cp -c -R "$primary/target" target
+  echo "rust:seed: cloned $primary/target"
+fi
+'''
+
 [tasks.rust]
 description = "The Rust gate: rustfmt, clippy, rustdoc, and every crate's tests (macOS arm64)"
 # Outside `check` on purpose — see the comment there. The deployment target matches the
 # macOS version the default CLI build requires; `cargo fmt --check` needs neither it nor
 # the SDK, which is why that one step also runs as an hk hook on every platform.
+depends = ["rust:seed"]
 env = { MACOSX_DEPLOYMENT_TARGET = "27.0", RUSTDOCFLAGS = "-D warnings" }
 run = [
     "cargo fmt --all --check",
@@ -157,11 +175,13 @@ run = [
 [tasks.build]
 alias = "b"
 description = "Build the `bento` CLI from source"
+depends = ["rust:seed"]
 run = "cargo build -p bento_cli"
 
 [tasks.dev]
 alias = "d"
 description = "Run the CLI from source: `mise run dev -- run --allow-read=. main.ts`"
+depends = ["rust:seed"]
 run = "cargo run -p bento_cli --"
 
 [tasks."docs:dev"]
