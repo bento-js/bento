@@ -188,8 +188,8 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 
 - `worker_threads.Worker` and the Web `Worker` work in unrestricted instances and in restricted instances allowed `--allow-worker`. Otherwise they throw Node's `ERR_ACCESS_DENIED` with permission `WorkerThreads`.
 - As in Node, every thread holds permissions of its own. A worker starts with the permissions the launch started with, whatever its creator has dropped; drops made in one thread, the main thread or a worker, never reach another. A worker's `execArgv` cannot change its permissions, and Deno's `deno.permissions` worker option still throws `NotSupported`.
-- As in Node 26.13.1, a worker may also read everything beneath the working directory, even when the launch may not. A worker script outside what the worker may read fails inside the worker and reaches the `Worker`'s `'error'` event, not `new Worker()`.
-- As in Node, a worker's environment starts as a copy of its creator's. Its writes and drops stay in that copy, and the processes it starts receive it.
+- As in Node 26.13.1, a worker may also read everything beneath the working directory, even when the launch may not. That read stays in the worker: the ceiling a process the worker starts receives leaves it out, as a Node child process receives only its flags. A worker script outside what the worker may read fails inside the worker and reaches the `Worker`'s `'error'` event, not `new Worker()`.
+- As in Node, a worker's environment starts as a copy of its creator's. Its writes and drops stay in that copy, and the processes it starts receive it. A worker created with `SHARE_ENV` does not own the environment it reads, so dropping `env` there throws Node 27's `ERR_INVALID_STATE`.
 
 ### Native addons
 
