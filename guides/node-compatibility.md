@@ -73,3 +73,9 @@ Each instance owns its permissions, environment, and execution thread. Concurren
 Signals are virtual inside embedded instances: registering a guest `process.on("SIGTERM")`, `process.on("SIGINT")`, or other supported signal listener never installs an OS signal handler. The embedding host explicitly delivers interrupt or termination through `RuntimeHandle`; the CLI owns process-global OS signal forwarding. Shutdown waits for cooperative guest cleanup up to a five-second default deadline, then interrupts JavaScript and disposes the instance. A deadline interruption is never reported as graceful. Listeners and active connections are released before completed shutdown returns.
 
 See [Embedding Bento](embedding-bento.md) for Rust configuration, asynchronous private host modules, instance isolation, execution outcomes, and shutdown control. Authorized native addons and arbitrary blocking native code are outside the JavaScript containment and interruption guarantees.
+
+## Track compatibility locally
+
+The [local compatibility dashboard](../apps/node-compat/README.md) keeps upstream Node test-file results separate from an inventory of globals and module exports. From the repository root, run `mise run compat:setup`, then `mise run compat:dev`, and open <http://127.0.0.1:4318>. The dashboard's guide explains how to prepare the pinned Node corpus and collect results against a Bento executable.
+
+Runs preserve the test selection, runtime identities, raw failures, and incomplete outcomes in SQLite. A passing export-presence check is not behavioral compatibility, and a filtered test run does not measure the entire Node surface.

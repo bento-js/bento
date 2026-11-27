@@ -9,6 +9,7 @@
         // harness wrote it.
         "bench/results/**",
         "fixtures/**",
+        "apps/node-compat/**",
         "target/**",
         "*-lock.yaml",
         // pnpm rewrites this itself, so oxfmt would only fight it.

@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "esnext",
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "lib": ["ES2024", "DOM", "DOM.Iterable"],
+        "jsx": "react-jsx",
+        "jsxImportSource": "remix/component",
+        "noEmit": true,
+        "allowImportingTsExtensions": true,
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "types": ["node"]
+    },
+    "include": ["**/*.ts", "**/*.tsx"],
+    "exclude": ["node_modules", ".data"]
+}

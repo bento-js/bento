@@ -1,0 +1,26 @@
+{
+    "name": "@bento/node-compat",
+    "version": "0.0.0",
+    "private": true,
+    "license": "MIT",
+    "type": "module",
+    "imports": {
+        "#app/*": "./app/*"
+    },
+    "dependencies": {
+        "remix": "3.3.0"
+    },
+    "devDependencies": {
+        "@types/node": "26.6.4",
+        "eslint-plugin-perfectionist": "5.12.1",
+        "eslint-plugin-prefer-let": "4.2.2",
+        "oxfmt": "0.74.0",
+        "oxlint": "1.89.0",
+        "oxlint-tsgolint": "7.0.2005",
+        "typescript": "7.0.2"
+    },
+    "engines": {
+        "node": "26.12.1"
+    },
+    "packageManager": "pnpm@12.15.0"
+}

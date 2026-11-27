@@ -27,6 +27,7 @@ vision
 
 # Code areas introduced by proposal.0001.
 bench
+compat
 build
 cli
 compiler

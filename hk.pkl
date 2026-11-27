@@ -21,6 +21,7 @@ import "package://github.com/jdx/hk/releases/download/v2.8.1/hk@2.8.1#/Builtins.
 exclude = List(
     ".beads/**",
     "fixtures/**",
+    "apps/node-compat/**",
     "bench/results/**",
     "bench/src/samples/**",
     "crates/bento_runtime/napi-symbols-macos.def",

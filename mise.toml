@@ -78,7 +78,13 @@ alias = "c"
 # builds only on macOS with Apple silicon and the full suite takes minutes, so CI runs
 # it in its own macOS job.
 depends = ["test"]
-run = ["hk check --all", "mise run validate", "mise run deps:policy", "mise run docs:build"]
+run = [
+    "hk check --all",
+    "mise run compat:check",
+    "mise run validate",
+    "mise run deps:policy",
+    "mise run docs:build",
+]
 
 [tasks.validate]
 description = "Check proposals, policies, decisions and guides against the record rules"
@@ -135,7 +141,7 @@ run = "changeset version"
 
 [tasks."deps:install"]
 description = "Install npm dependencies with the pinned pnpm"
-run = "pnpm install --frozen-lockfile"
+run = ["pnpm install --frozen-lockfile", "mise run compat:setup"]
 
 [tasks."deps:policy"]
 description = "Check that no crate depends on the SWC stack (policy.0001)"
@@ -178,3 +184,28 @@ run = "vitepress build docs"
 description = "Serve the built documentation site locally"
 depends = ["docs:build"]
 run = "vitepress preview docs"
+
+[tasks."compat:setup"]
+description = "Install the Node compatibility dashboard"
+dir = "apps/node-compat"
+run = "mise run setup"
+
+[tasks."compat:dev"]
+description = "Open the local Node compatibility dashboard on port 4318"
+dir = "apps/node-compat"
+run = "mise run dev"
+
+[tasks."compat:prepare"]
+description = "Prepare the pinned upstream Node test corpus"
+dir = "apps/node-compat"
+run = "mise run prepare"
+
+[tasks."compat:collect"]
+description = "Collect Node/Bento behavioral results and API inventory"
+dir = "apps/node-compat"
+run = "mise run collect --"
+
+[tasks."compat:check"]
+description = "Check the compatibility dashboard and collectors"
+dir = "apps/node-compat"
+run = "mise run check"
