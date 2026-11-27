@@ -1,0 +1,1 @@
+import{t as e}from"./framework.T-tLICcw.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.UBs-deXH.js`),[])};export{t as default};
