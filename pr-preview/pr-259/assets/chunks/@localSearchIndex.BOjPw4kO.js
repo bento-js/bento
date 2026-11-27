@@ -1,1 +1,0 @@
-import{t as e}from"./framework.YGhKSr7i.js";var t={root:()=>e(()=>import(`./@localSearchIndexroot.CMFaxgNE.js`),[])};export{t as default};
