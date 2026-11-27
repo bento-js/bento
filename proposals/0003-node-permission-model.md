@@ -149,7 +149,7 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 
 - `--allow-fs-read` and `--allow-fs-write` require a value, given as `--flag=VALUE` or `--flag VALUE`; without one, the launch fails with `--allow-fs-read requires an argument`. Each may be repeated.
     - `*` allows every path.
-    - Any other value is a path, absolute or relative to the directory `bento` runs in. A value containing `*` covers every path that begins with the text before the first `*`, and everything after that `*` is ignored. Without `*`, an existing directory covers itself and everything beneath it, and anything else (a file, or a path that does not exist yet) covers exactly that path. A directory the guest will create needs a trailing `*`, as in `--allow-fs-write=./build/*`.
+    - Any other value is a path, absolute or relative to the directory `bento` runs in. A value containing `*` covers every path that begins with the text before the first `*`; the text after that `*` covers nothing, though `drop()` compares it, as Node does. Without `*`, an existing directory covers itself and everything beneath it, and anything else (a file, or a path that does not exist yet) covers exactly that path. A directory the guest will create needs a trailing `*`, as in `--allow-fs-write=./build/*`.
     - A comma is part of the path. When the flag has exactly one value and it contains a comma, Bento prints Node's warning to standard error, naming the flag: `The --allow-fs-read CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions`, and continues. As in Node, the script `bento run` executes counts as one more `--allow-fs-read` value, so a script launch never prints the warning for reading.
 - `--allow-env` takes `*`, a variable name, or a name prefix followed by `*`, such as `APP_*`. Values may be repeated or comma-separated, and an empty item between commas, as in `--allow-env=PORT,,HOST`, is skipped, as in Node. `--allow-env` without a value fails with `--allow-env requires an argument`, and an item of any other form, such as `A*B` or `A=B`, fails with `--allow-env must be '*', a variable name, or a variable name prefix followed by '*'`.
 - The other flags are boolean and take no value. Giving one a value, as in `--allow-net=127.0.0.1:3000`, is an error that names the flag.
@@ -188,6 +188,8 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 
 - `worker_threads.Worker` and the Web `Worker` work in unrestricted instances and in restricted instances allowed `--allow-worker`. Otherwise they throw Node's `ERR_ACCESS_DENIED` with permission `WorkerThreads`.
 - As in Node, every thread holds permissions of its own. A worker starts with the permissions the launch started with, whatever its creator has dropped; drops made in one thread, the main thread or a worker, never reach another. A worker's `execArgv` cannot change its permissions, and Deno's `deno.permissions` worker option still throws `NotSupported`.
+- As in Node 26.13.1, a worker may also read everything beneath the working directory, even when the launch may not. A worker script outside what the worker may read fails inside the worker and reaches the `Worker`'s `'error'` event, not `new Worker()`.
+- As in Node, a worker's environment starts as a copy of its creator's. Its writes and drops stay in that copy, and the processes it starts receive it.
 
 ### Native addons
 
