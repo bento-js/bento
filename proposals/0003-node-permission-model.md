@@ -150,7 +150,7 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 - `--allow-fs-read` and `--allow-fs-write` require a value, given as `--flag=VALUE` or `--flag VALUE`; without one, the launch fails with `--allow-fs-read requires an argument`. Each may be repeated.
     - `*` allows every path.
     - Any other value is a path, absolute or relative to the directory `bento` runs in. A value containing `*` covers every path that begins with the text before the first `*`, and everything after that `*` is ignored. Without `*`, an existing directory covers itself and everything beneath it, and anything else (a file, or a path that does not exist yet) covers exactly that path. A directory the guest will create needs a trailing `*`, as in `--allow-fs-write=./build/*`.
-    - A comma is part of the path. When a value contains one, Bento prints Node's warning to standard error, naming the flag: `The --allow-fs-read CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions`, and continues.
+    - A comma is part of the path. When the flag has exactly one value and it contains a comma, Bento prints Node's warning to standard error, naming the flag: `The --allow-fs-read CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions`, and continues. As in Node, the script `bento run` executes counts as one more `--allow-fs-read` value, so a script launch never prints the warning for reading.
 - `--allow-env` takes `*`, a variable name, or a name prefix followed by `*`, such as `APP_*`. Values may be repeated or comma-separated, and an empty item between commas, as in `--allow-env=PORT,,HOST`, is skipped, as in Node. `--allow-env` without a value fails with `--allow-env requires an argument`, and an item of any other form, such as `A*B` or `A=B`, fails with `--allow-env must be '*', a variable name, or a variable name prefix followed by '*'`.
 - The other flags are boolean and take no value. Giving one a value, as in `--allow-net=127.0.0.1:3000`, is an error that names the flag.
 - Any `--allow-*` flag without `--permission` fails the launch before anything runs, with `--permission is required`.
@@ -163,6 +163,7 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 - Bento resolves each path value to its real location before comparing it, as it does today. A value with `*` has its existing directory part resolved and the rest kept as written. On macOS, `--allow-fs-read=/tmp/app` therefore covers `/private/tmp/app`.
 - Following file system operations check the fully resolved target, so a link inside an allowed directory that points outside it is denied. No-follow operations keep today's behavior.
 - In a restricted launch, creating a symbolic link requires `--allow-fs-read=*` and `--allow-fs-write=*`, because a scoped permission cannot vouch for a target resolved later. This is today's rule, restated in the new flags.
+- Listening on or connecting to a Unix-domain socket path needs only `--allow-net`, as in Node; the file system permissions do not apply to the socket path.
 
 ### Environment variables
 
@@ -179,14 +180,14 @@ bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [-
 
 - `node:child_process` (`spawn`, `exec`, `execFile`, `fork`, and their synchronous forms) and `Deno.Command` work in unrestricted instances, and in restricted instances allowed `--allow-child-process`. Otherwise they throw Node's `ERR_ACCESS_DENIED` with permission `ChildProcess`, and no process starts.
 - A child process runs with the user's full authority. No permission restricts it, so allowing child processes in a restricted launch lets the code escape every other restriction. The guides say so beside the flag.
-- When a restricted instance starts a process, Bento adds `BENTO_PERMISSION_CEILING` to the child's environment, describing the instance's permissions at that moment. A `bento` started by the child stays within them, as in [Nested launches](#nested-launches). Bento does not change `NODE_OPTIONS`.
+- When an instance that is denied anything starts a process, Bento adds `BENTO_PERMISSION_CEILING` to the child's environment, describing the instance's permissions at that moment: every restricted instance, and an unrestricted embedding with at least one denial. A `bento` started by the child stays within them, as in [Nested launches](#nested-launches). Bento does not change `NODE_OPTIONS`.
 - `subprocess.kill()` signals the child. `process.kill()` stays unavailable, as above.
 - `process.execPath` is the `bento` executable, and Bento does not yet accept Node's command-line options. `fork()`, and any code that starts `process.execPath` with Node's options, therefore fails with Bento's usage error from the child. The guides record this limitation until Bento accepts Node's command line.
 
 ### Workers
 
 - `worker_threads.Worker` and the Web `Worker` work in unrestricted instances and in restricted instances allowed `--allow-worker`. Otherwise they throw Node's `ERR_ACCESS_DENIED` with permission `WorkerThreads`.
-- A worker always has its creator's current permissions. A worker's `execArgv` cannot change them, and Deno's `deno.permissions` worker option still throws `NotSupported`.
+- As in Node, every thread holds permissions of its own. A worker starts with the permissions the launch started with, whatever its creator has dropped; drops made in one thread, the main thread or a worker, never reach another. A worker's `execArgv` cannot change its permissions, and Deno's `deno.permissions` worker option still throws `NotSupported`.
 
 ### Native addons
 
@@ -212,12 +213,12 @@ An unrestricted instance may use the local language model when the build include
 - `process.permission` is defined in every instance that is denied anything: every restricted instance, and an unrestricted embedding with at least one denial. Workers of such an instance have it too.
 - `has(scope[, reference])` takes the scopes in the table plus `fs`, and returns `false` for any other scope. For the file system scopes, the reference may be a path string relative to `process.cwd()`, a `file:` URL, or a `Uint8Array` of path bytes, and is resolved to its real location as checks are. For `env`, the reference is a variable name. Other scopes ignore the reference. `has()` without a reference answers whether the whole scope is allowed: `has('fs.read')` is `true` only after `--allow-fs-read=*`.
 - `drop(scope[, reference])` irreversibly removes the whole scope, or with a reference, the one allowance given by exactly that value. A reference that matches no allowance changes nothing, as in Node 26.13.1. Dropping `env` with a name removes that variable from the environment. Dropping the whole `env` scope removes every variable except the always-kept ones.
-- A drop affects the whole instance and every worker it has created, and the ceiling given to processes it starts afterward. Files, sockets, child processes, and workers that are already open stay open.
+- A drop affects only the thread that makes it, as in Node, and the ceiling given to processes that thread starts afterward. Files, sockets, child processes, and workers that are already open stay open.
 - `Deno.permissions.query()` reports the instance's permissions in Deno's vocabulary. `request()` and `revoke()` still fail with `NotSupported`.
 
 ### Nested launches
 
-- `BENTO_GRANT_CEILING` is renamed `BENTO_PERMISSION_CEILING`. A task command, or a process a restricted guest starts, receives the ceiling of the launch or instance it came from.
+- `BENTO_GRANT_CEILING` is renamed `BENTO_PERMISSION_CEILING`. A task command, or a process started by an instance that is denied anything, receives the ceiling of the launch or instance it came from.
 - A nested launch without `--permission` holds exactly its ceiling's permissions. Under an unrestricted ceiling it is unrestricted; under a restricted one it is restricted the same way.
 - A nested launch with `--permission` holds exactly what its own flags and its entrypoint allow, the same as a launch from the shell. Each flag must fit within the ceiling: a flag that asks for more fails before any guest code runs, naming the flag and the inherited limit. Permissions its flags do not mention are denied even when the ceiling holds them.
 - A nested launch's entrypoint is implicitly readable only when the ceiling's read permission covers it.
@@ -228,7 +229,7 @@ These are the only intended differences from Node 26.13.1, and from Node v27.0.0
 
 - **Paths are compared at their real locations, and links are followed before checking.** Node compares paths as written and documents following links outside the granted paths as a known limitation.
 - **Boolean flags reject values.** Node accepts `--allow-net=anything` and allows every host. Bento rejects the value, so a command written for Bento's earlier `--allow-net=HOST` cannot silently allow every host.
-- **Workers keep their creator's permissions.** In Node, a worker created with an explicit `execArgv` loses the parent's permission model.
+- **Workers keep the launch's permissions whatever their `execArgv`.** In Node, a worker created with an explicit `execArgv` loses the parent's permission model.
 - **Nested launches are bounded.** A nested `bento` cannot widen its ceiling. Node passes its flags to child Node processes, which can add their own.
 - **`process.permission` exists in an unrestricted embedding that denies something.** Node has no such configuration.
 - **Bento prints none of Node's `ExperimentalWarning` or `SecurityWarning` messages about permission flags.** Those report Node's own stability levels. The comma warning and the removed-variable warning are kept, because they explain an outcome.
@@ -238,6 +239,7 @@ These are the only intended differences from Node 26.13.1, and from Node v27.0.0
 
 - `RuntimeConfig::new(project_root, permissions)` takes a required `Permissions` value, and `RuntimeConfig.permissions` replaces `RuntimeConfig.grants`. `Permissions` implements no `Default`, and no constructor chooses a mode on the host's behalf.
 - A `Permissions` value is either unrestricted, optionally with denials, or restricted, with allowances. Nothing about the CLI is implicit in the library: a restricted embedding gets no implied entrypoint read, and the environment rules apply to the `RuntimeConfig.env` map the host supplies.
+- A host may keep variables it prepared itself, as the CLI keeps the values from environment files, by naming them in `RuntimeConfig.kept_env`: a restricted instance keeps them even when its allowances do not cover them. An explicit denial still removes such a variable.
 - Restricted allowances and unrestricted denials are exactly as specific as Node's flags, no more and no less:
     - Reading and writing files: all, or a set of canonical paths and wildcard patterns, matched with the CLI's semantics.
     - Environment variables: all, or a set of names and prefix patterns.
