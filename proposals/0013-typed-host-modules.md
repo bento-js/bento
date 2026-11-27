@@ -526,13 +526,13 @@ Adopting schema-described functions requires `schemars` 1.x for typed registrati
 - **A `#[host_module]` procedural macro.** Rejected. It cannot describe modules assembled at run time, such as a bridged tool server, and builders already compose with captured services. A macro could be layered on the builders later.
 - **Cancelling calls when a shutdown is requested.** Rejected. A guest draining in its `SIGTERM` listener may still need its host functions; disposal is the moment the guest can no longer use the result.
 - **Waiting for cancelled host work during disposal.** Rejected. Host services outlive instances by design, and waiting would let a handler that ignores cancellation turn every shutdown into a timeout. `bento_prompt` waits because it owns its native work; a host owns its own.
+- **Splitting cancellation and streams into a second proposal.** Rejected by Mark on 2026-11-27. Streams depend on both item schemas and cancellation, so a second proposal would only delay them.
 
 ## Open questions
 
 - [NEEDS CLARIFICATION: Should `schema_function` and `schema_stream` validate what their handlers return against `outputSchema` and `itemSchema`? Recommended: yes, always, rejecting the call (or ending the stream) with `HostContractError`, so a manifest handed to a model cannot advertise output the host does not produce. The alternative trusts the host and skips the cost for large results.]
 - [NEEDS CLARIFICATION: Should a host be able to opt in to exposing the manifest or declarations to guest code, for example as a `host:` module the host registers, so an agent can discover tools from inside the sandbox? Recommended: no, until a harness needs it; harnesses already put declarations in the model's context from Rust.]
 - [NEEDS CLARIFICATION: Should stream functions return an `AsyncIterableIterator`, as proposed, or a `ReadableStream`, matching `LanguageModel.promptStreaming()`?]
-- [NEEDS CLARIFICATION: Should this remain one proposal, or should cancellation and streams follow in a second proposal after schema-described functions, declarations, and the manifest? Streams depend on both item schemas and cancellation, so splitting delays them; keeping them together makes this a large review.]
 
 ## Acknowledgments
 
