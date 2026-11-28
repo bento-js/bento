@@ -1,6 +1,6 @@
 ---
 title: A Vision for Bento
-updated: 2026-10-25
+updated: 2026-11-27
 ---
 
 # A Vision for Bento
