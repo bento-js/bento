@@ -2,7 +2,7 @@
 id: proposal.0003
 title: Node's Permission Model
 authors: [Mark]
-status: active-review
+status: implemented
 pull-request: https://github.com/bento-js/bento/pull/259
 issues: [https://github.com/bento-js/bento/issues/266]
 supersedes: []
