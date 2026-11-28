@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use bento_host::Grants;
+use bento_host::Permissions;
 use bento_task::{Cancellation, Plan, TaskError, TaskRunner};
 use bento_workspace::{LaunchEnvironment, LaunchKind, Project};
 
@@ -72,18 +72,23 @@ impl TempProject {
         )
     }
 
-    pub(crate) fn runner(&self, inherited: &[(&str, &str)], grants: &Grants) -> TaskRunner {
+    pub(crate) fn runner(
+        &self,
+        inherited: &[(&str, &str)],
+        permissions: &Permissions,
+    ) -> TaskRunner {
         let project = self.project();
         let launch =
             LaunchEnvironment::load(project.root(), vars(inherited), LaunchKind::Run).unwrap();
-        TaskRunner::new(&project, &launch, grants, &self.bento_executable()).unwrap()
+        TaskRunner::new(&project, &launch, permissions, &self.bento_executable()).unwrap()
     }
 
     pub(crate) fn run(&self, task: &str, arguments: &[&str]) -> Result<(), TaskError> {
         let arguments: Vec<String> =
             arguments.iter().map(|argument| argument.to_string()).collect();
         let plan = Plan::new(self.project().manifest(), task, &arguments).unwrap();
-        self.runner(&[("PATH", SYSTEM_PATH)], &Grants::none()).run(&plan, &Cancellation::new())
+        self.runner(&[("PATH", SYSTEM_PATH)], &Permissions::unrestricted())
+            .run(&plan, &Cancellation::new())
     }
 }
 

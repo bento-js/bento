@@ -7,18 +7,20 @@ export interface Command {
 
 const SERVER_ENTRY = "server.ts";
 
-// The fixture README's grants. Reads are unscoped because remix/assets probes package.json files
-// in node_modules directories above the project root (Node's package lookup locations).
-const BENTO_SERVER_GRANTS = [
-    "--allow-read",
-    "--allow-write=./db",
+// The fixture README's restricted launch. Reads are unscoped because remix/assets probes
+// package.json files in node_modules directories above the project root (Node's package lookup
+// locations). `./db` exists in the fixture, so it covers the database and its journal files.
+const BENTO_SERVER_PERMISSIONS = [
+    "--permission",
+    "--allow-fs-read=*",
+    "--allow-fs-write=./db",
     "--allow-net",
     "--allow-env=PORT,DATABASE_URL,NODE_ENV",
-    "--allow-addons=./node_modules",
+    "--allow-addons",
 ];
 
 // A script that only reads and loads the locked native packages.
-const BENTO_SCRIPT_GRANTS = ["--allow-read", "--allow-addons=./node_modules"];
+const BENTO_SCRIPT_PERMISSIONS = ["--permission", "--allow-fs-read=*", "--allow-addons"];
 
 const NODE_LOADER = ["--import", "remix/node-tsx"];
 
@@ -37,7 +39,7 @@ export function serverCommand(
         case "bento":
             return {
                 command: executable,
-                args: ["run", ...BENTO_SERVER_GRANTS, ...watch, SERVER_ENTRY],
+                args: ["run", ...BENTO_SERVER_PERMISSIONS, ...watch, SERVER_ENTRY],
             };
     }
 }
@@ -57,7 +59,7 @@ export function scriptCommand(
         case "bento":
             return {
                 command: executable,
-                args: ["run", ...BENTO_SCRIPT_GRANTS, script, ...scriptArguments],
+                args: ["run", ...BENTO_SCRIPT_PERMISSIONS, script, ...scriptArguments],
             };
     }
 }
@@ -71,7 +73,10 @@ export function baseEnvironment(): Record<string, string> {
     };
 }
 
-/** The same environment for every runtime; Bento's `--allow-env` exposes only these three. */
+/**
+ * The same environment for every runtime. Bento's restricted launch keeps all of it: its
+ * `--allow-env` names the last three, and the permission model always keeps the first three.
+ */
 export function serverEnvironment(options: {
     port: number;
     databaseUrl: string;

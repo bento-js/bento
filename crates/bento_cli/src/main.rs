@@ -5,10 +5,10 @@ mod diagnostic;
 mod ending;
 mod error;
 mod events;
-mod grant_flags;
 mod install;
 mod instance;
 mod launch;
+mod permission_flags;
 mod process_environment;
 mod run;
 mod runtime_report;
@@ -17,14 +17,21 @@ mod signals;
 mod task;
 mod watch;
 
+use std::ffi::OsString;
 use std::process::ExitCode;
 
 use clap::Parser;
 
 use crate::arguments::{Cli, Command};
+use crate::error::CliError;
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse() {
+    let arguments: Vec<OsString> = std::env::args_os().collect();
+    if let Some(missing) = permission_flags::missing_argument(&arguments) {
+        CliError::from(missing).report();
+        return ExitCode::FAILURE;
+    }
+    let cli = match Cli::try_parse_from(arguments) {
         Ok(cli) => cli,
         Err(usage) => {
             let _ = usage.print();

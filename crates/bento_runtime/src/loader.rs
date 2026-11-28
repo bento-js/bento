@@ -13,7 +13,7 @@ use deno_error::JsErrorBox;
 use deno_lib::worker::{CreateModuleLoaderResult, ModuleLoaderFactory};
 use deno_media_type::MediaType;
 use deno_node::NodeRequireLoader;
-use deno_runtime::deno_permissions::{OpenAccessKind, PermissionsContainer};
+use deno_runtime::deno_permissions::{OpenAccessKind, PermissionCheckError, PermissionsContainer};
 use deno_runtime::deno_web::Blob;
 use node_resolver::errors::PackageJsonLoadError;
 use oxc_resolver::{ResolveContext, ResolveOptions, Resolver};
@@ -33,10 +33,11 @@ pub(crate) struct LoaderFactory {
 }
 
 impl LoaderFactory {
-    fn create(&self, permissions: PermissionsContainer) -> CreateModuleLoaderResult {
+    fn create(&self, permissions: PermissionsContainer, worker: bool) -> CreateModuleLoaderResult {
         let loader = Rc::new(Loader {
             node: self.node.clone(),
             permissions,
+            worker,
             cwd: self.cwd.clone(),
             modules: self.modules.clone(),
             sources: self.sources.clone(),
@@ -59,7 +60,7 @@ impl LoaderFactory {
 
 impl ModuleLoaderFactory for LoaderFactory {
     fn create_for_main(&self, permissions: PermissionsContainer) -> CreateModuleLoaderResult {
-        self.create(permissions)
+        self.create(permissions, false)
     }
     fn create_for_worker(
         &self,
@@ -67,13 +68,16 @@ impl ModuleLoaderFactory for LoaderFactory {
         permissions: PermissionsContainer,
         _blob: Option<(ModuleSpecifier, Arc<Blob>)>,
     ) -> CreateModuleLoaderResult {
-        self.create(permissions)
+        self.create(permissions, true)
     }
 }
 
 struct Loader {
     node: NodeServices,
     permissions: PermissionsContainer,
+    /// Whether the loader serves a worker, whose failed loads reach the guest's `'error'`
+    /// event rather than Bento's report.
+    worker: bool,
     resolver: Resolver,
     cwd: PathBuf,
     modules: HostModules,
@@ -81,14 +85,14 @@ struct Loader {
     application_resolutions: RefCell<HashSet<ModuleSpecifier>>,
 }
 
-impl ModuleLoader for Loader {
-    fn resolve(
+impl Loader {
+    fn resolve_specifier(
         &self,
         specifier: &str,
         referrer: &str,
         kind: ResolutionKind,
     ) -> Result<ModuleSpecifier, JsErrorBox> {
-        if matches!(specifier, "bento:compat" | "bento:subprocess") {
+        if specifier == "bento:compat" {
             return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
         }
         if specifier.starts_with("host:") {
@@ -102,9 +106,6 @@ impl ModuleLoader for Loader {
             return ModuleSpecifier::parse(specifier).map_err(JsErrorBox::from_err);
         }
         let builtin = specifier.strip_prefix("node:").unwrap_or(specifier);
-        if builtin == "child_process" && referrer != "bento:subprocess" {
-            return ModuleSpecifier::parse("bento:subprocess").map_err(JsErrorBox::from_err);
-        }
         if deno_node::is_builtin_node_module(builtin) {
             return ModuleSpecifier::parse(&format!("node:{builtin}"))
                 .map_err(JsErrorBox::from_err);
@@ -130,6 +131,11 @@ impl ModuleLoader for Loader {
             return Ok(url);
         }
         let base = importer.as_deref().and_then(Path::parent).unwrap_or(&self.cwd);
+        if kind != ResolutionKind::MainModule
+            && let Some(manifest) = self.package_manifest(specifier, base)
+        {
+            self.ensure_readable(&manifest, kind == ResolutionKind::DynamicImport)?;
+        }
         let mut context = ResolveContext::default();
         let resolved = if watch_failure {
             self.resolver.resolve_with_context(base, specifier, None, &mut context)
@@ -165,23 +171,72 @@ impl ModuleLoader for Loader {
         Ok(url)
     }
 
+    /// The `package.json` Node reads to resolve the bare `specifier` from `base`: the one in the
+    /// nearest `node_modules` directory that holds the package. Node refuses the resolution
+    /// when the instance may not read it, before the manifest's fields can shape the result.
+    fn package_manifest(&self, specifier: &str, base: &Path) -> Option<PathBuf> {
+        if specifier.starts_with(['.', '/', '#']) || self.permissions.query_read_all() {
+            return None;
+        }
+        let separators = if specifier.starts_with('@') { 2 } else { 1 };
+        let end =
+            specifier.match_indices('/').nth(separators - 1).map_or(specifier.len(), |(at, _)| at);
+        let name = &specifier[..end];
+        base.ancestors()
+            .map(|directory| directory.join("node_modules").join(name))
+            .find(|package| package.is_dir())
+            .map(|package| package.join("package.json"))
+    }
+
+    fn ensure_readable(&self, path: &Path, dynamic: bool) -> Result<(), JsErrorBox> {
+        match self.permissions.check_open(
+            Cow::Borrowed(path),
+            OpenAccessKind::Read,
+            Some("module import"),
+        ) {
+            Ok(_) => Ok(()),
+            Err(PermissionCheckError::PermissionDenied(_)) => {
+                Err(read_denial(path, dynamic, self.worker))
+            }
+            Err(error) => Err(JsErrorBox::from_err(error)),
+        }
+    }
+}
+
+impl ModuleLoader for Loader {
+    fn resolve(
+        &self,
+        specifier: &str,
+        referrer: &str,
+        kind: ResolutionKind,
+    ) -> Result<ModuleSpecifier, JsErrorBox> {
+        self.resolve_specifier(specifier, referrer, kind)
+    }
+
+    /// Node's resolution reads the file it settles on, so `import.meta.resolve()` refuses one
+    /// the instance may not read instead of revealing where it is.
+    fn import_meta_resolve(
+        &self,
+        specifier: &str,
+        referrer: &str,
+    ) -> Result<ModuleSpecifier, JsErrorBox> {
+        let url = self.resolve_specifier(specifier, referrer, ResolutionKind::DynamicImport)?;
+        if let Ok(path) = url.to_file_path() {
+            self.ensure_readable(&path, true)?;
+        }
+        Ok(url)
+    }
+
     fn load(
         &self,
         specifier: &ModuleSpecifier,
         referrer: Option<&ModuleLoadReferrer>,
-        _options: ModuleLoadOptions,
+        options: ModuleLoadOptions,
     ) -> ModuleLoadResponse {
         if specifier.as_str() == "bento:compat" {
             return ModuleLoadResponse::Sync(Ok(source(
                 specifier,
                 FastString::from_static(include_str!("compat.mjs")),
-                ModuleType::JavaScript,
-            )));
-        }
-        if specifier.as_str() == "bento:subprocess" {
-            return ModuleLoadResponse::Sync(Ok(source(
-                specifier,
-                FastString::from_static(include_str!("subprocess.mjs")),
                 ModuleType::JavaScript,
             )));
         }
@@ -192,6 +247,8 @@ impl ModuleLoader for Loader {
         let node = self.node.clone();
         let permissions = self.permissions.clone();
         let sources = self.sources.clone();
+        let dynamic = options.is_dynamic_import;
+        let worker = self.worker;
         let watch_failure = self.application_resolutions.borrow().contains(&specifier)
             || referrer
                 .and_then(|referrer| referrer.specifier.to_file_path().ok())
@@ -204,10 +261,23 @@ impl ModuleLoader for Loader {
                     "only local source files can be loaded",
                 )
             })?;
-            let checked = permissions
-                .check_open(Cow::Borrowed(&path), OpenAccessKind::Read, Some("module import"))
-                .map_err(JsErrorBox::from_err)?;
-            let text = match std::fs::read_to_string(checked) {
+            let readable = match permissions.check_open(
+                Cow::Borrowed(&path),
+                OpenAccessKind::Read,
+                Some("module import"),
+            ) {
+                Ok(checked) => checked.into_path(),
+                // Node's resolution looks for the file before it reads it, so a module that
+                // does not exist fails as missing rather than as denied.
+                Err(PermissionCheckError::PermissionDenied(_)) if !path.exists() => {
+                    Cow::Borrowed(path.as_path())
+                }
+                Err(PermissionCheckError::PermissionDenied(_)) => {
+                    return Err(read_denial(&path, dynamic, worker));
+                }
+                Err(error) => return Err(JsErrorBox::from_err(error)),
+            };
+            let text = match std::fs::read_to_string(&readable) {
                 Ok(text) => {
                     node.inputs.record(&path);
                     text
@@ -293,4 +363,22 @@ fn source(
     kind: ModuleType,
 ) -> ModuleSource {
     ModuleSource::new(kind, ModuleSourceCode::String(code.into()), specifier, None)
+}
+
+/// Node's read denial for `path`. Within a dynamic `import()` or `import.meta.resolve()` it is a
+/// `NotCapable` in Deno's form, which the runtime raises to the guest as Node's
+/// `ERR_ACCESS_DENIED`. A static import fails the load: in a worker with Node's message, which
+/// the `Worker`'s `'error'` event carries, and in the main isolate with Node's text and the
+/// path, for Bento's report.
+fn read_denial(path: &Path, dynamic: bool, worker: bool) -> JsErrorBox {
+    const RESTRICTED: &str =
+        "Access to this API has been restricted. Use --allow-fs-read to manage permissions.";
+    let message = if dynamic {
+        format!("Requires read access to \"{}\", run again with --allow-read", path.display())
+    } else if worker {
+        RESTRICTED.to_owned()
+    } else {
+        format!("{RESTRICTED} (ERR_ACCESS_DENIED: FileSystemRead {})", path.display())
+    };
+    JsErrorBox::new("NotCapable", message)
 }

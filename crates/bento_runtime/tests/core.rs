@@ -1,15 +1,14 @@
 mod support;
 
-use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::Duration;
 
 use tempfile::tempdir;
 
-use bento_host::{NetTarget, Scope};
+use bento_host::{EnvPattern, PermissionSet, Permissions, Scope};
 use bento_runtime::{ErrorKind, RunOutcome};
-use support::{completed, config, run};
+use support::{completed, config, config_with, network_access, project_access, run};
 
 #[test]
 fn esm_top_level_await_and_node_globals() {
@@ -46,7 +45,7 @@ await writeFile(path.join(process.cwd(), 'effect.txt'), 'completed');
 }
 
 #[test]
-fn filesystem_grants_canonicalize_symlink_targets() {
+fn filesystem_permissions_canonicalize_symlink_targets() {
     let root = tempdir().unwrap();
     let outside = tempdir().unwrap();
     std::fs::write(outside.path().join("secret"), "secret").unwrap();
@@ -62,9 +61,10 @@ fs.writeFileSync('allowed', 'yes'); assert.equal(fs.readFileSync('allowed', 'utf
 assert.equal(fs.statSync('allowed').isFile(), true); assert.ok(fs.readdirSync('.').includes('allowed'));
 await promises.writeFile('async', 'yes'); assert.equal(await promises.readFile('async', 'utf8'), 'yes');
 assert.equal((await promises.stat('async')).isFile(), true); assert.ok((await promises.readdir('.')).includes('async'));
-assert.throws(() => fs.readFileSync('escape/secret'), /permission|NotCapable|Requires/i);
-await assert.rejects(promises.readFile('escape/secret'), /permission|NotCapable|Requires/i);
-assert.throws(() => fs.writeFileSync('escape/written', 'no'), /permission|NotCapable|Requires/i);
+const read = { code: 'ERR_ACCESS_DENIED', permission: 'FileSystemRead' };
+assert.throws(() => fs.readFileSync('escape/secret'), read);
+await assert.rejects(promises.readFile('escape/secret'), read);
+assert.throws(() => fs.writeFileSync('escape/written', 'no'), { code: 'ERR_ACCESS_DENIED', permission: 'FileSystemWrite' });
 "#,
     ));
     assert!(!outside.path().join("written").exists());
@@ -100,10 +100,16 @@ fn environment_and_subprocess_authority_are_instance_local() {
     let root = tempdir().unwrap();
     let key = "BENTO_RUNTIME_ISOLATION_TEST";
     let before = std::env::var_os(key);
-    let mut settings = config(root.path());
+    let hidden_before = std::env::var_os("BENTO_HIDDEN");
+    let mut settings = config_with(
+        root.path(),
+        Permissions::restricted(PermissionSet {
+            env: Scope::only([EnvPattern::parse(key).unwrap()]),
+            ..project_access(root.path())
+        }),
+    );
     settings.env.insert(key.into(), "guest".into());
     settings.env.insert("BENTO_HIDDEN".into(), "secret".into());
-    settings.grants.env = Scope::Only(BTreeSet::from([key.into()]));
     completed(run(
         settings,
         "env.mjs",
@@ -115,25 +121,22 @@ assert.ok(!Object.keys(process.env).includes('BENTO_HIDDEN'));
 assert.equal(process.env.BENTO_RUNTIME_ISOLATION_TEST, 'guest');
 process.env.BENTO_RUNTIME_ISOLATION_TEST = 'changed';
 assert.equal(process.env.BENTO_RUNTIME_ISOLATION_TEST, 'changed');
-assert.throws(() => { process.env.BENTO_HIDDEN = 'no'; }, /permission|NotCapable|Requires/i);
-assert.throws(() => spawn('/usr/bin/true'), /NotCapable|subprocess/i);
-assert.throws(() => execSync('/usr/bin/true'), /NotCapable|subprocess/i);
+process.env.BENTO_HIDDEN = 'set by the guest';
+assert.equal(process.env.BENTO_HIDDEN, 'set by the guest');
+const denied = { code: 'ERR_ACCESS_DENIED', permission: 'ChildProcess' };
+assert.throws(() => spawn('/usr/bin/true'), denied);
+assert.throws(() => execSync('/usr/bin/true'), denied);
 "#,
     ));
     assert_eq!(std::env::var_os(key), before);
+    assert_eq!(std::env::var_os("BENTO_HIDDEN"), hidden_before);
 }
 
 #[test]
-fn every_grant_still_exposes_only_the_user_and_group_ids_of_the_system() {
+fn an_unrestricted_instance_exposes_system_information() {
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.read = Scope::All;
-    settings.grants.write = Scope::All;
-    settings.grants.net = Scope::All;
-    settings.grants.env = Scope::All;
-    settings.grants.addons = Scope::All;
     completed(run(
-        settings,
+        config_with(root.path(), Permissions::unrestricted()),
         "system.mjs",
         r#"
 import assert from 'node:assert/strict';
@@ -141,10 +144,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 assert.ok(Number.isInteger(process.getuid()) && Number.isInteger(process.getgid()));
 fs.accessSync(process.cwd(), fs.constants.R_OK);
-for (const query of [os.hostname, os.userInfo, os.homedir, os.networkInterfaces, os.cpus,
-    os.totalmem, os.freemem, os.loadavg, os.uptime, os.release]) {
-    assert.throws(() => query(), /NotCapable/, query.name);
-}
+assert.equal(typeof os.hostname(), 'string');
+assert.equal(typeof os.userInfo().username, 'string');
+assert.equal(typeof os.homedir(), 'string');
+assert.equal(typeof os.networkInterfaces(), 'object');
+assert.ok(os.cpus().length > 0);
+assert.ok(os.totalmem() > 0 && os.freemem() > 0);
+assert.equal(os.loadavg().length, 3);
+assert.ok(os.uptime() > 0);
+assert.equal(typeof os.release(), 'string');
 "#,
     ));
 }
@@ -178,8 +186,7 @@ fn http_streams_and_omitted_host_is_dual_stack() {
     let probe = TcpListener::bind("[::1]:0").unwrap();
     let port = probe.local_addr().unwrap().port();
     drop(probe);
-    let mut settings = config(root.path());
-    settings.grants.net = Scope::Only(BTreeSet::from([NetTarget::new("::", Some(port))]));
+    let settings = network_access(root.path());
     let entry = root.path().join("server.mjs");
     std::fs::write(&entry, format!(r#"
 import http from 'node:http';
@@ -262,7 +269,7 @@ fn concurrent_instances_do_not_share_permissions() {
         r#"
 import assert from 'node:assert/strict'; import fs from 'node:fs';
 await new Promise(resolve => setTimeout(resolve, 30));
-assert.throws(() => fs.readFileSync({:?}), /permission|NotCapable|Requires/i);
+assert.throws(() => fs.readFileSync({:?}), {{ code: 'ERR_ACCESS_DENIED', permission: 'FileSystemRead' }});
 "#,
         first.path().join("private").to_str().unwrap()
     );

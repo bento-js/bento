@@ -1,23 +1,22 @@
 ---
 id: guide.embedding-bento
 title: Embedding Bento
-describes: [proposal.0001, proposal.0002]
+describes: [proposal.0001, proposal.0002, proposal.0003]
 ---
 
 # Embedding Bento
 
 ## Construct an instance
 
-Bento executes installed JavaScript and TypeScript applications inside the Rust host process. Each instance owns a V8 isolate, execution thread, grants, environment, host-module registrations, and runtime resources. The shared V8 platform is initialized once; application execution never spawns Node, Deno, Bun, or a Bento CLI subprocess.
+Bento executes installed JavaScript and TypeScript applications inside the Rust host process. Each instance owns a V8 isolate, execution thread, permissions, environment, host-module registrations, and runtime resources. The shared V8 platform is initialized once; the runtime itself never spawns Node, Deno, Bun, or a Bento CLI subprocess to execute the application.
 
-Construct `RuntimeConfig` before calling `start`. `project_root` identifies the application's package and compiler configuration; `cwd` supplies guest `process.cwd()`. `argv` supplies arguments after the entry path. Prepare dependencies before launching; execution never downloads missing packages.
+Construct `RuntimeConfig` before calling `start`. `project_root` identifies the application's package and compiler configuration; `cwd` supplies guest `process.cwd()`. `argv` supplies arguments after the entry path. Prepare dependencies before launching; execution never downloads missing packages. The permissions are a required choice: `bento run` without permission flags is unrestricted, as `node` is, and running untrusted code with it requires `--permission`, while a library host states restricted or unrestricted for every instance, as [Permissions and environment](#permissions-and-environment) describes.
 
 ```rust
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::time::Duration;
 
-use bento_host::{Grants, Scope};
+use bento_host::{EnvPattern, PathPattern, PermissionSet, Permissions, Scope};
 use bento_runtime::{HostError, HostModule, RunOutcome, RuntimeConfig, start};
 use serde_json::json;
 
@@ -30,19 +29,14 @@ let module = HostModule::new("host:demo")
         })?;
         Ok(json!({ "message": format!("Hello, {name}") }))
     });
-let config = RuntimeConfig {
-    project_root: root.clone(),
-    cwd: root.clone(),
-    grants: Grants {
-        read: Scope::Only(BTreeSet::from([root.clone()])),
-        env: Scope::Only(BTreeSet::from(["MODE".into()])),
-        ..Grants::default()
-    },
-    env: BTreeMap::from([("MODE".into(), "embedded".into())]),
-    argv: vec![],
-    host_modules: vec![module],
-    shutdown_deadline: Duration::from_secs(5),
-};
+let permissions = Permissions::restricted(PermissionSet {
+    fs_read: Scope::only([PathPattern::resolve(".", &root)?]),
+    env: Scope::only([EnvPattern::parse("MODE")?]),
+    ..PermissionSet::default()
+});
+let mut config = RuntimeConfig::new(root.clone(), permissions);
+config.env = BTreeMap::from([("MODE".into(), "embedded".into())]);
+config.host_modules = vec![module];
 let runtime = start(config, &PathBuf::from("main.ts"))?;
 for diagnostic in runtime.diagnostics() {
     eprintln!("{diagnostic}");
@@ -57,33 +51,83 @@ match outcome {
 }
 ```
 
-`RuntimeConfig::new(root)` initializes `cwd` to the project root, denies grants, leaves environment, arguments, and registrations empty, and sets the shutdown deadline to five seconds. Configure authority explicitly before execution.
+`RuntimeConfig::new(root, permissions)` takes the permissions as a required argument. It initializes `cwd` to the project root, leaves `env`, `kept_env`, arguments, and registrations empty, and sets `shutdown_deadline` to five seconds. The instance above is restricted to reading the application directory, including `main.ts` itself, and to the `MODE` variable.
 
 The runtime loads the project compiler settings once before execution and transforms TypeScript, JSX, and TSX in memory. Configuration diagnostics are found once at startup and returned by `RunningRuntime::diagnostics()`; the runtime itself prints nothing, so the host decides how to show them, and the `bento` CLI prints each one to its stderr. Unsupported JSX execution settings such as `jsx: preserve` and `react-native` allow non-JSX modules to run; only modules containing JSX fail at transform time as `ErrorKind::Transform`, naming the setting and the JSX location. An unreadable or malformed `tsconfig.json` returns from `start` as `ErrorKind::Transform` before execution. Explicit `.ts` imports, top-level `await`, TypeScript enums, and the project's selected JSX import source do not require a build step or JavaScript output files.
 
-## Grants and environment
+## Permissions and environment
 
-Read, write, network, environment, native-addon, and language-model authority are independent. Ungranted operations fail without interactive prompts. Guest subprocesses and remote module imports remain unavailable. Granting access to a host module does not grant filesystem or database authority: the Rust handler remains responsible for its application's service policy, such as rejecting writes to a read-only store.
+A library host chooses for every instance: `RuntimeConfig.permissions` holds a `bento_host::Permissions` value, `Permissions` implements no `Default`, and no constructor chooses a mode on the host's behalf.
 
-Build path items with `bento_host::canonical_path`, which resolves an absolute path as the operating system would: symlinks are followed, a `..` after a link leaves the link's target, a dangling link names the location it points to, and a part that does not exist yet is kept as written beneath its nearest existing directory. Parse network items from text with `"[::1]:8080".parse::<NetTarget>()`, which accepts a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port and rejects anything else. Network items name endpoints: IP addresses are kept in canonical form and hostnames in lowercase, so `[0:0:0:0:0:0:0:1]:8080` and `[::1]:8080` are one target, and hostnames are never looked up.
+| Constructor | Holds | CLI counterpart |
+| --- | --- | --- |
+| `Permissions::unrestricted()` | Every permission | `bento run` without flags |
+| `Permissions::unrestricted_denying(denied)` | Every permission except what `denied` takes away | None |
+| `Permissions::restricted(allowed)` | Only what `allowed` gives | `bento run --permission` with `--allow-*` flags |
 
-Grants remain fixed for the instance's lifetime. `Deno.permissions.query()` and `querySync()` preserve upstream states: granted access reports `granted`, and ungranted access can report `prompt`, but Bento never prompts or allows escalation. `request()`, `requestSync()`, `revoke()`, and `revokeSync()` fail with `NotSupported`, explaining that grants are fixed by the host. Construct a replacement instance to change authority.
+`denied` and `allowed` are both a `PermissionSet`, with one field per permission. Each field is exactly as specific as Node's flag for it:
 
-For the guest book's Remix asset discovery, compose the canonical project root and `package_lookup_paths(&root)?` into `Scope::Only` for reads. The helper returns canonical `<ancestor>/node_modules` paths from the project root through `/`, including missing directories, as `std::io::Result<Vec<PathBuf>>`. Keep any host-owned database outside these roots when guest filesystem access must remain denied. Adding these lookup roots is an explicit host policy decision; runtime construction adds no permissions.
+| Field | Type | CLI flag |
+| --- | --- | --- |
+| `fs_read` | `Scope<PathPattern>` | `--allow-fs-read` |
+| `fs_write` | `Scope<PathPattern>` | `--allow-fs-write` |
+| `env` | `Scope<EnvPattern>` | `--allow-env` |
+| `net` | `bool` | `--allow-net` |
+| `child_process` | `bool` | `--allow-child-process` |
+| `worker` | `bool` | `--allow-worker` |
+| `addons` | `bool` | `--allow-addons` |
+| `wasi`, `ffi`, `inspector`, `openssl_store`, `fs_vfs` | `bool` | `--allow-wasi`, `--allow-ffi`, `--allow-inspector`, `--allow-openssl-store`, `--allow-fs-vfs` |
+| `language_model` | `bool` | `--allow-language-model` |
 
-Inspect every lookup path before granting it. An ancestor's `node_modules` symlink resolves to its target, and granting that path permits reads throughout the target tree, not just the packages the resolver requests. Ancestors writable by other users, such as a shared temporary directory, can therefore introduce unexpectedly broad roots. Use a project location with trusted ancestors or reject lookup roots that exceed your host's policy.
+`PermissionSet::default()` holds nothing, and `PermissionSet::everything()` holds all of every permission. A `Scope` is `Scope::None`, `Scope::All` (Node's `*`), or `Scope::only([...])` for particular patterns. Everything other than files and the environment is allowed or denied as a whole: the library cannot limit the network to particular endpoints or native addons to particular paths, just as the CLI cannot.
 
-Only granted names from `RuntimeConfig.env` are visible through `process.env` and `Deno.env`. Enumeration omits ungranted names. Guest writes and deletions affect the instance map, not `std::env` or another instance; writing an ungranted name fails. Loading project environment files is a host preparation step, not implicit permission to expose their values.
+Build file patterns with `PathPattern::resolve(value, base)`, which resolves `value` exactly as the CLI resolves `--allow-fs-read=VALUE` against the directory `bento` runs in. A value containing `*` covers every path that begins with the text before the first `*`; an existing directory covers itself and everything beneath it; anything else covers exactly that path. The result names real locations: symlinks are followed, a `..` after a link leaves the link's target, a dangling link names the location it points to, and a part that does not exist yet is kept as written beneath its nearest existing directory. Text after the `*` covers nothing, but the pattern keeps it, so that `process.permission.drop()` tells `dir/*` and `dir/*x` apart, as Node does. `*` alone is `Scope::All`, not a pattern. A host that builds canonical patterns itself can use `PathPattern::Exact(path)`, which covers exactly that path, or `PathPattern::prefix(text)`, which covers every path whose text begins with `text`, and the directory itself when `text` ends in `/`; `bento_host::canonical_path` resolves an absolute path to its real location for that purpose. Build environment patterns with `EnvPattern::parse("PORT")` or `EnvPattern::parse("APP_*")`, which reject anything other than a variable name or a name prefix followed by `*`.
 
-Web Workers and `node:worker_threads` inherit the instance's environment and host-module registrations, not the host process environment. Their environment operations, signal listeners, and working-directory operations obey the same containment as the main isolate. Guest `chdir` cannot change the host's working directory.
+Nothing about the CLI is implicit in the library. A restricted instance gets no implied read of its entry module, so its `fs_read` must cover the entry as well as everything the entry loads.
+
+In an unrestricted instance, a denial takes away exactly what the matching allowance would give, and every permission that is not denied is held as if allowed with `*`. Reading a denied path throws Node's `ERR_ACCESS_DENIED` with permission `FileSystemRead`, as in a restricted instance, while other paths stay readable:
+
+```rust
+let permissions = Permissions::unrestricted_denying(PermissionSet {
+    fs_read: Scope::only([PathPattern::resolve("secrets", &root)?]),
+    child_process: true,
+    ..PermissionSet::default()
+});
+```
+
+A denied operation throws Node's error, as [Node Compatibility](node-compatibility.md#denied-operations) lists. Registering a host module gives the guest no file system or database permission: the Rust handler remains responsible for its application's service policy, such as rejecting writes to a read-only store. Remote module imports are unavailable whatever the permissions.
+
+### The environment
+
+The environment rules apply to the `RuntimeConfig.env` map the host supplies, never to `std::env`. An instance that withholds nothing from the environment sees the whole map. A restricted instance starts with every variable its `env` allowance does not cover removed, except the variables Node always keeps, such as `PATH` and `HOME`, and the names in `RuntimeConfig.kept_env`. An unrestricted instance with an `env` denial starts with the denied variables removed unless they are always kept, and denying `Scope::All` removes every variable except the always-kept ones. [Tasks and Environment](tasks-and-environment.md#environment-in-a-restricted-launch) lists where Node's list comes from.
+
+`kept_env` names variables in `env` that a restricted instance keeps even when its permissions do not cover them, for values the host prepared itself. The CLI puts the values it read from the project's environment files and the watch-mode `NODE_ENV` default there, as Node keeps the values of the files its `--env-file` option names. Loading environment files is a host preparation step, and a library host decides whether their values reach a restricted guest by listing them in `kept_env` or allowing them in `env`. An explicit denial outweighs `kept_env`: an unrestricted instance that denies a variable removes it even when `kept_env` names it.
+
+Reading a removed variable returns `undefined`, enumeration omits it, and the first read of each removed variable emits Node's process warning: `The permission model removed the environment variable "NAME" at startup. Use --allow-env to manage permissions.` Guest code may set, change, and delete any variable. Writes and deletions affect the instance map, not `std::env` or another instance.
+
+### Subprocesses and workers
+
+Guest subprocesses through `node:child_process` and `Deno.Command` start in an unrestricted instance unless `child_process` is denied, and in a restricted instance only when `child_process` is allowed. A child process runs with the host user's full authority, outside every permission, and receives the instance's environment after the startup removal. When an instance that withholds anything starts a process, Bento adds `BENTO_PERMISSION_CEILING` (`bento_host::CEILING_ENV`) to the child's environment, so a `bento` the child starts stays within the instance's permissions at that moment. This includes an unrestricted instance with a denial: a `bento` its child starts is unrestricted except for the same denials.
+
+Web Workers and `node:worker_threads` start under the same rule for `worker`. They inherit the instance's environment, as a copy of their creator's that their writes, drops, and child processes keep to, and its host-module registrations, not the host process environment. As in Node, each worker holds permissions of its own, starting from the `Permissions` value the instance was created with, whatever its creator has dropped; a worker of a restricted instance may also read everything beneath `RuntimeConfig.cwd`, as a Node 26 worker may read beneath its working directory. Their environment operations, signal listeners, and working-directory operations obey the same containment as the main isolate. Guest `chdir` cannot change the host's working directory.
 
 Unsupported upstream features, including `Worker`'s `deno.permissions` option and listeners with `reusePort`, throw `NotSupported` before starting a worker or binding a listener. Guests can catch these errors; uncaught errors fail only the instance as `ErrorKind::Uncaught` with the guest source location. `process.abort()`, `process.kill()`, and `Deno.kill()` cannot terminate or signal the host process; they fail explicitly. Use the host's runtime handle for signal delivery.
 
+### `process.permission`
+
+`process.permission` exists in every instance that withholds anything: every restricted instance, and an unrestricted instance with at least one denial. In an instance built with `Permissions::unrestricted()`, it is `undefined`, as in Node without `--permission`. `has()` without a reference answers `false` for a kind with any denial. An unrestricted instance holds every kind it does not deny as if allowed with `*`, so for such a kind `drop()` with a reference changes nothing, and `drop()` without one removes the whole kind. [Node Compatibility](node-compatibility.md#inspect-and-drop-permissions) describes both methods.
+
+A drop is irreversible and, as in Node, applies only to the thread that makes it, the main isolate or one worker, and to the ceiling given to processes that thread starts afterward. Permissions never prompt and never grow. `Deno.permissions.query()` and `querySync()` report the instance's permissions in Deno's vocabulary; `request()`, `requestSync()`, `revoke()`, and `revokeSync()` fail with `NotSupported`. Construct a replacement instance to give a guest different permissions.
+
+### Allow the guest book's package lookups
+
+For the guest book's Remix asset discovery, allow reading the canonical project root and every path `package_lookup_paths(&root)?` returns. The helper returns canonical `<ancestor>/node_modules` paths from the project root through `/`, including missing directories, as `std::io::Result<Vec<PathBuf>>`. Give each one as a wildcard prefix, `PathPattern::resolve(path.join("*"), &root)?`, so that it covers the directory and everything beneath it whether or not the directory exists yet; a probe of a missing directory then fails with `ENOENT` rather than a permission denial. Keep any host-owned database outside these paths when guest file access to it must remain denied. Adding these lookup roots is an explicit host policy decision; runtime construction adds no permissions.
+
 ### Enable the local language model
 
-Enable `bento_runtime`'s opt-in `prompt-foundation-models` Cargo feature and set `RuntimeConfig.grants.language_model = true` to expose native model access to guests. The native backend requires Apple silicon, macOS 27.0 or newer, SDK 27 or newer for builds, and a ready Apple Intelligence model. Build the embedding executable with `MACOSX_DEPLOYMENT_TARGET=27.0`: only the final link declares a deployment target, and at Rust's default macOS floor the linker selects Swift's back-deployment concurrency library, which the executable cannot resolve at run time. Library embeddings enable neither the feature nor the grant by default.
+Enable `bento_runtime`'s opt-in `prompt-foundation-models` Cargo feature to give guests native model access. An unrestricted instance may then use the model unless `language_model` is denied; a restricted instance needs `language_model: true` in its allowances. The native backend requires Apple silicon, macOS 27.0 or newer, SDK 27 or newer for builds, and a ready Apple Intelligence model. Build the embedding executable with `MACOSX_DEPLOYMENT_TARGET=27.0`: only the final link declares a deployment target, and at Rust's default macOS floor the linker selects Swift's back-deployment concurrency library, which the executable cannot resolve at run time. Library embeddings do not enable the feature by default.
 
-`LanguageModel` remains exposed without the feature. Without the grant, its availability is `unavailable` and creation rejects with `NotAllowedError` before the backend is inspected. Workers inherit the grant but own separate session resources. Runtime disposal cancels inference and waits for native callbacks to settle within the existing bounded shutdown contract; `TimedOut` still means disposal is incomplete.
+`LanguageModel` remains exposed without the feature. Without the permission, its availability is `unavailable` and creation rejects with `NotAllowedError` before the backend is inspected. Workers have their creator's permission but own separate session resources. Runtime disposal cancels inference and waits for native callbacks to settle within the existing bounded shutdown contract; `TimedOut` still means disposal is incomplete.
 
 For Rust-only model use, depend on `bento_prompt` with its `foundation-models` feature; no V8 runtime is required. [Using the Prompt API](prompt-api.md) describes the web surface, schema subset, cancellation rules, and ambient declarations.
 
@@ -107,7 +151,7 @@ Return `HostError { name, message }` to reject the guest promise with a JavaScri
 
 Use `error.location()` when presenting source diagnostics. It returns `Option<&SourceLocation>` with a local `PathBuf` and one-based `line` and `column`. Compiler failures refer to the original source diagnostic; exception and rejection frames are source-mapped back to TypeScript and select the first non-dependency source frame, including sources outside the project root; unresolved imports refer to their importing file and import position when available. Dependency classification is the same as for compiler settings: check `node_modules` components relative to the project root for sources inside it, and anywhere in the absolute path for sources outside it. `message` is plain text without ANSI escape sequences, regardless of terminal color settings, so the embedding host controls presentation. Unterminated terminal sequences in guest messages do not hide subsequent stack frames or causes, and ordinary tabs and line breaks are preserved. Locations never select an environment file. A new exception copying a caught module failure's message remains `Uncaught` at its own throw site when its class differs. A new exception that copies both the class and the exact message, such as `new TypeError(caught.message)` after a failed import, is reported as the caught failure, with its kind and location. Rethrowing a caught resolution failure preserves its `Resolution` kind and location. A dynamic import of a source that fails to transform rejects with a `TypeError`, as in Deno, so rethrowing it reports `Uncaught`. Guest `SyntaxError` exceptions, such as a failed `JSON.parse`, are also `Uncaught`; source parsing failures are `Startup`.
 
-Permission diagnostics can identify installed package source and follow a wrapped error's cause to the denied operation. This preserves the native permission error and its asset-code location when a framework adds a compilation-error wrapper. Denied addon loading identifies the package or guest call site and names the host's `addons` grant (`--allow-addons` in the CLI).
+Permission diagnostics can identify installed package source and follow a wrapped error's cause to the denied operation. This preserves the native permission error and its asset-code location when a framework adds a compilation-error wrapper. Denied addon loading throws `ERR_DLOPEN_DISABLED` and identifies the package or guest call site.
 
 Clone the `RuntimeHandle` to control the instance from another thread. `watch_inputs()` returns a sorted, deduplicated snapshot of the local graph's watch inputs attempted so far: loaded non-dependency sources, failed file-resolution targets from non-dependency importers, and those sources' package-scope configuration. It includes ESM, CommonJS, dynamic imports discovered after startup, sources loaded through `createRequire`, workspace siblings outside the project root, and files whose parsing or transformation failed. Failed `require.resolve` and `import.meta.resolve` calls retain their missing targets; successful calls alone add no watch inputs, even when loading the resolved module later throws. Failed calls using synthetic CommonJS parents, including `createRequire` anchored to a loaded application file, add no missing targets; repairs outside existing watches need a manual restart. File URL imports from non-dependency sources retain their local paths. A dependency's dynamic import adds no failed target merely because the application supplied the URL. If the application itself previously resolved that URL, including with `import.meta.resolve`, a later failed load retains the target. Package-map targets and CommonJS extension candidates are retained when resolution fails. Package scopes include the nearest existing `package.json`, missing nearer scopes inside the project, and a missing scope in an external source's own directory. Creating a scope above that external directory needs a manual restart. Package-scope searches for external sources stop below the first ancestor of the project root. Built-ins, host modules, and environment files are excluded. Dependency exclusion checks `node_modules` components relative to the canonical project root for files inside it, and anywhere in the absolute path for files outside it. The project's own files remain included when its root has a `node_modules` ancestor. A missing target in a workspace package reached through `node_modules` needs a manual restart; once its source loads, its canonical path outside `node_modules` is included. Watch hosts can poll this snapshot to expand their watch inputs and watch a failed target's nearest existing ancestor recursively when its directory does not yet exist, including above the project root for an explicitly named failed path. An external package scope whose parent exists needs only a nonrecursive directory watch to observe edits, replacement, deletion, and recreation without subscribing to its dependency or build-output trees. The project's `tsconfig.json` and its `extends` chain are separate watch inputs that the host must discover.
 

@@ -50,9 +50,9 @@ node --run typecheck    # tsc
 
 ```sh
 bento install --frozen-lockfile
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules start
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules server.ts
+bento run dev
+bento run start
+bento run server.ts
 ```
 
 - `bento install --frozen-lockfile` installs `dependencies` and `devDependencies` exactly as `pnpm-lock.yaml` locks them, with the pnpm 12 toolchain that `devEngines` declares, and leaves the lockfile unchanged. pnpm and Node must be on `PATH` to install.
@@ -68,22 +68,27 @@ Bento loads `.env`, then `.env.<mode>`, then `.env.local` from the project root,
 
 ```sh
 NODE_ENV=development bento run db:migrate
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
+bento run dev
 ```
 
-Bento grants nothing by default. These flags give the app exactly what it uses:
+Without permission flags, Bento runs the app unrestricted, as Node does. Running code you do not trust requires `--permission`, which denies everything its `--allow-*` flags do not allow. These flags give the app exactly what it uses:
 
-| Grant                                    | Why                                                                                                 |
+```sh
+bento run --permission --allow-fs-read='*' --allow-fs-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons dev
+```
+
+| Flag                                     | Why                                                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `--allow-read`                           | Source, configuration, `node_modules`, and ancestors' `node_modules`, which `remix/assets` searches |
-| `--allow-write=./db`                     | The SQLite database and its journal files                                                           |
+| `--permission`                           | Restricts the launch to the flags below                                                             |
+| `--allow-fs-read='*'`                    | Source, configuration, `node_modules`, and ancestors' `node_modules`, which `remix/assets` searches |
+| `--allow-fs-write=./db`                  | The SQLite database and its journal files                                                           |
 | `--allow-net`                            | Listening on `PORT`                                                                                 |
-| `--allow-env=PORT,DATABASE_URL,NODE_ENV` | The variables in [Configuration](#configuration) and the asset mode                                 |
-| `--allow-addons=./node_modules`          | The native Oxc and Lightning CSS compilers that `remix/assets` loads                                |
+| `--allow-env=PORT,DATABASE_URL,NODE_ENV` | The variables in [Configuration](#configuration) and the asset mode, when you set them yourself     |
+| `--allow-addons`                         | The native Oxc and Lightning CSS compilers that `remix/assets` loads                                |
 
-With only `--allow-read=.`, the asset pipeline's search outside the project is a permission denial and the server does not start. Without `--allow-addons`, startup fails with a permission denial that names the addon, before any native code loads. A `DATABASE_URL` outside `./db` needs its own write grant. Native addons run as native code in the Bento process, outside the reach of the other grants, so grant them only to dependencies you trust.
+With only `--allow-fs-read=.`, the asset pipeline's search outside the project is denied and the server does not start. Without `--allow-addons`, startup fails with `ERR_DLOPEN_DISABLED` before any native code loads. A `DATABASE_URL` outside `./db` needs its own `--allow-fs-write`. Values from `.env` files stay visible without `--allow-env`; the flag keeps the ones you export. Native addons run as native code in the Bento process, outside the reach of every other permission, so allow them only for dependencies you trust.
 
-A task's nested `bento` commands inherit these grants as a ceiling: `bento run --watch server.ts` inside `dev` gets the same access without repeating the flags and cannot ask for more. Task commands themselves are trusted host commands, not guest code. Package tools such as `remix db migrate`, `oxfmt`, `oxlint`, and `tsc` run from `node_modules/.bin` under Node, as they do with `node --run`, so the tasks that run them need Node on `PATH` but no grants. `bento run check` runs `oxfmt --check`, `oxlint`, and `tsc` in order and stops at the first that fails; `bento run check:fix` runs the `fmt`, `lint`, and `typecheck` tasks in order.
+A task's nested `bento` commands stay within these permissions: `bento run --watch server.ts` inside `dev` passes no `--permission`, so it gets exactly the same access without repeating the flags and cannot ask for more. Task commands themselves are trusted host commands, not guest code. Package tools such as `remix db migrate`, `oxfmt`, `oxlint`, and `tsc` run from `node_modules/.bin` under Node, as they do with `node --run`, so the tasks that run them need Node on `PATH` but no permission flags. `bento run check` runs `oxfmt --check`, `oxlint`, and `tsc` in order and stops at the first that fails; `bento run check:fix` runs the `fmt`, `lint`, and `typecheck` tasks in order.
 
 Under Bento, `server.ts` stores entries with `node:sqlite` through `remix/data-table/sqlite`, the same as under Node. A Rust application embedding Bento runs `server.embedded.ts` instead: it serves the same router, but the embedding host owns the storage and exposes it through a private `host:guestbook` module, so this entrypoint never opens a SQLite file. The stock `bento` CLI does not provide that module, so `bento run server.embedded.ts` fails to resolve it.
 

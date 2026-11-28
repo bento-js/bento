@@ -29,7 +29,7 @@ struct Serving {
 fn serve(handlers: &str) -> Serving {
     let temp = TempProject::new(json!({ "type": "module" }));
     temp.write("server.mjs", &format!("{SERVER}{handlers}"));
-    let command = temp.bento(&["run", "--allow-read=.", "--allow-net", "server.mjs"]);
+    let command = temp.bento(&["run", "server.mjs"]);
     let bento = Background::spawn(command);
     let listening = bento.wait_for_stdout_starting("listening on ");
     let port = listening.trim_start_matches("listening on ").parse().unwrap();

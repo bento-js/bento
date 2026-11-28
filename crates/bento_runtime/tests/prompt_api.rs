@@ -1,11 +1,12 @@
 mod support;
 
+use bento_host::{PermissionSet, Permissions};
 use bento_runtime::{ErrorKind, RunOutcome};
 
-use support::{completed, config, model_access, project, run};
+use support::{completed, config, config_with, model_access, project, project_access, run};
 
 #[test]
-fn language_model_access_requires_a_host_grant() {
+fn language_model_access_requires_the_host_permission() {
     let root = project();
     completed(run(
         config(root.path()),
@@ -45,7 +46,7 @@ import assert from 'node:assert/strict';
 await assert.rejects(
     LanguageModel.create({ expectedInputs: [{ type: 'text', languages: ['not a tag'] }] }),
     RangeError,
-    'invalid language tags are rejected before the grant is consulted');
+    'invalid language tags are rejected before the permission is consulted');
 await assert.rejects(
     LanguageModel.availability({ expectedOutputs: [{ type: 'text', languages: ['nope!'] }] }),
     RangeError);
@@ -200,12 +201,15 @@ assert.equal(received.ondownloadprogress, null);
 
 #[cfg(not(feature = "prompt-foundation-models"))]
 #[test]
-fn a_backend_free_build_reports_unavailable_with_a_grant() {
+fn a_backend_free_build_reports_unavailable_with_the_permission() {
     let root = project();
-    completed(run(
-        model_access(root.path()),
-        "backend-free.mjs",
-        r#"
+    for settings in
+        [model_access(root.path()), config_with(root.path(), Permissions::unrestricted())]
+    {
+        completed(run(
+            settings,
+            "backend-free.mjs",
+            r#"
 import assert from 'node:assert/strict';
 assert.equal(await LanguageModel.availability(), 'unavailable',
     'a build without a model backend is honestly unavailable');
@@ -213,11 +217,12 @@ await assert.rejects(LanguageModel.create(), error =>
     error instanceof DOMException && error.name === 'NotSupportedError',
     'creation fails for an unavailable model, not with a permission error');
 "#,
-    ));
+        ));
+    }
 }
 
 #[test]
-fn workers_expose_the_language_model_surface_with_the_inherited_grant() {
+fn workers_expose_the_language_model_surface_with_the_inherited_permission() {
     let root = project();
     std::fs::write(
         root.path().join("probe.mjs"),
@@ -254,7 +259,10 @@ parentPort.postMessage(await probe());
     )
     .unwrap();
     completed(run(
-        config(root.path()),
+        config_with(
+            root.path(),
+            Permissions::restricted(PermissionSet { worker: true, ..project_access(root.path()) }),
+        ),
         "worker-isolation.mjs",
         r#"
 import assert from 'node:assert/strict';
@@ -282,11 +290,11 @@ assert.deepEqual(await probe(), { exposed: 'function', availability: 'unavailabl
     ));
 }
 
-/// Workers of a granted instance inherit the grant, so creation in a worker is refused for
-/// what the model can do, never for authority. Without a compiled backend the honest answer
-/// is the missing backend.
+/// Workers of an instance allowed the language model inherit the permission, so creation in a
+/// worker is refused for what the model can do, never for authority. Without a compiled backend
+/// the honest answer is the missing backend.
 #[test]
-fn workers_of_a_granted_instance_reach_the_model_rather_than_a_denial() {
+fn workers_of_an_allowed_instance_reach_the_model_rather_than_a_denial() {
     let root = project();
     std::fs::write(
         root.path().join("granted-probe.mjs"),
@@ -324,7 +332,14 @@ parentPort.postMessage(await probe());
     .unwrap();
     let backend_free = !cfg!(feature = "prompt-foundation-models");
     completed(run(
-        model_access(root.path()),
+        config_with(
+            root.path(),
+            Permissions::restricted(PermissionSet {
+                worker: true,
+                language_model: true,
+                ..project_access(root.path())
+            }),
+        ),
         "granted-workers.mjs",
         &format!(
             r#"
@@ -344,7 +359,7 @@ const node = await new Promise((resolve, reject) => {{
 
 for (const [isolate, result] of [['web worker', web], ['node worker', node]]) {{
     assert.notEqual(result.creation, 'NotAllowedError',
-        `${{isolate}} inherits the grant instead of being denied`);
+        `${{isolate}} inherits the permission instead of being denied`);
     if ({backend_free}) {{
         assert.equal(result.availability, 'unavailable',
             `${{isolate}} has no model backend to serve it`);

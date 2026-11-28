@@ -167,7 +167,7 @@ fn fixture_reexecution_rejects_a_filter_that_runs_no_tests() {
 }
 
 #[test]
-fn addon_denial_names_bento_authority_and_the_loading_package_frame() {
+fn addon_denial_reports_nodes_error_and_the_loading_package_frame() {
     let root = support::project();
     let package = root.path().join("node_modules/local-addon");
     std::fs::create_dir_all(&package).unwrap();
@@ -185,7 +185,7 @@ fn addon_denial_names_bento_authority_and_the_loading_package_frame() {
     assert_eq!(error.kind, ErrorKind::Permission, "{error:?}");
     assert!(!error.message.contains("--allow-ffi"), "{error}");
     assert!(
-        error.message.contains("addons") && error.message.contains("--allow-addons"),
+        error.message.contains("Cannot load native addon because loading addons is disabled."),
         "{error}"
     );
     let location = error.location().expect("addon load location");

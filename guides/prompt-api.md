@@ -1,7 +1,7 @@
 ---
 id: guide.prompt-api
 title: Using the Prompt API
-describes: [proposal.0002]
+describes: [proposal.0002, proposal.0003]
 ---
 
 # Using the Prompt API
@@ -10,20 +10,26 @@ describes: [proposal.0002]
 
 Bento exposes `LanguageModel` in its main isolate and workers. It provides text conversations, incremental text responses, context measurement, independent session clones, and JSON constrained by a supported schema. Apple's default on-device Foundation Models model runs the inference. Bento never falls back to a cloud service or Private Cloud Compute.
 
-This is a server-side adaptation of the [Prompt API draft](https://webmachinelearning.github.io/prompt-api/), with host grants instead of browser permissions or user activation. A browser visiting a server written in Bento does not acquire this API. The supported surface excludes image and audio input, tools, assistant-prefix continuation, experimental sampling controls, and deprecated quota and sampling properties.
+This is a server-side adaptation of the [Prompt API draft](https://webmachinelearning.github.io/prompt-api/). A browser visiting a server written in Bento does not acquire this API. Instead of browser permission prompts or user activation, the launch's permissions decide access: a `bento run` command without permission flags is unrestricted and may use the model, and running code you do not trust requires `--permission`. The supported surface excludes image and audio input, tools, assistant-prefix continuation, experimental sampling controls, and deprecated quota and sampling properties.
 
-## Build and grant access
+## Build and allow access
 
 The native backend requires Apple silicon, macOS 27.0 or newer, Apple Intelligence enabled, and the system model ready. Building requires Xcode with the macOS 27 SDK or newer, its Swift toolchain, and Bento's pinned Rust toolchain. The CLI enables the native backend by default:
 
 ```sh
 cargo install --locked --path crates/bento_cli
-bento run --allow-read=. --allow-language-model prompt.ts
+bento run prompt.ts
 ```
 
-`--allow-language-model` grants access to the model. It grants no file, network, environment, or native-addon access. Without it, `LanguageModel.availability()` resolves to `"unavailable"` and `LanguageModel.create()` rejects with a `NotAllowedError` DOMException before probing the native model. No interactive permission prompt appears.
+Without permission flags, `prompt.ts` may use the model whenever the build includes a backend. A restricted launch can use the model only with `--allow-language-model`:
 
-Nested Bento task launches inherit this capability as a ceiling. An omitted flag inherits the ceiling, `--allow-language-model=false` denies it explicitly, and requesting it under a denying ceiling fails before running the guest. An older serialized ceiling without the capability denies it. Native programs started by a trusted task retain the task's operating-system authority; Bento grants are not an OS sandbox.
+```sh
+bento run --permission --allow-language-model prompt.ts
+```
+
+`--allow-language-model` allows the model and nothing else: no file, network, environment, or native-addon access. It takes no value. Without it, a restricted launch's `LanguageModel.availability()` resolves to `"unavailable"` and `LanguageModel.create()` rejects with a `NotAllowedError` DOMException before probing the native model. No interactive permission prompt appears. In a restricted launch, `process.permission.has("language-model")` reports whether the model is allowed.
+
+A nested Bento launch that a task starts treats the model like every other permission: without `--permission` it holds whatever its ceiling holds, and with `--permission` it has the model only when it passes `--allow-language-model`, which fails before running the guest when the ceiling does not allow the model. Native programs started by a trusted task retain the task's operating-system authority; Bento's permissions are not an OS sandbox.
 
 To build without the native dependency or new SDK requirement:
 
@@ -31,13 +37,13 @@ To build without the native dependency or new SDK requirement:
 cargo install --locked --path crates/bento_cli --no-default-features
 ```
 
-A backend-free build still exposes the JavaScript API and validates its arguments, but reports `"unavailable"` even when the host grants model access. Windows and Linux model backends are not implemented.
+A backend-free build still exposes the JavaScript API and validates its arguments, but reports `"unavailable"` even when the launch may use the model. Windows and Linux model backends are not implemented.
 
-For a Rust host embedding `bento_runtime`, enable its `prompt-foundation-models` Cargo feature and set `RuntimeConfig.grants.language_model = true`. Library embeddings enable neither by default. Workers inherit the immutable grant, while each isolate owns its own sessions.
+For a Rust host embedding `bento_runtime`, enable its `prompt-foundation-models` Cargo feature, then choose through the instance's `Permissions`: an instance built with `Permissions::unrestricted()` may use the model, `Permissions::unrestricted_denying` takes it away when the denied set has `language_model: true`, and `Permissions::restricted` allows it only when the allowed set has `language_model: true`. Library embeddings do not enable the feature by default. Workers have their creator's permissions, while each isolate owns its own sessions.
 
 ## Start a conversation
 
-Save this as `prompt.ts` in a project with a `package.json`, then run it with the grant shown above.
+Save this as `prompt.ts` in a project with a `package.json`, then run it with one of the commands shown above.
 
 ```typescript
 const availability = await LanguageModel.availability({
@@ -59,7 +65,7 @@ try {
 }
 ```
 
-Availability is advisory. Creation checks readiness again. Bento reports only `"available"` or `"unavailable"`; a model that is not ready is unavailable, without implying that a download is running. Check the grant, build features, macOS version, and Apple Intelligence settings when it is unavailable. Bento does not download model assets or change system settings.
+Availability is advisory. Creation checks readiness again. Bento reports only `"available"` or `"unavailable"`; a model that is not ready is unavailable, without implying that a download is running. Check the launch's permissions, build features, macOS version, and Apple Intelligence settings when it is unavailable. Bento does not download model assets or change system settings.
 
 Expected text languages use canonical BCP 47 tags and the native model's locale support. An invalid tag rejects; a valid unsupported language makes availability unavailable and creation reject with `NotSupportedError`. Omitting language expectations leaves language selection to the model. Requesting an unsupported expected content type also reports unavailable.
 
@@ -169,7 +175,7 @@ The `bento_prompt` crate works independently of Bento's runtime. Its default fea
 
 For a native-enabled embedding executable, set `MACOSX_DEPLOYMENT_TARGET=27.0` when building so the final Mach-O declares its requirement. A library cannot set its consumer's final deployment target. Bento's CLI sets that target in its own linker configuration; backend-free consumers retain their existing deployment requirements. `bento_prompt::MACOS_DEPLOYMENT_FLOOR` is the lowest macOS release the native backend supports, `"27.0"`. `bento_prompt::NATIVE_SDK_VERSION` is `Some` with the macOS SDK version this build's backend was compiled against, and `None` when no backend is compiled in, so a host can report both instead of repeating them.
 
-The public Rust API uses `Session`, typed text `Message` values, `CreateOptions`, `PromptOptions`, and `Cancellation`. It provides availability, creation, append, generation, streaming, measurement, independent forks, destruction, and awaited disposal. Direct Rust callers own model authority; the JavaScript adapter is where host grants are enforced. Await disposal when the caller needs proof that native inference and callbacks have settled.
+The public Rust API uses `Session`, typed text `Message` values, `CreateOptions`, `PromptOptions`, and `Cancellation`. It provides availability, creation, append, generation, streaming, measurement, independent forks, destruction, and awaited disposal. Direct Rust callers own model authority; the JavaScript adapter is where an instance's permissions are enforced. Await disposal when the caller needs proof that native inference and callbacks have settled.
 
 `bento_prompt::TYPESCRIPT_DECLARATIONS` contains the ambient declarations from `crates/bento_prompt/types/prompt.d.ts`. Embedders can write that text into a guest project's type inputs. The declarations describe the implemented surface rather than the whole draft: message and expected content types are narrowed to `"text"`, and members Bento does not implement are absent instead of declared. Those absent members are image, audio, tool-call and tool-response content, tool declarations, `samplingMode`, `topK`, `temperature`, `params()`, `inputUsage`, and `inputQuota`.
 
@@ -178,21 +184,21 @@ The public Rust API uses `Session`, typed text `Message` values, `CreateOptions`
 From this repository, run the TypeScript preview with a native-enabled Bento:
 
 ```sh
-bento run --allow-read=. --allow-language-model examples/prompt-api/main.ts
-bento run --allow-read=. examples/prompt-api/main.ts --denied
-bento run --allow-read=. --allow-language-model examples/prompt-api/shutdown.ts
-bento run --allow-read=. --allow-language-model examples/prompt-api/idle.ts
+bento run examples/prompt-api/main.ts
+bento run --permission --allow-fs-read=. examples/prompt-api/main.ts --denied
+bento run examples/prompt-api/shutdown.ts
+bento run examples/prompt-api/idle.ts
 ```
 
-The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. The denied run exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Work that has not settled by the shutdown deadline is reported as incomplete disposal instead, and `bento` exits with status 1.
+The main preview exercises initial history, multiple prompts, measurement, cloning, text and constrained streams, cancellation, and worker termination. It runs unrestricted because it starts a worker; restricted, it needs `bento run --permission --allow-fs-read=. --allow-worker --allow-language-model examples/prompt-api/main.ts`. The denied run is restricted without `--allow-language-model`, so it exercises the permission boundary. The shutdown preview exits after receiving a native chunk without calling `destroy()`, so runtime disposal must cancel and settle the remaining work. The idle preview creates a session and lets the event loop finish without explicit destruction; the CLI must exit normally. Work that has not settled by the shutdown deadline is reported as incomplete disposal instead, and `bento` exits with status 1.
 
 On a backend-free build, the same preview exercises genuine unavailability:
 
 ```sh
-bento run --allow-read=. --allow-language-model examples/prompt-api/main.ts
+bento run examples/prompt-api/main.ts
 ```
 
-It prints `Availability unavailable`, then fails with an uncaught `Error`: `LanguageModel is unavailable. Check the --allow-language-model grant, that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready.` The process exits with status 1.
+It prints `Availability unavailable`, then fails with an uncaught `Error`: `LanguageModel is unavailable. Check that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready. Restricted launches need --permission --allow-language-model.` The process exits with status 1.
 
 The Rust example uses the reusable crate directly:
 
@@ -206,7 +212,7 @@ These native previews fail explicitly if the model is unavailable. They are sepa
 
 | Failure | JavaScript result |
 | --- | --- |
-| Missing model grant | `NotAllowedError`; an uncaught denial is a Bento permission diagnostic |
+| Model permission withheld | `NotAllowedError`; an uncaught denial is a Bento permission diagnostic |
 | Unsupported capability, schema feature, or locale | `NotSupportedError` |
 | Invalid message or supported schema shape | `TypeError`; invalid prefix role or position uses `SyntaxError` |
 | Valid assistant-prefix continuation request | `NotSupportedError` |

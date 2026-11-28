@@ -16,13 +16,15 @@ use deno_tls::{RootCertStoreProvider, rustls::RootCertStore};
 use sys_traits::impls::RealSys;
 use tokio::sync::mpsc;
 
-use bento_prompt::deno::{Access, Cleanup};
+use bento_prompt::deno::Cleanup;
 
+use crate::environment::InstanceEnvironment;
 use crate::host::HostModules;
 use crate::lifecycle::{Command, Control, Signal};
 use crate::loader::LoaderFactory;
 use crate::node::NodeServices;
-use crate::ops::{InstanceEnvironment, bento_instance};
+use crate::ops::bento_instance;
+use crate::permissions::Authority;
 use crate::sources::Sources;
 use crate::workers::WorkerFactory;
 use crate::{RunOutcome, RuntimeConfig, RuntimeError};
@@ -151,11 +153,16 @@ fn create_worker(
     control: Arc<Control>,
     sessions: Cleanup,
 ) -> anyhow::Result<LibMainWorker> {
-    let permissions = crate::permissions::container(&config.grants, config.cwd.clone())?;
+    let authority = Authority::new(config.permissions.clone(), config.cwd.clone());
+    let permissions = authority.container().clone();
     let node =
         NodeServices::new(&config.project_root, permissions.clone(), sources.clone(), &control);
-    let model = Access::new(config.grants.language_model);
-    let environment = instance_environment(&mut config);
+    let environment = InstanceEnvironment::new(
+        std::mem::take(&mut config.env),
+        &config.kept_env,
+        &config.permissions,
+        config.cwd.clone(),
+    );
     let loader = LoaderFactory {
         node: node.clone(),
         cwd: config.cwd.clone(),
@@ -166,30 +173,23 @@ fn create_worker(
     let workers = Arc::new(WorkerFactory::new(
         loader.clone(),
         environment.clone(),
+        config.permissions.clone(),
         config.argv.clone(),
         Arc::new(Certificates(LazyLock::new(deno_tls::create_default_root_cert_store))),
-        model,
         sessions.clone(),
     ));
     let factory = main_worker_factory(config, loader, &node, &workers, &control);
     let extensions = vec![
-        bento_instance::init(environment, modules, control.clone(), node.inputs),
+        bento_instance::init(environment, authority.clone(), modules, control.clone(), node.inputs),
         crate::feature_ops::extension(workers.callback()),
-        bento_prompt::deno::extension(model, sessions),
+        crate::subprocess_ops::extension(),
+        bento_prompt::deno::extension(authority.model().clone(), sessions),
     ];
     let mut worker = main_worker(&factory, entry, permissions, extensions)?;
-    load_require_watch(&mut worker)?;
+    load_instance_modules(worker.js_runtime())?;
     install_worker_host(&mut worker, &workers)?;
     install_exit_handle(&mut worker, &control);
     Ok(worker)
-}
-
-fn instance_environment(config: &mut RuntimeConfig) -> InstanceEnvironment {
-    InstanceEnvironment {
-        values: Arc::new(parking_lot::Mutex::new(std::mem::take(&mut config.env))),
-        allowed: std::mem::take(&mut config.grants.env),
-        cwd: config.cwd.clone(),
-    }
 }
 
 fn main_worker_factory(
@@ -231,7 +231,7 @@ fn main_worker(
     Ok(factory.create_custom_worker(
         WorkerExecutionMode::Run,
         main,
-        vec![ModuleSpecifier::parse("bento:compat")?, ModuleSpecifier::parse("bento:subprocess")?],
+        vec![ModuleSpecifier::parse("bento:compat")?],
         Vec::new(),
         permissions,
         extensions,
@@ -240,12 +240,19 @@ fn main_worker(
     )?)
 }
 
-/// `node:module` loads only after bootstrap has initialized `process.platform` and
-/// `process.arch`, so the worker must already exist.
-fn load_require_watch(worker: &mut LibMainWorker) -> anyhow::Result<()> {
-    worker.js_runtime().lazy_load_es_module_with_code(
-        "ext:bento_instance/initialize_require_watch.mjs",
-        "import { install } from 'ext:bento_instance/require_watch.mjs'; install();",
+/// Installs Bento's guest-facing behavior that needs a bootstrapped isolate: `node:module`
+/// loads only after bootstrap has initialized `process.platform` and `process.arch`, the
+/// permission layer replaces what bootstrap defined, and a worker takes its copy of the
+/// environment as its own once bootstrap has made it. Workers run this too.
+pub(crate) fn load_instance_modules(runtime: &mut deno_core::JsRuntime) -> Result<(), CoreError> {
+    runtime.lazy_load_es_module_with_code(
+        "ext:bento_instance/initialize.mjs",
+        "import { install as watchRequires } from 'ext:bento_instance/require_watch.mjs';\n\
+         import { install as ownEnvironment } from 'ext:bento_instance/worker_environment.mjs';\n\
+         import { install as enforcePermissions } from 'ext:bento_instance/permission.mjs';\n\
+         watchRequires();\n\
+         ownEnvironment();\n\
+         enforcePermissions();",
     )?;
     Ok(())
 }

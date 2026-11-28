@@ -13,7 +13,7 @@ fn a_malformed_package_json_is_shown_with_its_source_at_the_error() {
     );
     temp.write("server.mjs", "console.log('never runs');\n");
 
-    let output = temp.bento(&["run", "--allow-read=.", "server.mjs"]).output().unwrap();
+    let output = temp.bento(&["run", "server.mjs"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     let report = stderr(&output);
@@ -30,7 +30,7 @@ fn a_malformed_environment_file_names_the_line_without_showing_its_contents() {
     temp.write(".env", "PORT=3000\nSESSION_SECRET=\"hunter2\n");
     temp.write("server.mjs", "console.log('never runs');\n");
 
-    let output = temp.bento(&["run", "--allow-read=.", "server.mjs"]).output().unwrap();
+    let output = temp.bento(&["run", "server.mjs"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     let report = stderr(&output);
@@ -45,7 +45,7 @@ fn a_compiler_option_bento_ignores_is_reported_once_on_stderr() {
     temp.write("tsconfig.json", r#"{"compilerOptions":{"baseUrl":"."}}"#);
     temp.write("server.ts", "const ready: boolean = true;\nconsole.log(ready);\n");
 
-    let output = temp.bento(&["run", "--allow-read=.", "server.ts"]).output().unwrap();
+    let output = temp.bento(&["run", "server.ts"]).output().unwrap();
 
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     let report = stderr(&output);
@@ -61,11 +61,7 @@ fn failure_report(name: &str, source: &str) -> String {
     let temp = TempProject::new(json!({ "type": "module" }));
     temp.write(name, source);
 
-    let output = temp
-        .bento(&["run", "--allow-read=.", name])
-        .env("TERM", "xterm-256color")
-        .output()
-        .unwrap();
+    let output = temp.bento(&["run", name]).env("TERM", "xterm-256color").output().unwrap();
 
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let report = stderr(&output);

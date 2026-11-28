@@ -162,7 +162,7 @@ declare class LanguageModel extends EventTarget {
 
     /**
      * Starts a conversation. Rejects with a `NotAllowedError` `DOMException` when the host
-     * has not granted model access, and with a `NotSupportedError` when the model is
+     * has not allowed model access, and with a `NotSupportedError` when the model is
      * unavailable.
      */
     static create(options?: LanguageModelCreateOptions): Promise<LanguageModel>;

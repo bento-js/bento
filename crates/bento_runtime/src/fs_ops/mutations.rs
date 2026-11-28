@@ -92,6 +92,10 @@ pub(super) async fn bento_rename_async(
     Ok(())
 }
 
+/// Node's refusal of a link a scoped permission cannot vouch for. The guest sees it as
+/// `ERR_ACCESS_DENIED` naming neither a permission nor a resource (`permission.mjs`).
+const SYMLINK_REFUSED: &str = "fs.symlink API requires full fs.read and fs.write permissions.";
+
 fn check_symlink_permissions(state: &OpState, api: &str) -> Result<(), FsOpsError> {
     let permissions = state.borrow::<PermissionsContainer>();
     // Targets resolve at use time; scoped creation permits directory-swap escapes.
@@ -99,9 +103,7 @@ fn check_symlink_permissions(state: &OpState, api: &str) -> Result<(), FsOpsErro
         |error| {
             let error = match error {
                 PermissionCheckError::PermissionDenied(mut denied) => {
-                    denied.custom_message = Some(format!(
-                        "{api} requires unscoped read and write grants; symlink creation cannot use path-scoped grants"
-                    ));
+                    denied.custom_message = Some(SYMLINK_REFUSED.to_owned());
                     PermissionCheckError::PermissionDenied(denied)
                 }
                 other => other,

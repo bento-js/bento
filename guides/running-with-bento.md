@@ -1,17 +1,19 @@
 ---
 id: guide.running-with-bento
 title: Running with Bento
-describes: [proposal.0001, proposal.0002]
+describes: [proposal.0001, proposal.0002, proposal.0003]
 ---
 
 # Running with Bento
 
 ## What it does
 
-The `bento` command runs your project. `bento run` starts a JavaScript, TypeScript, JSX, or TSX source file, or a task declared in the top-level `tasks` field of `package.json`, with exactly the capabilities you grant it. `bento install` installs the project's dependencies through its declared pnpm toolchain.
+The `bento` command runs your project. `bento run` starts a JavaScript, TypeScript, JSX, or TSX source file, or a task declared in the top-level `tasks` field of `package.json`. `bento install` installs the project's dependencies through its declared pnpm toolchain.
+
+A `bento run` command without permission flags is unrestricted, as `node` is: the code it runs can do anything your user can. Running code you do not trust requires `--permission`, which restricts the launch to what its `--allow-*` flags allow. [Control what code may do](#control-what-code-may-do) lists the flags.
 
 ```text
-bento run [GRANTS] [--watch] <script-path | task-name> [args...]
+bento run [--permission] [--allow-*]... [--watch] <script-path | task-name> [args...]
 bento install [--frozen-lockfile]
 ```
 
@@ -29,7 +31,7 @@ cargo install --locked --path crates/bento_cli
 
 This installs the `bento` executable into Cargo's bin directory (`~/.cargo/bin` by default). Running an installed project needs nothing else. Installing dependencies needs pnpm and Node, because `bento install` delegates to the project's declared pnpm, and the package tools a task runs, such as `oxfmt`, `tsc`, or `remix db migrate`, start through their own executables, which may be Node scripts.
 
-Use `cargo install --locked --path crates/bento_cli --no-default-features` for a backend-free build without the new Foundation Models SDK requirement. The JavaScript `LanguageModel` API remains present but unavailable. See [Using the Prompt API](prompt-api.md) for model readiness, grants, and Rust reuse.
+Use `cargo install --locked --path crates/bento_cli --no-default-features` for a backend-free build without the new Foundation Models SDK requirement. The JavaScript `LanguageModel` API remains present but unavailable. See [Using the Prompt API](prompt-api.md) for model readiness, permissions, and Rust reuse.
 
 ### Choose what to run
 
@@ -48,50 +50,150 @@ Words after a script path are the script's own arguments, passed through unchang
 
 Arguments for a task go after `--`, and Bento appends them, shell-quoted, to the task's own command: `bento run test -- --reporter "dot matrix"`. Dependencies never receive them. Bento rejects task arguments without the `--`, so a misplaced option such as `bento run dev --watch` fails instead of being passed on silently. A task that has only `dependsOn`, or an array of commands, has no single command to receive arguments, so it rejects them too. In each case Bento says why and runs nothing.
 
-### Grant capabilities
+### Control what code may do
 
-Guest code can use only what the launch grants it. Without any grant flag, a script may not read or write files, use the network, see environment variables, load native addons, or access the local language model. Loading a module reads it, so even running a script needs `--allow-read` covering the script, the modules it imports, and the packages they come from; `--allow-read=.` in the project directory covers them all. Without it, Bento reports a permission denial for the script itself.
+Without `--permission`, a launch is unrestricted. The code can read and write any file your user can, connect and listen anywhere, see the whole prepared environment, start subprocesses and workers, load native addons, and use the local language model when the build includes it. That is Node's default, and it is what your own project's tools expect: `bento run node_modules/vite/bin/vite.js build` needs no flags. Never run code you do not trust this way.
 
-| Flag | Grants | Items |
+`--permission`, given before the target, makes the launch restricted. The code then holds only the permissions its `--allow-*` flags give it, and everything else is denied:
+
+```text
+bento run [--permission] [--allow-fs-read=PATH]... [--allow-fs-write=PATH]... [--allow-env=NAME]...
+          [--allow-net] [--allow-child-process] [--allow-worker] [--allow-addons] [--allow-wasi]
+          [--allow-ffi] [--allow-inspector] [--allow-openssl-store] [--allow-fs-vfs]
+          [--allow-language-model] [--watch] <script-path | task-name> [args...]
+```
+
+| Flag | Allows | `process.permission.has()` scope |
 | --- | --- | --- |
-| `--allow-read[=PATH,...]` | Reading files and directories | Paths; each covers everything beneath it |
-| `--allow-write[=PATH,...]` | Creating, changing, and removing files | Paths; each covers everything beneath it |
-| `--allow-net[=HOST[:PORT],...]` | Connecting and listening | A hostname, an IPv4 address, or an IPv6 address in brackets, as in `[::1]:8080`; a host without a port covers all its ports |
-| `--allow-env[=NAME,...]` | Seeing and setting environment variables | Exact variable names |
-| `--allow-addons[=PATH,...]` | Loading native Node-API addons | Paths; each covers everything beneath it |
-| `--allow-language-model[=true\|false]` | Accessing the local language model | Boolean capability; no model identifiers |
+| `--allow-fs-read=PATH` | Reading files and directories | `fs.read` |
+| `--allow-fs-write=PATH` | Creating, changing, and removing files | `fs.write` |
+| `--allow-env=NAME` | Keeping environment variables | `env` |
+| `--allow-net` | Connecting to and listening on any host and port | `net` |
+| `--allow-child-process` | Starting subprocesses | `child` |
+| `--allow-worker` | Starting worker threads | `worker` |
+| `--allow-addons` | Loading native Node-API addons from any path | `addon` |
+| `--allow-wasi` | WASI | `wasi` |
+| `--allow-ffi` | FFI | `ffi` |
+| `--allow-inspector` | The inspector | `inspector` |
+| `--allow-openssl-store` | OpenSSL STORE loaders | `openssl.store` |
+| `--allow-fs-vfs` | Mounting a virtual file system | none, as in Node |
+| `--allow-language-model` | The local language model | `language-model` |
 
-For the scoped flags above, a flag without `=` grants the whole kind: `--allow-net` allows every host. With `=`, it grants only the comma-separated items. Give each flag at most once; list several items in one flag instead. An empty item, such as `--allow-read=` or `--allow-env=PORT,,HOST`, is an error. So is a network target that is not a hostname, an IPv4 address, or a bracketed IPv6 address with an optional port: `--allow-net=localhost/path`, `--allow-net=[bogus]:8080`, and `--allow-net='white space'` stop the launch before any script or task runs. Write IPv4 addresses as four decimal numbers; shorthand such as `127.1` is rejected rather than read as a hostname.
+These are Node 26's flags, with Node's meanings. `--allow-language-model` is Bento's own, because Node has no language model.
 
-`--allow-language-model` requests the boolean capability. `--allow-language-model=false` explicitly denies it, including when a nested launch inherits access. Without the grant, model availability reports `unavailable` and creation fails with `NotAllowedError` before inspecting native readiness.
+The file `bento run` executes is readable without `--allow-fs-read`, and only that file: the modules it imports, including installed packages, need read permission. `bento run --permission server.ts` therefore loads `server.ts` and is denied its first import. Run from the project directory, `--allow-fs-read=.` covers the project's modules and its own `node_modules`.
 
-A network target names an endpoint, not a spelling. Hostnames match regardless of case, and IP addresses match by value: `[0:0:0:0:0:0:0:1]:8080` is the same endpoint as `[::1]:8080`, and the IPv4-mapped `[::ffff:127.0.0.1]` is the same as `127.0.0.1`. Bento never looks hostnames up, so `localhost` and `127.0.0.1` stay different targets.
+`--allow-wasi`, `--allow-ffi`, `--allow-inspector`, `--allow-openssl-store`, and `--allow-fs-vfs` are accepted, recorded, and reported by `process.permission.has()`. Where Bento provides the API one of them governs, the flag gates it with Node's error. Where Bento does not provide that API yet, the API fails with or without the flag.
 
-Relative paths resolve from the directory you run `bento` in, not from the project root. Bento then resolves each path as the operating system would, so a grant names the real location: granting `./data` when `data` is a link to `/srv/data` grants `/srv/data`, and because `..` after a link leaves the link's target, `./data/../shared` grants `/srv/shared`. A link to something that does not exist yet grants the location it points to. A path that does not exist yet, such as a database file the application will create, keeps its missing part as written beneath its nearest existing directory.
+#### Flag syntax and errors
 
-No flag can let guest code start subprocesses, import remote modules, or read system information. Every script may read the process's user and group IDs, which Node's `fs.access` needs to check a file's permission bits; apart from the platform and architecture in `process.platform` and `process.arch`, nothing else about the system is available, so calls such as `os.hostname()` and `os.userInfo()` fail with `NotCapable`. An addon grant is different from the others: an addon runs native code inside the Bento process, so once loaded it is not contained by the file, network, or environment grants. Grant addons only from packages you trust.
+- `--allow-fs-read` and `--allow-fs-write` require a value, given as `--allow-fs-read=VALUE` or `--allow-fs-read VALUE`, and may be repeated. Without one, the launch fails with `error: --allow-fs-read requires an argument`.
+- `--allow-env` takes `*`, a variable name, or a name prefix followed by `*`, such as `APP_*`. Values may be repeated or separated by commas, and an empty item between commas, as in `--allow-env=PORT,,HOST`, is skipped. Without a value, the launch fails with `error: --allow-env requires an argument`. An item of any other form, such as `A*B` or `A=B`, fails with `error: --allow-env must be '*', a variable name, or a variable name prefix followed by '*'`.
+- Every other flag takes no value. Giving one a value, such as `127.0.0.1:3000` for `--allow-net`, is a usage error that names the flag. Node accepts such a value and ignores it, allowing every host; Bento refuses it, so a command written for an earlier Bento's host-scoped network flag cannot silently allow every host.
+- Any `--allow-*` flag without `--permission` fails before anything runs, with `error: --permission is required`.
+- These errors exit with status 1, like Bento's other usage errors. Node exits with status 9 when a flag is missing its value.
+- `bento run --help` lists the flags under a "Permissions" heading.
 
-Grants govern guest code. They do not restrict task commands or the tools those commands start, which run with your user's full authority.
+Quote a value containing `*` in your shell, as in `--allow-fs-read='*'`, so that the shell hands it to Bento unchanged. Unquoted, zsh refuses the command because no file matches the pattern.
 
-### Nested `bento` commands inherit grants as a ceiling
+#### Which paths a value covers
 
-When a task command runs `bento` again, the nested launch receives the grants of the launch that started the task through `BENTO_GRANT_CEILING`. The name `bento` in a task command always means that same running `bento` executable, even when the project installs its own `bento` in `node_modules/.bin`, because Bento puts a link to itself first on the task's `PATH`.
+- `*` alone covers every path.
+- Any other value is a path, absolute or relative to the directory you run `bento` in, not to the project root.
+- A value containing `*` covers every path whose text begins with the text before the first `*`. Anything after that `*` covers nothing, though `process.permission.drop()` compares it, as Node does. `--allow-fs-read='./test*'` covers `test`, `test2`, and `testing/notes.txt`, but not `tes`.
+- Without `*`, an existing directory covers itself and everything beneath it. Anything else, a file or a path that does not exist yet, covers exactly that path. A directory the code will create needs a trailing `*`: `--allow-fs-write='./build/*'` covers `build` itself and everything the code creates beneath it.
+- A comma is part of the path. To allow several paths, repeat the flag. When a flag has exactly one value and it contains a comma, Bento prints Node's warning to standard error, naming the flag, and continues. As in Node, the script you run counts as one more `--allow-fs-read` value, so running a script never warns about reading:
 
-- A kind the nested command does not mention is inherited unchanged.
-- A nested flag may narrow its kind: `--allow-read=app` under an inherited `--allow-read=.` is fine.
-- A nested flag that asks for more than the inherited grant fails before anything runs. The error names the flag and the inherited limit, and the task that ran the nested command fails with it.
+```text
+warning: The --allow-fs-write CLI flag has changed. Passing a comma-separated list of paths is no longer valid. Documentation can be found at https://nodejs.org/api/permissions.html#file-system-permissions
+```
 
-A launch started directly from your shell has no ceiling, so any kind its flags leave out is denied.
+Bento compares paths at their real locations. It resolves each value as the operating system would before comparing it: when `data` is a link to `/srv/data`, `--allow-fs-read=./data` covers `/srv/data`, and because `..` after a link leaves the link's target, `--allow-fs-read=./data/../shared` covers `/srv/shared`. A link to something that does not exist yet names the location it points to, and a path that does not exist yet keeps its missing part as written beneath its nearest existing directory. A value with `*` has its existing directory part resolved and the rest kept as written. On macOS, where `/tmp` is a link to `/private/tmp`, `--allow-fs-read=/tmp/app` covers `/private/tmp/app`.
+
+Operations that follow links are checked against the fully resolved target, so a link inside an allowed directory that points outside it is denied. Node compares paths as written and follows such a link. Operations on a link itself, such as `lstat`, `readlink`, and `unlink`, are checked at the link's own location, as [Node Compatibility](node-compatibility.md#permissions-and-native-code) describes. Creating a symbolic link requires both `--allow-fs-read='*'` and `--allow-fs-write='*'`, because a permission for particular paths cannot vouch for a target that is resolved later.
+
+#### Environment variables
+
+An unrestricted launch sees the whole prepared environment. A restricted launch starts with every variable that `--allow-env` does not match removed, except the variables Node always keeps, such as `PATH` and `HOME`, and the values Bento prepared for the launch: those from the project's environment files and the watch-mode `NODE_ENV` default. Reading a removed variable returns `undefined` and warns the first time. The code may still set, change, and delete any variable while it runs. [Tasks and Environment](tasks-and-environment.md#environment-in-a-restricted-launch) gives the full rules.
+
+#### Subprocesses, workers, native addons, and the network
+
+`node:child_process` (`spawn`, `exec`, `execFile`, `fork`, and their synchronous forms) and `Deno.Command` work in an unrestricted launch, and in a restricted one with `--allow-child-process`. A child process runs with your user's full authority, and no permission restricts it, so allowing child processes in a restricted launch lets the code escape every other restriction. Pass `--allow-child-process` only for code you would also run unrestricted. A subprocess receives the launch's environment after the startup removal. When a restricted launch starts a process, Bento also adds `BENTO_PERMISSION_CEILING` to that environment, describing the launch's permissions at that moment, so a `bento` the process starts stays within them, as [nested launches](#nested-bento-commands-stay-within-a-ceiling) do. Bento does not change `NODE_OPTIONS`, and programs other than `bento` ignore the ceiling.
+
+`process.execPath` is the `bento` executable, and Bento does not accept Node's command-line options yet ([#260](https://github.com/bento-js/bento/issues/260)). `fork()`, and any code that starts `process.execPath` with Node's options, therefore fails with Bento's usage error from the child, even in an unrestricted launch.
+
+`worker_threads.Worker` and the Web `Worker` work in an unrestricted launch, and in a restricted one with `--allow-worker`. As in Node, every thread holds permissions of its own: a worker starts with the permissions the launch started with, whatever its creator has dropped, and passing `execArgv` cannot change them. Also as in Node 26, a worker may read everything beneath the directory you run `bento` in, even when the launch may not, so pass `--allow-worker` only when the code may read that whole tree.
+
+Native addons load in an unrestricted launch, and in a restricted one with `--allow-addons`, from any path. An addon runs native code inside the `bento` process, outside every permission: once loaded, it is not contained by the file, network, or environment restrictions. Pass `--allow-addons` only when you trust every package that ships an addon.
+
+`--allow-net` allows every host and port. Neither Bento nor Node can limit a launch to particular hosts. Listening on or connecting to a Unix-domain socket path needs only `--allow-net`, as in Node; the file permissions do not apply to the socket's path.
+
+#### Available in every launch, and in none
+
+System information is available in every launch, restricted or not, because Node restricts none of it: `os.homedir()`, `os.hostname()`, `os.userInfo()`, `os.networkInterfaces()`, `os.cpus()`, the memory, load, uptime, and release queries, and their `Deno` counterparts.
+
+Some operations are unavailable in every launch, because they are not permissions: importing remote modules, changing the `bento` process's working directory or loading an environment file into it (`process.chdir`, `process.loadEnvFile`), and terminating or signalling the `bento` process (`process.abort`, `process.kill`, `Deno.kill`). Code that starts a subprocess can still signal it with `subprocess.kill()`.
+
+#### Denied operations
+
+In a restricted launch, a denied operation throws what Node 26 throws for the same operation:
+
+| Denied operation | What the code receives |
+| --- | --- |
+| Reading a file | `ERR_ACCESS_DENIED` with `permission: 'FileSystemRead'` and `resource` set to the path as the call named it |
+| Writing a file | `ERR_ACCESS_DENIED` with `permission: 'FileSystemWrite'` and the path as `resource` |
+| Connecting or listening | `ERR_ACCESS_DENIED` with `permission: 'Net'`; a denied `fetch` rejects with an error whose `cause` is that error |
+| Starting a subprocess | `ERR_ACCESS_DENIED` with `permission: 'ChildProcess'` and the command as `resource`; no process starts |
+| Starting a worker | `ERR_ACCESS_DENIED` with `permission: 'WorkerThreads'` |
+| Loading a native addon | `ERR_DLOPEN_DISABLED`: `Cannot load native addon because loading addons is disabled.` The addon's native code never runs. |
+| Using the language model | `LanguageModel.availability()` reports `unavailable`, and `LanguageModel.create()` rejects with `NotAllowedError` |
+| Reading a removed environment variable | No error: the value is `undefined` |
+
+An `ERR_ACCESS_DENIED` message names the flag that would allow the operation, as in `Access to this API has been restricted. Use --allow-fs-read to manage permissions.` `Deno` namespace APIs throw the same errors as their Node counterparts.
+
+An uncaught denial ends the run as a permission failure: Bento shows where the operation was denied, as [Read error reports](#read-error-reports) describes, and exits with status 1.
+
+Bento prints none of Node's `ExperimentalWarning` or `SecurityWarning` messages about permission flags; those describe Node's own stability levels. It keeps the comma warning above and the removed-variable warning, because each explains an outcome.
+
+#### Inspect and drop permissions
+
+In a restricted launch, `process.permission` reports what the code holds and lets it give permissions up. In an unrestricted launch it is `undefined`, as in Node. `process.permission.has("fs.read", "./data")` answers for one path, and `process.permission.has("fs.read")` is `true` only after `--allow-fs-read='*'`. `process.permission.drop("fs.write")` removes a permission for the rest of the run, and nothing gives it back. As in Node, a drop applies only to the thread that makes it, the main thread or one worker. [Node Compatibility](node-compatibility.md#inspect-and-drop-permissions) describes both methods.
+
+#### Move from earlier flags
+
+Earlier Bento releases denied everything by default and used Deno's flag names. Commands that use them fail until you rewrite them:
+
+| Before | After |
+| --- | --- |
+| `--allow-read` / `--allow-read=a,b` | `--permission --allow-fs-read=*` / `--permission --allow-fs-read=a --allow-fs-read=b` |
+| `--allow-write=data` | `--permission --allow-fs-write=data` (add `/*` when `data` does not exist yet) |
+| `--allow-net` / `--allow-net=host:port` | `--permission --allow-net` (every host) |
+| `--allow-env=A,B` | `--permission --allow-env=A,B` |
+| `--allow-addons` / `--allow-addons=path` | `--permission --allow-addons` (every path) |
+| `--allow-language-model` / `--allow-language-model=false` | `--permission --allow-language-model` / `--permission` without it |
+
+The removed flags are reported as unknown or malformed options. A command that passed no flags used to deny everything and now runs unrestricted, so add `--permission` wherever you relied on it to contain code. A nested launch that passes `--permission` no longer inherits the permissions its flags leave out. In a restricted launch, variables that `--allow-env` does not match are removed rather than hidden, writes to any variable succeed, and values from the project's environment files are visible. Code that checked for `NotCapable` or `PermissionDenied` errors must check for `ERR_ACCESS_DENIED` and `ERR_DLOPEN_DISABLED` instead.
+
+### Nested `bento` commands stay within a ceiling
+
+When a task command runs `bento` again, the nested launch receives the permissions of the launch that started the task through `BENTO_PERMISSION_CEILING`. A process that a restricted guest starts receives that guest's permissions the same way. The name `bento` in a task command always means that same running `bento` executable, even when the project installs its own `bento` in `node_modules/.bin`, because Bento puts a link to itself first on the task's `PATH`.
+
+- A nested launch without `--permission` holds exactly its ceiling's permissions: it is unrestricted under an unrestricted ceiling, and restricted the same way under a restricted one.
+- A nested launch with `--permission` holds exactly what its own flags and its entrypoint allow, as a launch from your shell does. Permissions its flags do not mention are denied, even when the ceiling holds them.
+- Each flag of a nested launch must fit within the ceiling. A flag that asks for more fails before any guest code runs, with an error that names the flag and the inherited limit, and the task that ran the nested command fails with it.
+- A nested launch's entrypoint is readable without a flag only when the ceiling's read permission covers it.
+
+A launch started directly from your shell has no ceiling. A nested launch can never widen the permissions it inherited.
 
 ### Load the environment
 
 Before running a script or task, Bento loads the project's `.env`, `.env.<mode>`, and `.env.local` files beneath the variables you set yourself. The mode comes from your `NODE_ENV`, else the `NODE_ENV` in `.env`; `bento run --watch` defaults it to `development` when neither sets it. [Tasks and Environment](tasks-and-environment.md) describes the file syntax, the precedence, and how nested launches choose their own mode file.
 
-Loading a variable does not grant guest code access to it; `--allow-env` does. Task commands receive the whole prepared environment.
+In a restricted launch, the values Bento loads from these files stay visible to the code even when `--allow-env` does not match them, as Node keeps the values from files named with `--env-file`. Task commands receive the whole prepared environment.
 
 ### Run a script
 
-`bento run --allow-read=. server.mjs` executes the file in Bento's own runtime, inside the `bento` process. Nothing else needs to be installed to run it: Bento never starts Node, Deno, Bun, or pnpm, and runs the same with none of them on `PATH`.
+`bento run server.mjs` executes the file in Bento's own runtime, inside the `bento` process. Nothing else needs to be installed to run it: Bento never starts Node, Deno, Bun, or pnpm, and runs the same with none of them on `PATH`.
 
 `bento run server.ts` executes TypeScript, JSX, and TSX directly. They need no build step, no prebuilt JavaScript entrypoint, and no `--import remix/node-tsx`, and Bento writes no JavaScript next to your sources: it transforms each module in memory as it loads. Bento follows the execution settings in `tsconfig.json` and the files it extends, such as `jsx` and `jsxImportSource`, and reports an execution-affecting setting it cannot honor rather than choosing another JSX runtime. It does not type-check; run your type checker as a task.
 
@@ -99,15 +201,15 @@ Modules resolve the way Node resolves them for the project: `package.json` `impo
 
 An ESM import of a CommonJS source receives its `module.exports` value as the default export, including when that source re-exports JSON or a native addon through `require`. JSON fields and addon properties do not become inferred named exports.
 
-The script sees what a Node script would see of its launch, limited by its grants:
+The script sees what a Node script would see of its launch:
 
 - `process.argv.slice(2)` holds the words after the script path, unchanged, as under Node.
 - `process.cwd()` is the directory you ran `bento` in, not the project root.
-- `process.env` holds the variables `--allow-env` grants, from your environment or the project's environment files. Other variables are invisible, not just unreadable.
+- `process.env` holds the prepared environment: your variables and the project's environment files. In a restricted launch, the variables removed at startup are absent from it.
 
-Packages with Node-API native addons, such as the compilers `remix/assets` uses, load into the `bento` process when `--allow-addons` covers their installed location. Without that grant, loading the addon is a permission denial and its native code never runs.
+Packages with Node-API native addons, such as the compilers `remix/assets` uses, load into the `bento` process. A restricted launch needs `--allow-addons` for them; without it, loading an addon throws `ERR_DLOPEN_DISABLED` and its native code never runs.
 
-An addon runs as native code in the `bento` process, so it sees the environment `bento` itself was started with, not the variables granted to the script. The Oxc resolver that `remix/assets` loads honors `NODE_PATH` there: launched with `NODE_PATH` pointing at another project's packages, it can resolve packages outside your project, which a scoped read grant then denies. Start `bento` without `NODE_PATH` set.
+An addon runs as native code in the `bento` process, so it sees the environment `bento` itself was started with, not the script's environment. The Oxc resolver that `remix/assets` loads honors `NODE_PATH` there: launched with `NODE_PATH` pointing at another project's packages, it can resolve packages outside your project, and a launch whose `--allow-fs-read` covers only the project is then denied reading them. Start `bento` without `NODE_PATH` set.
 
 Top-level `await` works, and the script runs until it has no work left or calls `process.exit`. `process.exit(code)` ends the script with that exit code. When the script fails instead, Bento names the kind of failure: the script could not start, a module could not be resolved or transformed, permission was denied, or an exception went uncaught. It shows the error's message and where it happened, as [Read error reports](#read-error-reports) describes, and `bento` exits with status 1.
 
@@ -212,34 +314,45 @@ A second Ctrl-C or termination signal does not wait: `bento` exits immediately w
 | pnpm's code | `pnpm install` failed. |
 | `130` | An interrupt (SIGINT, Ctrl-C) stopped the run: a task command it ended or that Bento had to kill, processes a finished task command left running, a script without a listener for it, or a script still running at the deadline or interrupted a second time. |
 | `143` | A termination signal (SIGTERM) stopped the run, in the same cases. |
-| `1` | Any other failure, reported with a message: an unknown target, a usage error, a malformed or too-wide grant flag, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
+| `1` | Any other failure, reported with a message: an unknown target, a usage error such as a malformed permission flag, an `--allow-*` flag without `--permission`, or a nested flag beyond its ceiling, a malformed environment file, an invalid task graph, misplaced arguments, or a script that failed to start, could not load a module, was denied a permission, threw an uncaught exception, or ended while work it started had not settled. |
 
 ## Worked example
 
-The guest book needs to read files, write its database directory, listen on the network, see three variables, and load the native compilers installed in `node_modules`:
+The guest book runs like any Node project, with no flags:
 
 ```sh
 cd fixtures/remix-guest-book
 bento install --frozen-lockfile
-bento run --allow-read --allow-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons=./node_modules dev
+bento run dev
 ```
 
-The read grant is not limited to the project because `remix/assets` looks for optional packages in the `node_modules` directory of every ancestor of the project, up to `/`, as Node's package lookup does. With only `--allow-read=.`, that lookup is a permission denial and the server does not start.
+To contain it instead, restrict the launch to what the guest book uses: reading files, writing its database directory, the network, three variables, and the native compilers installed in `node_modules`:
 
-`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch names no grant flags, so it runs with exactly the five grants above. Editing a file under `app/`, whether a module the server imports or a browser module under a `public/` directory, restarts the server without rerunning the migrations; saving entries, which writes the database, does not. Ctrl-C reaches the guest book's own `SIGINT` listener through the nested `bento`, which closes its server and database and exits with `0`; both `bento` processes then exit with `0`. Running `bento run ... server.ts` with the same grants instead, Ctrl-C reaches the same listener, and `bento` exits with `0` too.
+```sh
+bento run --permission --allow-fs-read='*' --allow-fs-write=./db --allow-net --allow-env=PORT,DATABASE_URL,NODE_ENV --allow-addons dev
+```
+
+Reading is not limited to the project because `remix/assets` looks for optional packages in the `node_modules` directory of every ancestor of the project, up to `/`, as Node's package lookup does. With only `--allow-fs-read=.`, that lookup is denied and the server does not start. The guest book's `db` directory exists, so `--allow-fs-write=./db` covers the database and its journal files beneath it.
+
+`bento run ... dev` runs the `db:migrate` task once, then the `dev` command `bento run --watch server.ts`. That nested launch passes no `--permission`, so it holds exactly the permissions above. Editing a file under `app/`, whether a module the server imports or a browser module under a `public/` directory, restarts the server without rerunning the migrations; saving entries, which writes the database, does not. Ctrl-C reaches the guest book's own `SIGINT` listener through the nested `bento`, which closes its server and database and exits with `0`; both `bento` processes then exit with `0`. Running `bento run ... server.ts` with the same flags instead, Ctrl-C reaches the same listener, and `bento` exits with `0` too.
 
 `dev` itself selects no mode, so it and its `db:migrate` task read only `.env`; only the nested watch launch also reads `.env.development`. When `.env.development` alone sets `DATABASE_URL`, migrate that database first with `NODE_ENV=development bento run db:migrate`, as the guest book's README shows.
 
-If a task in the same project ran `bento run --allow-write=. server.ts` under those grants, the nested launch would stop before running anything with an error like:
+If a task in the same project ran `bento run --permission --allow-fs-write=. server.ts` under those permissions, the nested launch would stop before running anything, because the project directory is more than the inherited `./db`:
 
 ```text
-error: --allow-write=/Users/you/guest-book asks for more than the inherited write grant: /Users/you/guest-book/db
+error: --allow-fs-write=/Users/you/guest-book/* asks for more than the inherited fs-write permission: /Users/you/guest-book/db/*
 ```
+
+The error shows both values as resolved patterns: an existing directory appears as `directory/*`, because it covers everything beneath it.
 
 ## Limits and edge cases
 
 - Bento options after the target are not Bento options. They belong to the script, or make a task invocation fail because they come without `--`.
 - A cancelled task stops at the command the signal reached, even when that command handles the signal and exits with `0`; its later commands and the tasks that depend on it do not run.
 - Bento needs every environment variable it starts with to be valid UTF-8, and reports the first one that is not.
-- Grants restrict guest code, not task commands. A task is a trusted operation on your behalf.
-- A `BENTO_GRANT_CEILING` that Bento cannot read stops the launch instead of granting anything. Bento sets it for task commands; you do not set it yourself.
+- Permissions restrict guest code, not task commands. A task is a trusted operation on your behalf, and its commands run with your user's full authority.
+- A restricted launch is application policy, not a sandbox. Subprocesses it is allowed to start and native addons it is allowed to load run outside every permission, as in Node.
+- `fork()`, and code that starts `process.execPath` with Node's options, fails until Bento accepts Node's command line ([#260](https://github.com/bento-js/bento/issues/260)).
+- Bento has no audit mode (`--permission-audit`, [#261](https://github.com/bento-js/bento/issues/261)), does not read permissions from Node's configuration files ([#262](https://github.com/bento-js/bento/issues/262)), and has no `--deny-*` flags, as Node has none. `--allow-child-process` allows every command; neither Bento nor Node 26 can limit it to particular ones.
+- A `BENTO_PERMISSION_CEILING` that Bento cannot read stops the launch instead of allowing anything. Bento sets it for task commands and for processes a restricted guest starts; you do not set it yourself.

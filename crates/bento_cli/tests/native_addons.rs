@@ -48,11 +48,10 @@ fn a_script_loads_a_native_addon_from_the_fixture_with_only_bento_on_path() {
     let root = installed_fixture();
     fs::write(root.join("minify.mjs"), MINIFY_WITH_LIGHTNING_CSS).unwrap();
 
-    let output =
-        bento_in(root, &["run", "--allow-read=.", "--allow-addons=./node_modules", "minify.mjs"])
-            .env("PATH", path_without_other_runtimes())
-            .output()
-            .unwrap();
+    let output = bento_in(root, &["run", "minify.mjs"])
+        .env("PATH", path_without_other_runtimes())
+        .output()
+        .unwrap();
 
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(stdout(&output), ".probe{color:red}\n");
@@ -68,20 +67,21 @@ console.log(typeof binding.transform);
 "#;
 
 #[test]
-fn without_an_addon_grant_loading_the_addon_is_a_permission_denial() {
+fn a_restricted_launch_loads_an_addon_only_with_allow_addons() {
     let root = installed_fixture();
     fs::write(root.join("binding.mjs"), LOAD_LIGHTNING_CSS_BINDING).unwrap();
+    let restricted = ["run", "--permission", "--allow-fs-read=."];
 
-    let denied = bento_in(root, &["run", "--allow-read=.", "binding.mjs"]).output().unwrap();
-    let granted =
-        bento_in(root, &["run", "--allow-read=.", "--allow-addons=./node_modules", "binding.mjs"])
-            .output()
-            .unwrap();
+    let denied = bento_in(root, &[&restricted[..], &["binding.mjs"]].concat()).output().unwrap();
+    let allowed = bento_in(root, &[&restricted[..], &["--allow-addons", "binding.mjs"]].concat())
+        .output()
+        .unwrap();
 
     assert_eq!(denied.status.code(), Some(1));
     let message = stderr(&denied);
     assert!(message.contains("permission denied"), "{message}");
+    assert!(message.contains("loading addons is disabled"), "{message}");
     assert!(stdout(&denied).is_empty(), "{}", stdout(&denied));
-    assert!(granted.status.success(), "{}", stderr(&granted));
-    assert_eq!(stdout(&granted), "function\n");
+    assert!(allowed.status.success(), "{}", stderr(&allowed));
+    assert_eq!(stdout(&allowed), "function\n");
 }

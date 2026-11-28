@@ -1,6 +1,7 @@
 mod support;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 
 use bento_workspace::{EnvironmentError, FILE_KEYS_ENV, LaunchEnvironment, LaunchKind};
 use support::TempProject;
@@ -249,6 +250,57 @@ fn file_value_the_command_reassigns_counts_as_explicit_even_when_unchanged() {
 
     assert_eq!(get(&nested, "DATABASE_URL"), Some("base"));
     assert_eq!(get(&nested, "PORT"), Some("4000"));
+}
+
+#[test]
+fn prepared_values_keep_file_values_an_inherited_value_overrides() {
+    let temp = TempProject::new();
+    temp.write(".env", "DATABASE_URL=base\nPORT=3000\n");
+    temp.write(".env.local", "DATABASE_URL=local\n");
+
+    let environment =
+        load(&temp, &[("DATABASE_URL", "exported"), ("HOME", "/home/me")], LaunchKind::Run);
+
+    assert_eq!(get(&environment, "DATABASE_URL"), Some("exported"));
+    assert_eq!(
+        environment.prepared_values(),
+        &vars(&[("DATABASE_URL", "local"), ("PORT", "3000")])
+    );
+}
+
+#[test]
+fn prepared_values_include_the_watch_default_mode_but_never_an_inherited_one() {
+    let temp = TempProject::new();
+
+    let watch = load(&temp, &[], LaunchKind::Watch);
+    let exported = load(&temp, &[("NODE_ENV", "production")], LaunchKind::Watch);
+    let plain = load(&temp, &[], LaunchKind::Run);
+
+    assert_eq!(watch.prepared_values(), &vars(&[("NODE_ENV", "development")]));
+    assert!(exported.prepared_values().is_empty());
+    assert!(plain.prepared_values().is_empty());
+}
+
+#[test]
+fn a_file_value_for_node_env_replaces_the_prepared_watch_default() {
+    let temp = TempProject::new();
+    temp.write(".env.local", "NODE_ENV=staging\n");
+
+    let environment = load(&temp, &[], LaunchKind::Watch);
+
+    assert_eq!(environment.prepared_values(), &vars(&[("NODE_ENV", "staging")]));
+}
+
+#[test]
+fn prepared_values_include_values_an_outer_launch_forwarded_from_its_files() {
+    let temp = TempProject::new();
+    temp.write(".env", "DATABASE_URL=base\n");
+    let outer = load(&temp, &[("PATH", "/usr/bin")], LaunchKind::Run);
+    fs::remove_file(temp.path(".env")).unwrap();
+
+    let nested = LaunchEnvironment::load(temp.root(), forwarded(&outer), LaunchKind::Run).unwrap();
+
+    assert_eq!(nested.prepared_values(), &vars(&[("DATABASE_URL", "base")]));
 }
 
 #[test]

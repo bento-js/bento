@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use bento_test_support::ports::{loopback, port_is_taken};
 use support::guest_book::{
-    GuestBook, README_GRANTS, fixture_file, run_with_readme_grants, tool_path,
+    GuestBook, README_PERMISSIONS, fixture_file, run_with_readme_permissions, tool_path,
 };
 use support::guest_book_page::{
     assert_development_assets, assert_guest_book_page, assert_production_assets, assert_signing,
@@ -73,7 +73,7 @@ fn a_frozen_install_adds_dependencies_and_dev_tools_and_keeps_the_lockfile() {
 fn the_start_task_serves_the_guest_book_with_no_other_runtime_on_path() {
     let guest_book = seeded_guest_book();
     let command =
-        guest_book.bento(&run_with_readme_grants("start"), &path_without_other_runtimes());
+        guest_book.bento(&run_with_readme_permissions("start"), &path_without_other_runtimes());
     let mut bento = serving(&guest_book, command, START_PORT);
 
     let page = first_page(START_PORT);
@@ -86,9 +86,9 @@ fn the_start_task_serves_the_guest_book_with_no_other_runtime_on_path() {
 }
 
 #[test]
-fn server_ts_runs_with_the_readme_grants_and_ends_with_its_own_exit_code() {
+fn server_ts_runs_with_the_readme_permissions_and_ends_with_its_own_exit_code() {
     let guest_book = seeded_guest_book();
-    let command = guest_book.bento(&run_with_readme_grants("server.ts"), SYSTEM_PATH);
+    let command = guest_book.bento(&run_with_readme_permissions("server.ts"), SYSTEM_PATH);
     let mut bento = serving(&guest_book, command, SERVER_PORT);
 
     assert_guest_book_page(&first_page(SERVER_PORT), &SEEDED_ENTRY);
@@ -97,13 +97,13 @@ fn server_ts_runs_with_the_readme_grants_and_ends_with_its_own_exit_code() {
     assert_eq!(interrupt(&mut bento, SERVER_PORT), Some(0), "{}", bento.stderr.text());
 }
 
-/// `bento run server.ts` with the README's grants, except that the grant of `kind` is
-/// `replacement`, or left out.
-fn server_ts_with<'a>(kind: &str, replacement: Option<&'a str>) -> Vec<&'a str> {
-    let grants = README_GRANTS
+/// `bento run server.ts` with the README's permissions, except that the flag beginning with
+/// `flag` is `replacement`, or left out.
+fn server_ts_with<'a>(flag: &str, replacement: Option<&'a str>) -> Vec<&'a str> {
+    let flags = README_PERMISSIONS
         .iter()
-        .filter_map(|grant| if grant.starts_with(kind) { replacement } else { Some(*grant) });
-    ["run"].into_iter().chain(grants).chain(["server.ts"]).collect()
+        .filter_map(|given| if given.starts_with(flag) { replacement } else { Some(*given) });
+    ["run"].into_iter().chain(flags).chain(["server.ts"]).collect()
 }
 
 /// Runs `arguments` in `guest_book`, expects startup to fail, and returns the report.
@@ -119,21 +119,21 @@ fn failed_startup(guest_book: &GuestBook, arguments: &[&str], port: u16) -> Stri
 }
 
 #[test]
-fn without_the_addon_grant_startup_is_a_permission_denial_naming_the_addon() {
+fn without_allow_addons_startup_is_a_permission_denial_before_any_addon_loads() {
     let guest_book = seeded_guest_book();
     let arguments = server_ts_with("--allow-addons", None);
 
     let report = failed_startup(&guest_book, &arguments, DENIED_ADDONS_PORT);
 
     assert!(report.contains("permission denied"), "{report}");
-    assert!(report.contains(".node"), "the denial does not name the addon: {report}");
+    assert!(report.contains("loading addons is disabled"), "{report}");
 }
 
 /// The asset pipeline looks for optional packages in every ancestor's `node_modules`.
 #[test]
 fn reading_only_the_project_denies_the_asset_pipeline_s_package_search() {
     let guest_book = seeded_guest_book();
-    let arguments = server_ts_with("--allow-read", Some("--allow-read=."));
+    let arguments = server_ts_with("--allow-fs-read", Some("--allow-fs-read=."));
 
     let report = failed_startup(&guest_book, &arguments, PROJECT_READS_PORT);
 
@@ -144,7 +144,7 @@ fn reading_only_the_project_denies_the_asset_pipeline_s_package_search() {
 #[test]
 fn the_stock_cli_cannot_resolve_the_embedding_host_s_module() {
     let guest_book = GuestBook::install();
-    let arguments = run_with_readme_grants("server.embedded.ts");
+    let arguments = run_with_readme_permissions("server.embedded.ts");
 
     let report = failed_startup(&guest_book, &arguments, EMBEDDED_PORT);
 
@@ -157,7 +157,7 @@ fn the_stock_cli_cannot_resolve_the_embedding_host_s_module() {
 #[test]
 fn dev_migrates_once_and_restarts_the_server_when_its_source_changes() {
     let guest_book = GuestBook::install();
-    let command = guest_book.bento(&run_with_readme_grants("dev"), &tool_path());
+    let command = guest_book.bento(&run_with_readme_permissions("dev"), &tool_path());
     let mut bento = serving(&guest_book, command, DEV_PORT);
     let page = first_page(DEV_PORT);
     assert_guest_book_page(&page, &[]);
@@ -189,7 +189,7 @@ fn dev_serves_on_the_env_port_from_the_development_file_s_database() {
     assert!(!guest_book.path("db/data.db").exists(), "the mode file's database was not used");
     guest_book.add_entry("db/development.db", "Development visitor", "From the mode file");
     let mut bento =
-        Background::spawn(guest_book.bento(&run_with_readme_grants("dev"), &tool_path()));
+        Background::spawn(guest_book.bento(&run_with_readme_permissions("dev"), &tool_path()));
 
     let page = first_page(ENVIRONMENT_FILE_PORT);
 

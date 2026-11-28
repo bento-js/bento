@@ -1,7 +1,7 @@
 //! The real guest book embedded in this process: `server.embedded.ts` served over
-//! `host:guestbook` with the host's grants, in both modes, with its entries in the Rust-owned
-//! store across instance disposal, isolated from other instances, and unable to read the store
-//! file it lists from.
+//! `host:guestbook` with the host's permissions, in both modes, with its entries in the
+//! Rust-owned store across instance disposal, isolated from other instances, and unable to read
+//! the store file it lists from.
 
 mod support;
 
@@ -115,12 +115,13 @@ fn an_instance_without_the_registration_cannot_import_host_guestbook_while_anoth
     shutdown_gracefully(serving, port);
 }
 
-/// The probe lives inside the fixture copy because the grants under test only let the guest
-/// load modules from there; it lists through `host:guestbook` and then tries the store file.
+/// The probe lives inside the fixture copy because the permissions under test only let the
+/// guest load modules from there; it lists through `host:guestbook` and then tries the store
+/// file.
 #[test]
-fn the_guest_cannot_read_the_store_file_with_the_grants_that_serve_the_guest_book() {
+fn the_guest_cannot_read_the_store_file_with_the_permissions_that_serve_the_guest_book() {
     if isolated_fixture_test(
-        "the_guest_cannot_read_the_store_file_with_the_grants_that_serve_the_guest_book",
+        "the_guest_cannot_read_the_store_file_with_the_permissions_that_serve_the_guest_book",
         ChildLimit::OneAtATime,
     ) {
         return;

@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use deno_core::{AsyncRefCell, Resource};
@@ -13,24 +14,36 @@ use crate::{Cancellation, Disposal, Generation, Session};
 
 /// Whether this instance's guest code may use the operating system's language model.
 ///
-/// Hosts decide once, before the guest runs; nothing in the guest can widen it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Access(pub(super) bool);
+/// Hosts decide before the guest runs, and nothing in the guest can widen it. Clones share one
+/// decision, so an instance's isolates all see access the guest gave up with
+/// [`Access::revoke`].
+#[derive(Clone, Debug)]
+pub struct Access(Arc<AtomicBool>);
 
 impl Access {
     /// Access as the host granted it.
     pub fn new(granted: bool) -> Self {
-        Self(granted)
+        Self(Arc::new(AtomicBool::new(granted)))
     }
 
     /// Access to the model.
     pub fn granted() -> Self {
-        Self(true)
+        Self::new(true)
     }
 
     /// No access to the model.
     pub fn denied() -> Self {
-        Self(false)
+        Self::new(false)
+    }
+
+    /// Whether the guest may use the model now.
+    pub fn is_granted(&self) -> bool {
+        self.0.load(Ordering::Acquire)
+    }
+
+    /// Takes access away from this instance for good.
+    pub fn revoke(&self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 

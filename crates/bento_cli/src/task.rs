@@ -26,7 +26,7 @@ pub(crate) fn run(launch: &Launch, name: &str, arguments: &[String]) -> Result<E
         .and_then(|executable| executable.canonicalize())
         .map_err(CliError::Executable)?;
     let runner =
-        TaskRunner::new(&launch.project, &launch.environment, &launch.grants, &executable)?;
+        TaskRunner::new(&launch.project, &launch.environment, &launch.permissions, &executable)?;
     let cancellation = Cancellation::new();
     let cancel = cancellation.clone();
     signals::listen(move |signal| cancel.cancel(task_signal(signal))).map_err(CliError::Signals)?;

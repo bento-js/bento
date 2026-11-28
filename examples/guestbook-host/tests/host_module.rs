@@ -4,7 +4,6 @@
 
 mod support;
 
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -14,7 +13,7 @@ use rusqlite::Connection;
 
 use bento_guestbook_host::launch::{Launch, Mode};
 use bento_guestbook_host::store::{Access, GuestBookStore, NewEntry};
-use bento_host::Scope;
+use bento_host::{PathPattern, PermissionSet, Permissions, Scope};
 use bento_runtime::{ErrorKind, RunOutcome, RuntimeConfig, ShutdownOutcome, start};
 use support::{
     assert_port_free, free_port, guest_project, guests, http, scratch_dir, start_guest,
@@ -98,8 +97,15 @@ fn only_the_registering_instance_can_import_host_guestbook() {
     wait_for_listener(port);
     assert_eq!(http::get(port, "/").body, "[]");
 
-    let mut unregistered = RuntimeConfig::new(&project);
-    unregistered.grants.read = Scope::Only(BTreeSet::from([project.canonicalize().unwrap()]));
+    let project = project.canonicalize().unwrap();
+    let readable = PathPattern::resolve(&project, &project).unwrap();
+    let unregistered = RuntimeConfig::new(
+        &project,
+        Permissions::restricted(PermissionSet {
+            fs_read: Scope::only([readable]),
+            ..PermissionSet::default()
+        }),
+    );
     let RunOutcome::Failed(error) =
         start(unregistered, &project.join("unregistered.mjs")).unwrap().wait()
     else {

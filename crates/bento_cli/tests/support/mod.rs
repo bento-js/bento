@@ -38,7 +38,7 @@ impl TempProject {
         TempProject::new(json!({ "tasks": tasks }))
     }
 
-    /// The canonical project root, which is how grants name it.
+    /// The canonical project root, which is how permissions name it.
     pub(crate) fn root(&self) -> &Path {
         &self.root
     }

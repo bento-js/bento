@@ -6,7 +6,7 @@ use std::process::{ExitCode, ExitStatus};
 use thiserror::Error;
 
 use crate::diagnostic::{self, Diagnostic};
-use crate::grant_flags::GrantError;
+use crate::permission_flags::PermissionError;
 use crate::runtime_report;
 use bento_package::InstallError;
 use bento_runtime::RuntimeError;
@@ -20,7 +20,7 @@ pub(crate) enum CliError {
     #[error(transparent)]
     Project(#[from] ProjectError),
     #[error(transparent)]
-    Grant(#[from] GrantError),
+    Permission(#[from] PermissionError),
     #[error(transparent)]
     Environment(#[from] EnvironmentError),
     #[error(transparent)]

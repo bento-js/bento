@@ -3,7 +3,7 @@ mod support;
 use std::fs;
 
 use bento_runtime::{ErrorKind, RunOutcome};
-use support::{completed, config, run};
+use support::{completed, config, run, workspace_access};
 
 #[test]
 fn transforms_all_typescript_extensions_and_require_without_emitting_files() {
@@ -151,11 +151,7 @@ assert.equal(require('../sibling/legacy.cjs'), answer);
 "#,
     )
     .unwrap();
-    let mut launch = config(&root);
-    launch.grants.read = bento_host::Scope::Only(std::collections::BTreeSet::from([workspace
-        .path()
-        .canonicalize()
-        .unwrap()]));
+    let launch = workspace_access(&root, workspace.path());
     let runtime = bento_runtime::start(launch, &entry).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());

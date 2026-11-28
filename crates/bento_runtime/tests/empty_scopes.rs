@@ -2,18 +2,26 @@ mod support;
 
 use std::collections::BTreeSet;
 use std::net::TcpListener;
+use std::path::Path;
 
-use bento_host::Scope;
-use bento_runtime::{ErrorKind, RunOutcome};
+use bento_host::{PermissionSet, Permissions, Scope};
+use bento_runtime::{ErrorKind, RunOutcome, RuntimeConfig};
 use tempfile::tempdir;
 
-use support::{completed, config, run};
+use support::{completed, config_with, project_access, run};
+
+/// A restricted instance for `root` holding what `change` makes of [`support::config`]'s
+/// permissions.
+fn restricted(root: &Path, change: impl FnOnce(&mut PermissionSet)) -> RuntimeConfig {
+    let mut permissions = project_access(root);
+    change(&mut permissions);
+    config_with(root, Permissions::restricted(permissions))
+}
 
 #[test]
 fn empty_read_scope_denies_loading_the_entry_before_it_runs() {
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.read = Scope::Only(BTreeSet::new());
+    let settings = restricted(root.path(), |set| set.fs_read = Scope::Only(BTreeSet::new()));
     let outcome = run(
         settings,
         "entry.mjs",
@@ -29,16 +37,16 @@ fn empty_read_scope_denies_loading_the_entry_before_it_runs() {
 #[test]
 fn empty_write_scope_denies_native_file_writes() {
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.write = Scope::Only(BTreeSet::new());
+    let settings = restricted(root.path(), |set| set.fs_write = Scope::Only(BTreeSet::new()));
     completed(run(
         settings,
         "write.mjs",
         r#"
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
-assert.throws(() => writeFileSync('unexpected', 'denied'), /NotCapable/);
-assert.throws(() => Deno.writeTextFileSync('unexpected-deno', 'denied'), /NotCapable/);
+const denied = { code: 'ERR_ACCESS_DENIED', permission: 'FileSystemWrite' };
+assert.throws(() => writeFileSync('unexpected', 'denied'), denied);
+assert.throws(() => Deno.writeTextFileSync('unexpected-deno', 'denied'), denied);
 "#,
     ));
     assert!(!root.path().join("unexpected").exists());
@@ -46,10 +54,9 @@ assert.throws(() => Deno.writeTextFileSync('unexpected-deno', 'denied'), /NotCap
 }
 
 #[test]
-fn empty_network_scope_denies_native_listening() {
+fn withheld_network_denies_native_listening() {
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.net = Scope::Only(BTreeSet::new());
+    let settings = restricted(root.path(), |set| set.net = false);
     completed(run(
         settings,
         "listen.mjs",
@@ -58,18 +65,17 @@ import assert from 'node:assert/strict';
 assert.throws(() => {
     const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 });
     listener.close();
-}, /NotCapable/);
+}, { code: 'ERR_ACCESS_DENIED', permission: 'Net' });
 "#,
     ));
 }
 
 #[test]
-fn empty_network_scope_denies_native_connections() {
+fn withheld_network_denies_native_connections() {
     let root = tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    let mut settings = config(root.path());
-    settings.grants.net = Scope::Only(BTreeSet::new());
+    let settings = restricted(root.path(), |set| set.net = false);
     completed(run(
         settings,
         "connect.mjs",
@@ -79,17 +85,16 @@ import assert from 'node:assert/strict';
 await assert.rejects(async () => {{
     const connection = await Deno.connect({{ hostname: '127.0.0.1', port: {port} }});
     connection.close();
-}}, /NotCapable/);
+}}, {{ code: 'ERR_ACCESS_DENIED' }});
 "#
         ),
     ));
 }
 
 #[test]
-fn empty_environment_scope_hides_values_and_denies_authority() {
+fn empty_environment_scope_removes_every_value_at_startup() {
     let root = tempdir().unwrap();
-    let mut settings = config(root.path());
-    settings.grants.env = Scope::Only(BTreeSet::new());
+    let mut settings = restricted(root.path(), |set| set.env = Scope::Only(BTreeSet::new()));
     settings.env.insert("BENTO_EMPTY_SCOPE_SECRET".into(), "hidden".into());
     completed(run(
         settings,
@@ -100,25 +105,28 @@ assert.equal(process.env.BENTO_EMPTY_SCOPE_SECRET, undefined);
 assert.equal(Deno.env.get('BENTO_EMPTY_SCOPE_SECRET'), undefined);
 assert.deepEqual(Object.keys(process.env), []);
 assert.deepEqual({ ...Deno.env.toObject() }, {});
-assert.throws(() => Deno.env.set('BENTO_EMPTY_SCOPE_SECRET', 'denied'), /NotCapable/);
 assert.notEqual((await Deno.permissions.query({ name: 'env', variable: 'BENTO_EMPTY_SCOPE_SECRET' })).state, 'granted');
+Deno.env.set('BENTO_EMPTY_SCOPE_SECRET', 'set by the guest');
+assert.equal(process.env.BENTO_EMPTY_SCOPE_SECRET, 'set by the guest');
 "#,
     ));
 }
 
 #[test]
-fn empty_addon_scope_denies_loading_before_dlopen() {
+fn withheld_addons_deny_loading_before_dlopen() {
     let root = tempdir().unwrap();
     std::fs::write(root.path().join("denied.node"), "not a shared library").unwrap();
-    let mut settings = config(root.path());
-    settings.grants.addons = Scope::Only(BTreeSet::new());
+    let settings = restricted(root.path(), |set| set.addons = false);
     completed(run(
         settings,
         "addon.mjs",
         r#"
 import assert from 'node:assert/strict';
 import path from 'node:path';
-assert.throws(() => process.dlopen({ exports: {} }, path.join(process.cwd(), 'denied.node')), /NotCapable/);
+assert.throws(() => process.dlopen({ exports: {} }, path.join(process.cwd(), 'denied.node')), {
+    code: 'ERR_DLOPEN_DISABLED',
+    message: 'Cannot load native addon because loading addons is disabled.',
+});
 "#,
     ));
 }
@@ -134,14 +142,14 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { parentPort } from 'node:worker_threads';
 import path from 'node:path';
-assert.throws(() => writeFileSync('worker-write', 'denied'), /NotCapable/);
+assert.throws(() => writeFileSync('worker-write', 'denied'), { code: 'ERR_ACCESS_DENIED', permission: 'FileSystemWrite' });
 assert.throws(() => {
     const listener = Deno.listen({ hostname: '127.0.0.1', port: 0 });
     listener.close();
-}, /NotCapable/);
+}, { code: 'ERR_ACCESS_DENIED', permission: 'Net' });
 assert.equal(Deno.env.get('BENTO_EMPTY_SCOPE_SECRET'), undefined);
 assert.deepEqual({ ...Deno.env.toObject() }, {});
-assert.throws(() => process.dlopen({ exports: {} }, path.join(process.cwd(), 'denied.node')), /NotCapable/);
+assert.throws(() => process.dlopen({ exports: {} }, path.join(process.cwd(), 'denied.node')), { code: 'ERR_DLOPEN_DISABLED' });
 for (const name of ['write', 'net', 'env', 'ffi']) {
     assert.notEqual((await Deno.permissions.query({ name })).state, 'granted', name);
 }
@@ -150,11 +158,11 @@ if (parentPort) parentPort.postMessage('denied'); else postMessage('denied');
     )
     .unwrap();
     for node in [false, true] {
-        let mut settings = config(root.path());
-        settings.grants.write = Scope::Only(BTreeSet::new());
-        settings.grants.net = Scope::Only(BTreeSet::new());
-        settings.grants.env = Scope::Only(BTreeSet::new());
-        settings.grants.addons = Scope::Only(BTreeSet::new());
+        let mut settings = restricted(root.path(), |set| {
+            set.fs_write = Scope::Only(BTreeSet::new());
+            set.env = Scope::Only(BTreeSet::new());
+            set.worker = true;
+        });
         settings.env.insert("BENTO_EMPTY_SCOPE_SECRET".into(), "hidden".into());
         let source = if node {
             r#"

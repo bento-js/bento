@@ -29,7 +29,7 @@ impl Stop {
     }
 
     /// Ends `bento` if the deadline has passed. Asking the runtime to shut the script down now
-    /// would grant it another full deadline, so the script ends with `bento` instead.
+    /// would give it another full deadline, so the script ends with `bento` instead.
     pub(crate) fn enforce_deadline(&self) {
         if Instant::now() >= self.deadline {
             force(self.signal);

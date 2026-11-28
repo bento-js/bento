@@ -6,12 +6,12 @@ use std::path::{Component, Path, PathBuf};
 /// reports real loops itself; this bounds a walk racing concurrent changes to the links.
 const MAX_LINKS: u32 = 40;
 
-/// Resolves an absolute path to the form grants are checked against: the location the
+/// Resolves an absolute path to the form permissions are checked against: the location the
 /// operating system reaches through it. Existing components resolve as the OS resolves them,
 /// so symlinks are followed (dangling ones included) and a `..` after a link leaves the link's
 /// target. From the first component that does not exist, the names that follow are kept as
-/// written, and a `..` among them removes the name before it. A grant for a file that will
-/// be created (a new database, say) therefore names the location its creator will reach.
+/// written, and a `..` among them removes the name before it. A permission for a file that
+/// will be created (a new database, say) therefore names the location its creator will reach.
 ///
 /// # Errors
 ///
@@ -22,7 +22,7 @@ pub fn canonical_path(path: &Path) -> io::Result<PathBuf> {
     if !path.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("grant path `{}` is not absolute", path.display()),
+            format!("permission path `{}` is not absolute", path.display()),
         ));
     }
     match std::fs::canonicalize(path) {

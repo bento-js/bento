@@ -1,7 +1,7 @@
 mod support;
 
 use bento_runtime::{ErrorKind, RunOutcome, start};
-use support::{completed, config, project, run};
+use support::{completed, project, read_access, run};
 
 #[test]
 fn failed_relative_and_absolute_imports_remain_watch_inputs() {
@@ -14,8 +14,7 @@ fn failed_relative_and_absolute_imports_remain_watch_inputs() {
     {
         let entry = app.join("entry.mjs");
         std::fs::write(&entry, format!("import {specifier:?};")).unwrap();
-        let mut settings = config(&app);
-        settings.grants.read = bento_host::Scope::All;
+        let settings = read_access(&app);
         let runtime = start(settings, &entry).unwrap();
         let handle = runtime.handle();
         let outcome = runtime.wait();
@@ -29,8 +28,7 @@ fn failed_relative_and_absolute_imports_remain_watch_inputs() {
         );
     }
     std::fs::write(&expected, "export const repaired = true;").unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(&app);
     completed(run(settings, "repaired.mjs", "import '../sibling/missing.mjs';"));
 }
 
@@ -45,8 +43,7 @@ fn watch_inputs(source: &str, commonjs: bool) -> (tempfile::TempDir, Vec<std::pa
         source.replace("$ROOT", root.path().canonicalize().unwrap().to_str().unwrap()),
     )
     .unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(&app);
     let runtime = start(settings, &entry).unwrap();
     let handle = runtime.handle();
     let _ = runtime.wait();
@@ -94,8 +91,7 @@ fn external_package_scopes_and_missing_nearer_scopes_are_watch_inputs() {
         .unwrap();
     let entry = app.join("entry.mjs");
     std::fs::write(&entry, "import '../shared/nested/value.js';").unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(&app);
     let runtime = start(settings, &entry).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());
@@ -119,8 +115,7 @@ fn successful_require_resolve_does_not_add_sources_or_package_scopes() {
     std::fs::write(&source, "exports.message = 'scope';").unwrap();
     let entry = app.join("entry.cjs");
     std::fs::write(&entry, "require.resolve('../shared/nested/value.cjs');").unwrap();
-    let mut settings = config(&app);
-    settings.grants.read = bento_host::Scope::All;
+    let settings = read_access(&app);
     let runtime = start(settings, &entry).unwrap();
     let handle = runtime.handle();
     completed(runtime.wait());

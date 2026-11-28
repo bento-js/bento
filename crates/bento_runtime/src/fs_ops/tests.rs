@@ -7,7 +7,7 @@ use deno_runtime::deno_permissions::{
 };
 use sys_traits::impls::RealSys;
 
-use crate::ops::InstanceEnvironment;
+use crate::environment::InstanceEnvironment;
 
 deno_core::extension!(
     removal_test,
@@ -34,11 +34,12 @@ fn runtime(root: &std::path::Path) -> JsRuntime {
     let mut state = state.borrow_mut();
     state.put(PermissionsContainer::new(parser, permissions));
     state.put::<FileSystemRc>(Arc::new(RealFs));
-    state.put(InstanceEnvironment {
-        values: Default::default(),
-        allowed: bento_host::Scope::None,
-        cwd: root.to_owned(),
-    });
+    state.put(InstanceEnvironment::new(
+        Default::default(),
+        &Default::default(),
+        &bento_host::Permissions::unrestricted(),
+        root.to_owned(),
+    ));
     runtime
 }
 

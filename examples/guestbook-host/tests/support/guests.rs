@@ -43,7 +43,8 @@ await assert.rejects(
 assert.deepEqual(await list(), before);
 "#;
 
-/// Lists the entries, then tries to read the database file named by its first argument.
+/// Lists the entries, then tries to read the database file named by its first argument and is
+/// refused with Node's read denial.
 pub(crate) const PROBE_STORE_FILE: &str = r#"
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -52,8 +53,9 @@ import { list } from 'host:guestbook';
 
 assert.equal((await list()).length, 1);
 const database = process.argv[2];
-await assert.rejects(readFile(database), /permission|NotCapable|Requires/i);
-assert.throws(() => readFileSync(database), /permission|NotCapable|Requires/i);
+const denied = { code: 'ERR_ACCESS_DENIED', permission: 'FileSystemRead' };
+await assert.rejects(readFile(database), denied);
+assert.throws(() => readFileSync(database), denied);
 "#;
 
 /// Imports the module without having it registered.

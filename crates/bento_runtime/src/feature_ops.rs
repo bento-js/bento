@@ -6,6 +6,10 @@ use deno_core::{Extension, OpDecl, OpState, op2, v8};
 use deno_error::JsErrorBox;
 use deno_runtime::ops::worker_host::{CreateWebWorkerCb, deno_worker_host};
 
+use bento_host::Permission;
+
+use crate::permissions::Authority;
+
 struct OriginalFeatureOps {
     worker: v8::Global<v8::Function>,
     tcp: v8::Global<v8::Function>,
@@ -53,6 +57,22 @@ fn unsupported(api: &str) -> JsErrorBox {
     JsErrorBox::new("NotSupported", format!("{api} requires an unsupported runtime feature"))
 }
 
+/// Refuses the operation unless the instance holds `permission`. The message is in the form
+/// of Deno's permission errors, which the guest sees as Node's.
+fn require(
+    state: &Rc<RefCell<OpState>>,
+    permission: Permission,
+    name: &str,
+) -> Result<(), JsErrorBox> {
+    if state.borrow().borrow::<Arc<Authority>>().holds(permission) {
+        return Ok(());
+    }
+    Err(JsErrorBox::new(
+        "NotCapable",
+        format!("Requires {name} access, run again with the --allow-{name} flag"),
+    ))
+}
+
 #[op2(fast, stack_trace)]
 fn bento_deny_feature() -> Result<(), JsErrorBox> {
     Err(unsupported("This operation"))
@@ -98,6 +118,7 @@ fn bento_create_worker<'s>(
     arguments: v8::Local<'s, v8::Object>,
     metadata: v8::Local<'s, v8::Value>,
 ) -> Result<Option<v8::Local<'s, v8::Value>>, JsErrorBox> {
+    require(&state, Permission::Worker, "worker")?;
     let Some(permissions) = property(scope, arguments, "permissions") else { return Ok(None) };
     if !permissions.is_null_or_undefined() {
         return Err(unsupported("Worker.deno.permissions"));
@@ -115,6 +136,7 @@ fn bento_listen_tcp<'s>(
     load_balanced: v8::Local<'s, v8::Value>,
     backlog: v8::Local<'s, v8::Value>,
 ) -> Result<Option<v8::Local<'s, v8::Value>>, JsErrorBox> {
+    require(&state, Permission::Net, "net")?;
     if reuse_port {
         return Err(unsupported("Deno.listen({ reusePort: true })"));
     }
@@ -131,6 +153,7 @@ fn bento_listen_tls<'s>(
     arguments: v8::Local<'s, v8::Object>,
     keys: v8::Local<'s, v8::Value>,
 ) -> Result<Option<v8::Local<'s, v8::Value>>, JsErrorBox> {
+    require(&state, Permission::Net, "net")?;
     let Some(reuse_port) = property(scope, arguments, "reusePort") else { return Ok(None) };
     if reuse_port.boolean_value(scope) {
         return Err(unsupported("Deno.listenTls({ reusePort: true })"));

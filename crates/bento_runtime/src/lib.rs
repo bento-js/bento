@@ -1,18 +1,18 @@
 //! Embeddable runtime for Node-compatible JavaScript applications.
 //!
 //! One [`RunningRuntime`] runs one guest program, with any workers it starts, on its own
-//! thread, launched by [`start`] from a [`RuntimeConfig`] that fixes the instance's grants,
-//! environment, arguments, and host modules for its lifetime. Dependencies must already be
-//! installed: execution downloads nothing and starts no Node, Deno, Bun, or Bento subprocess.
+//! thread, launched by [`start`] from a [`RuntimeConfig`] that fixes the instance's
+//! permissions, environment, arguments, and host modules. Dependencies must already be
+//! installed: execution downloads nothing, and the runtime itself starts no Node, Deno, Bun, or
+//! Bento subprocess. Guest code may start processes when its permissions allow it.
 //! The runtime prints none of its own diagnostics; the guest's console output goes to the
 //! process's stdout and stderr as it would in Node.
 //!
 //! ```no_run
-//! # use std::collections::{BTreeMap, BTreeSet};
+//! # use std::collections::BTreeMap;
 //! # use std::path::PathBuf;
-//! # use std::time::Duration;
 //! #
-//! # use bento_host::{Grants, Scope};
+//! # use bento_host::{EnvPattern, PathPattern, PermissionSet, Permissions, Scope};
 //! # use bento_runtime::{HostError, HostModule, RunOutcome, RuntimeConfig, start};
 //! # use serde_json::json;
 //! #
@@ -25,18 +25,15 @@
 //!     })?;
 //!     Ok(json!({ "message": format!("Hello, {name}") }))
 //! });
+//! let permissions = Permissions::restricted(PermissionSet {
+//!     fs_read: Scope::only([PathPattern::resolve(&root, &root)?]),
+//!     env: Scope::only([EnvPattern::parse("MODE")?]),
+//!     ..PermissionSet::default()
+//! });
 //! let config = RuntimeConfig {
-//!     project_root: root.clone(),
-//!     cwd: root.clone(),
-//!     grants: Grants {
-//!         read: Scope::Only(BTreeSet::from([root.clone()])),
-//!         env: Scope::Only(BTreeSet::from(["MODE".into()])),
-//!         ..Grants::default()
-//!     },
 //!     env: BTreeMap::from([("MODE".into(), "embedded".into())]),
-//!     argv: vec![],
 //!     host_modules: vec![module],
-//!     shutdown_deadline: Duration::from_secs(5),
+//!     ..RuntimeConfig::new(&root, permissions)
 //! };
 //! let runtime = start(config, &PathBuf::from("main.ts"))?;
 //! for diagnostic in runtime.diagnostics() {
@@ -56,6 +53,7 @@
 
 mod assembly;
 mod cjs;
+mod environment;
 mod error;
 mod feature_ops;
 mod features;
@@ -69,19 +67,21 @@ mod node;
 mod ops;
 mod package_lookup;
 mod permissions;
+mod require_ops;
 mod signals;
 mod sources;
+mod subprocess_ops;
 mod watch_inputs;
 mod workers;
 
 use std::any::Any;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use bento_host::Grants;
+use bento_host::Permissions;
 
 pub use bento_compiler::{Diagnostic, Severity};
 pub use error::{ErrorKind, RunOutcome, RuntimeError, SourceLocation, StartError};
@@ -89,7 +89,8 @@ pub use host::{HostError, HostModule};
 pub use lifecycle::{RuntimeHandle, ShutdownOutcome, ShutdownReport, Signal};
 pub use package_lookup::package_lookup_paths;
 
-/// Everything one instance is given before it starts; nothing here can change afterwards.
+/// Everything one instance is given before it starts. Only the guest itself can change any of
+/// it afterwards, and only within the instance: its environment, and permissions it drops.
 #[derive(Clone, Debug)]
 pub struct RuntimeConfig {
     /// Directory whose `package.json` and `tsconfig.json` the instance runs under, and from
@@ -98,12 +99,17 @@ pub struct RuntimeConfig {
     /// The guest's `process.cwd()`, and the directory a relative entry path is resolved
     /// against. [`start`] canonicalizes it.
     pub cwd: PathBuf,
-    /// Files, endpoints, environment variables, and addons the guest may use. Anything not
-    /// granted fails inside the guest rather than prompting.
-    pub grants: Grants,
-    /// Starting `process.env` for the guest. Only variables covered by `grants.env` are
-    /// visible to it, and its writes stay inside the instance.
+    /// What the guest may do. Anything withheld fails inside the guest with Node's error
+    /// rather than prompting.
+    pub permissions: Permissions,
+    /// Starting `process.env` for the guest. When the instance withholds anything, every
+    /// variable its permissions do not cover is removed before guest code runs, except the
+    /// ones Node always keeps ([`bento_host::is_always_kept`]) and the names in
+    /// [`RuntimeConfig::kept_env`]. The guest's writes stay inside the instance.
     pub env: BTreeMap<String, String>,
+    /// Names in `env` that are kept whatever the permissions say: values the host prepared for
+    /// the instance itself, as Node keeps the values of its `--env-file` files.
+    pub kept_env: BTreeSet<String>,
     /// Guest `process.argv` beyond the executable and the entry path.
     pub argv: Vec<String>,
     /// Modules the guest may import under their `host:` specifiers.
@@ -122,15 +128,16 @@ pub struct RunningRuntime {
 }
 
 impl RuntimeConfig {
-    /// Denies every grant, leaves environment, arguments, and host modules empty, and runs
-    /// the guest in the project root with a five-second shutdown deadline.
-    pub fn new(project_root: impl Into<PathBuf>) -> Self {
+    /// Runs the guest in the project root with `permissions`, an empty environment, no
+    /// arguments or host modules, and a five-second shutdown deadline.
+    pub fn new(project_root: impl Into<PathBuf>, permissions: Permissions) -> Self {
         let project_root = project_root.into();
         Self {
             cwd: project_root.clone(),
             project_root,
-            grants: Grants::default(),
+            permissions,
             env: BTreeMap::new(),
+            kept_env: BTreeSet::new(),
             argv: Vec::new(),
             host_modules: Vec::new(),
             shutdown_deadline: Duration::from_secs(5),

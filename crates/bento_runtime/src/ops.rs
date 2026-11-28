@@ -1,83 +1,85 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use deno_core::{OpDecl, OpState, op2};
 use deno_error::JsErrorBox;
-use parking_lot::Mutex;
 
+use bento_host::Permission;
+
+use crate::environment::{
+    InstanceEnvironment, bento_cwd, bento_delete_env, bento_env, bento_get_env, bento_set_env,
+    op_bento_own_environment, op_bento_register_env_warning,
+};
 use crate::host::HostModules;
 use crate::host_ops::op_bento_host_call;
 use crate::lifecycle::Control;
+use crate::permissions::Authority;
 use crate::signals::{bento_signal_bind, bento_signal_poll, bento_signal_unbind};
 use crate::watch_inputs::{WatchInputs, op_bento_failed_require, op_bento_missing_require_target};
-use bento_host::Scope;
 
-#[derive(Clone)]
-pub(crate) struct InstanceEnvironment {
-    pub values: Arc<Mutex<BTreeMap<String, String>>>,
-    pub allowed: Scope<String>,
-    pub cwd: PathBuf,
-}
-
-#[op2]
-#[string]
-fn bento_get_env(state: &OpState, #[string] key: &str) -> Option<String> {
-    let environment = state.borrow::<InstanceEnvironment>();
-    environment.allowed.allows(key).then(|| environment.values.lock().get(key).cloned()).flatten()
-}
-
-#[op2]
-#[serde]
-fn bento_env(state: &OpState) -> BTreeMap<String, String> {
-    let environment = state.borrow::<InstanceEnvironment>();
-    environment
-        .values
-        .lock()
-        .iter()
-        .filter(|(key, _)| environment.allowed.allows(key))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect()
-}
-
+/// Whether the instance withholds anything, which is when `process.permission` exists.
 #[op2(fast)]
-fn bento_set_env(
-    state: &mut OpState,
-    #[string] key: &str,
-    #[string] value: &str,
-) -> Result<(), JsErrorBox> {
-    let environment = state.borrow_mut::<InstanceEnvironment>();
-    check_key(environment, key)?;
-    if value.contains('\0') {
-        return Err(JsErrorBox::type_error("environment values cannot contain NUL"));
-    }
-    environment.values.lock().insert(key.to_owned(), value.to_owned());
-    Ok(())
+fn op_bento_permission_withholds(state: &OpState) -> bool {
+    state.borrow::<Arc<Authority>>().current().withholds_anything()
 }
 
-#[op2(fast)]
-fn bento_delete_env(state: &mut OpState, #[string] key: &str) -> Result<(), JsErrorBox> {
-    let environment = state.borrow_mut::<InstanceEnvironment>();
-    check_key(environment, key)?;
-    environment.values.lock().remove(key);
-    Ok(())
-}
-
-fn check_key(environment: &InstanceEnvironment, key: &str) -> Result<(), JsErrorBox> {
-    if !environment.allowed.allows(key) {
-        return Err(JsErrorBox::new("NotCapable", format!("Requires env access to {key}")));
-    }
-    if key.is_empty() || key.contains(['=', '\0']) {
-        return Err(JsErrorBox::type_error("invalid environment variable name"));
-    }
-    Ok(())
-}
-
+/// `process.permission.has(scope, reference)`, after JavaScript has validated its arguments
+/// and turned a URL or byte reference into a path.
 #[op2]
-#[string]
-fn bento_cwd(state: &OpState) -> String {
-    state.borrow::<InstanceEnvironment>().cwd.to_string_lossy().into_owned()
+fn op_bento_permission_has(
+    state: &OpState,
+    #[string] scope: &str,
+    #[string] reference: Option<String>,
+) -> bool {
+    let authority = state.borrow::<Arc<Authority>>();
+    let permissions = authority.current();
+    let file = |permission| match &reference {
+        Some(reference) => authority
+            .locate(reference)
+            .is_some_and(|path| permissions.holds_path(permission, &path)),
+        None => permissions.holds(permission),
+    };
+    match scope {
+        "fs" => file(Permission::FsRead) && file(Permission::FsWrite),
+        _ => match Permission::from_scope(scope) {
+            Some(permission) if permission.is_file_system() => file(permission),
+            Some(Permission::Env) => match &reference {
+                Some(name) => permissions.has_variable(name),
+                None => permissions.holds(Permission::Env),
+            },
+            Some(permission) => permissions.holds(permission),
+            None => false,
+        },
+    }
+}
+
+/// `process.permission.drop(scope, reference)`, after JavaScript has validated its arguments.
+/// JavaScript removes the dropped variables from the isolate's own `process.env`, which in a
+/// worker is a copy.
+#[op2]
+fn op_bento_permission_drop(
+    state: &OpState,
+    #[string] scope: &str,
+    #[string] reference: Option<String>,
+) {
+    let authority = state.borrow::<Arc<Authority>>();
+    let permissions = match scope {
+        "fs" => vec![Permission::FsRead, Permission::FsWrite],
+        _ => Permission::from_scope(scope).into_iter().collect(),
+    };
+    for permission in permissions {
+        match (permission, &reference) {
+            (Permission::FsRead | Permission::FsWrite, Some(reference)) => {
+                if let Some(pattern) = authority.pattern(reference) {
+                    authority.give_up(|permissions| permissions.drop_pattern(permission, &pattern));
+                }
+            }
+            (Permission::Env, Some(name)) => {
+                authority.give_up(|permissions| permissions.drop_variable(name));
+            }
+            (permission, _) => authority.give_up(|permissions| permissions.drop_whole(permission)),
+        }
+    }
 }
 
 #[op2(fast)]
@@ -103,7 +105,7 @@ fn bento_deny_host_termination() -> Result<(), JsErrorBox> {
 
 #[op2(fast)]
 fn bento_fixed_permissions() -> Result<(), JsErrorBox> {
-    Err(JsErrorBox::new("NotSupported", "Permission grants are fixed by the host"))
+    Err(JsErrorBox::new("NotSupported", "Permissions are fixed by the host"))
 }
 
 fn middleware(original: OpDecl) -> OpDecl {
@@ -121,7 +123,9 @@ fn middleware(original: OpDecl) -> OpDecl {
         "op_signal_poll" => bento_signal_poll(),
         "op_signal_unbind" => bento_signal_unbind(),
         _ => match crate::feature_ops::replacement(original.name)
+            .or_else(|| crate::subprocess_ops::replacement(original.name))
             .or_else(|| crate::fs_ops::replacement(original.name))
+            .or_else(|| crate::require_ops::replacement(original.name))
         {
             Some(replacement) => replacement,
             None => return original,
@@ -133,12 +137,28 @@ fn middleware(original: OpDecl) -> OpDecl {
 }
 
 deno_core::extension!(bento_instance,
-    ops = [op_bento_host_call, op_bento_failed_require, op_bento_missing_require_target],
+    ops = [
+        op_bento_host_call,
+        op_bento_failed_require,
+        op_bento_missing_require_target,
+        op_bento_register_env_warning,
+        op_bento_own_environment,
+        op_bento_permission_withholds,
+        op_bento_permission_has,
+        op_bento_permission_drop,
+    ],
     esm_entry_point = "ext:bento_instance/host.mjs",
-    options = { environment: InstanceEnvironment, modules: HostModules, control: Arc<Control>, watch_inputs: WatchInputs },
+    options = {
+        environment: InstanceEnvironment,
+        authority: Arc<Authority>,
+        modules: HostModules,
+        control: Arc<Control>,
+        watch_inputs: WatchInputs,
+    },
     middleware = middleware,
     state = |state, options| {
         state.put(options.environment);
+        state.put(options.authority);
         state.put(options.modules);
         state.put(options.control);
         state.put(options.watch_inputs);
@@ -150,6 +170,30 @@ deno_core::extension!(bento_instance,
         ), deno_core::ExtensionFileSource::new(
             "ext:bento_instance/require_watch.mjs",
             deno_core::ascii_str_include!("require_watch.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission.mjs",
+            deno_core::ascii_str_include!("permission.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/child_process.mjs",
+            deno_core::ascii_str_include!("permission/child_process.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/errors.mjs",
+            deno_core::ascii_str_include!("permission/errors.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/file_system.mjs",
+            deno_core::ascii_str_include!("permission/file_system.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/network.mjs",
+            deno_core::ascii_str_include!("permission/network.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/process_permission.mjs",
+            deno_core::ascii_str_include!("permission/process_permission.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/permission/wasi_inspector.mjs",
+            deno_core::ascii_str_include!("permission/wasi_inspector.mjs"),
+        ), deno_core::ExtensionFileSource::new(
+            "ext:bento_instance/worker_environment.mjs",
+            deno_core::ascii_str_include!("worker_environment.mjs"),
         )];
         extension.esm_files = Cow::Borrowed(HOST_SOURCE);
     },

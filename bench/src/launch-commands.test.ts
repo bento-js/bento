@@ -24,23 +24,24 @@ describe("launch paths the proposal fixes", () => {
         ]);
     });
 
-    test("Bento runs the source with exactly the fixture's grants", () => {
-        let grants = [
-            "--allow-read",
-            "--allow-write=./db",
+    test("Bento runs the source restricted to exactly the fixture's permissions", () => {
+        let permissions = [
+            "--permission",
+            "--allow-fs-read=*",
+            "--allow-fs-write=./db",
             "--allow-net",
             "--allow-env=PORT,DATABASE_URL,NODE_ENV",
-            "--allow-addons=./node_modules",
+            "--allow-addons",
         ];
 
         expect(serverCommand("bento", "/bin/bento", { watch: false }).args).toEqual([
             "run",
-            ...grants,
+            ...permissions,
             "server.ts",
         ]);
         expect(serverCommand("bento", "/bin/bento", { watch: true }).args).toEqual([
             "run",
-            ...grants,
+            ...permissions,
             "--watch",
             "server.ts",
         ]);
@@ -49,8 +50,9 @@ describe("launch paths the proposal fixes", () => {
     test("a standalone script gets only the authority it needs under Bento", () => {
         expect(scriptCommand("bento", "/bin/bento", ".bench/probe.ts", ["5"]).args).toEqual([
             "run",
-            "--allow-read",
-            "--allow-addons=./node_modules",
+            "--permission",
+            "--allow-fs-read=*",
+            "--allow-addons",
             ".bench/probe.ts",
             "5",
         ]);

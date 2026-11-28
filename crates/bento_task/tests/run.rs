@@ -1,6 +1,5 @@
 mod support;
 
-use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -8,7 +7,7 @@ use std::process::Command;
 
 use serde_json::json;
 
-use bento_host::{Grants, Scope};
+use bento_host::{PathPattern, PermissionSet, Permissions, Scope};
 use bento_task::{Cancellation, Plan, TaskError, TaskRunner};
 use bento_workspace::{LaunchEnvironment, LaunchKind, Project};
 use support::{SYSTEM_PATH, TempProject, vars};
@@ -155,20 +154,24 @@ fn child_output_passes_through_to_the_caller() {
 }
 
 #[test]
-fn a_granted_path_that_is_not_utf8_fails_task_setup_with_an_error() {
+fn a_permitted_path_that_is_not_utf8_fails_task_setup_with_an_error() {
     let temp = TempProject::with_tasks(json!({ "speak": "echo spoke >> log.txt" }));
     let unencodable = PathBuf::from(OsStr::from_bytes(b"/project/\xff"));
-    let grants = Grants { read: Scope::Only(BTreeSet::from([unencodable])), ..Grants::none() };
+    let permissions = Permissions::restricted(PermissionSet {
+        fs_read: Scope::only([PathPattern::Exact(unencodable)]),
+        ..PermissionSet::default()
+    });
     let project = temp.project();
     let launch =
         LaunchEnvironment::load(temp.root(), vars(&[("PATH", SYSTEM_PATH)]), LaunchKind::Run)
             .unwrap();
 
-    let Err(error) = TaskRunner::new(&project, &launch, &grants, &temp.bento_executable()) else {
+    let Err(error) = TaskRunner::new(&project, &launch, &permissions, &temp.bento_executable())
+    else {
         panic!("a runner started under a ceiling it could not encode");
     };
 
-    assert!(matches!(error, TaskError::GrantCeiling(_)), "{error:?}");
+    assert!(matches!(error, TaskError::PermissionCeiling(_)), "{error:?}");
 }
 
 fn run_speak_task(root: &Path) {
@@ -176,6 +179,8 @@ fn run_speak_task(root: &Path) {
     let plan = Plan::new(project.manifest(), "speak", &[]).unwrap();
     let launch =
         LaunchEnvironment::load(root, vars(&[("PATH", SYSTEM_PATH)]), LaunchKind::Run).unwrap();
-    let runner = TaskRunner::new(&project, &launch, &Grants::none(), &root.join("bento")).unwrap();
+    let runner =
+        TaskRunner::new(&project, &launch, &Permissions::unrestricted(), &root.join("bento"))
+            .unwrap();
     runner.run(&plan, &Cancellation::new()).unwrap();
 }

@@ -1,8 +1,19 @@
 mod support;
 
+use std::path::Path;
 use std::process::Command;
 
-use support::{completed, config, project, run};
+use bento_host::{PermissionSet, Permissions};
+use bento_runtime::RuntimeConfig;
+use support::{completed, config, config_with, network_access, project, project_access, run};
+
+/// Like [`support::config`], also allowed to start workers.
+fn worker_access(root: &Path) -> RuntimeConfig {
+    config_with(
+        root,
+        Permissions::restricted(PermissionSet { worker: true, ..project_access(root) }),
+    )
+}
 
 fn isolated(name: &str) -> bool {
     if std::env::var("BENTO_CONTAINMENT_TEST").as_deref() == Ok(name) {
@@ -34,7 +45,7 @@ fn unsupported_worker_features_fail_the_instance_not_the_host() {
     let root = project();
     std::fs::write(root.path().join("worker.mjs"), "postMessage('alive');").unwrap();
     let outcome = run(
-        config(root.path()),
+        worker_access(root.path()),
         "entry.mjs",
         "new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module', deno: { permissions: { env: [] } } });",
     );
@@ -53,7 +64,7 @@ fn unsupported_features_in_a_worker_fail_only_its_instance() {
     std::fs::write(root.path().join("worker.mjs"),
         "new Worker(new URL('./child.mjs', import.meta.url), { type: 'module', deno: { permissions: { env: [] } } });").unwrap();
     let outcome = run(
-        config(root.path()),
+        worker_access(root.path()),
         "entry.mjs",
         "new Worker(new URL('./worker.mjs', import.meta.url), { type: 'module' }); setInterval(() => {}, 100);",
     );
@@ -82,7 +93,7 @@ for (const action of [() => process.abort(), () => process.kill(process.pid, 'SI
 }
 
 #[test]
-fn permission_mutations_are_rejected_and_queries_keep_host_grants() {
+fn permission_mutations_are_rejected_and_queries_keep_host_permissions() {
     let root = project();
     completed(run(
         config(root.path()),
@@ -95,8 +106,8 @@ for (const name of ['read', 'env']) {
     let denied = false;
     try { await Deno.permissions[method](descriptor); }
     catch (error) { denied = error.name === 'NotSupported' && error.message.includes('fixed by the host'); }
-    if (!denied) throw Error(`${method} did not explain fixed host grants`);
-    if ((await Deno.permissions.query(descriptor)).state !== before) throw Error('host grant changed');
+    if (!denied) throw Error(`${method} did not explain fixed host permissions`);
+    if ((await Deno.permissions.query(descriptor)).state !== before) throw Error('host permission changed');
   }
 }
 "#,
@@ -112,7 +123,7 @@ fn rejected_worker_options_throw_before_starting_a_worker() {
     )
     .unwrap();
     completed(run(
-        config(root.path()),
+        worker_access(root.path()),
         "entry.mjs",
         r#"
 for (const permissions of ['inherit', { env: [] }]) {
@@ -132,7 +143,7 @@ fn late_unsupported_feature_is_an_uncaught_error_with_its_source_location() {
     let root = project();
     std::fs::write(root.path().join("worker.mjs"), "postMessage('alive');").unwrap();
     let outcome = run(
-        config(root.path()),
+        worker_access(root.path()),
         "late.mjs",
         "await new Promise(resolve => setTimeout(resolve, 10));\nnew Worker(new URL('./worker.mjs', import.meta.url), { type: 'module', deno: { permissions: 'inherit' } });",
     );
@@ -149,8 +160,7 @@ fn reuse_port_is_rejected_before_binding_a_listener() {
     // Keeping the port bound proves rejection precedes binding: a bind attempt would be AddrInUse.
     let occupied = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = occupied.local_addr().unwrap().port();
-    let mut settings = config(root.path());
-    settings.grants.net = bento_host::Scope::All;
+    let settings = network_access(root.path());
     completed(run(
         settings,
         "entry.mjs",
@@ -189,8 +199,7 @@ fn all_exposed_upstream_feature_gates_leave_the_embedding_process_alive() {
         .output()
         .unwrap();
     assert!(certificates.status.success(), "{}", String::from_utf8_lossy(&certificates.stderr));
-    let mut settings = config(root.path());
-    settings.grants.net = bento_host::Scope::All;
+    let settings = network_access(root.path());
     completed(run(
         settings,
         "features.mjs",

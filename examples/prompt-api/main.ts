@@ -24,7 +24,7 @@ if (process.argv.includes("--denied")) {
     console.log("Availability", availability);
     if (availability !== "available") {
         throw new Error(
-            "LanguageModel is unavailable. Check the --allow-language-model grant, that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready.",
+            "LanguageModel is unavailable. Check that Bento was built with the native backend, macOS 27 or newer, and that Apple Intelligence is enabled and ready. Restricted launches need --permission --allow-language-model.",
         );
     }
     let progress: number[] = [];

@@ -10,7 +10,6 @@ use bento_test_support::ports::{loopback, port_is_taken, wait_until};
 use support::TempProject;
 use support::running::{Background, free_port, get};
 
-const GRANTS: [&str; 3] = ["--allow-read=.", "--allow-net", "--allow-env=PORT"];
 const RESPONSE_DEADLINE: Duration = Duration::from_secs(15);
 /// Long enough for a change to have caused a restart, had it caused one.
 const SETTLE: Duration = Duration::from_secs(1);
@@ -36,9 +35,9 @@ fn server_project(message: &str) -> TempProject {
     temp
 }
 
-/// `bento run --watch` with the server's grants and `PORT`, started in `temp`'s root.
+/// `bento run --watch` with `PORT`, started in `temp`'s root.
 fn watch(temp: &TempProject, port: u16, script: &str) -> Background {
-    let mut command = temp.bento(&[&["run", "--watch"], &GRANTS[..], &[script]].concat());
+    let mut command = temp.bento(&["run", "--watch", script]);
     command.env("PORT", port.to_string());
     Background::spawn(command)
 }
@@ -185,8 +184,7 @@ fn a_module_first_imported_after_startup_is_watched() {
 fn a_script_that_finishes_keeps_watching_in_development_mode() {
     let temp = TempProject::new(json!({ "type": "module" }));
     temp.write("mode.mjs", "console.log(`mode ${process.env.NODE_ENV}`);\n");
-    let mut command =
-        temp.bento(&["run", "--watch", "--allow-read=.", "--allow-env=NODE_ENV", "mode.mjs"]);
+    let mut command = temp.bento(&["run", "--watch", "mode.mjs"]);
     command.env_remove("NODE_ENV");
     let mut bento = Background::spawn(command);
     bento.wait_for_stdout("mode development", 1);
@@ -208,7 +206,7 @@ fn interrupt_to_a_task_stops_the_watch_server_its_nested_bento_runs() {
     let manifest = json!({ "type": "module", "tasks": { "dev": "bento run --watch server.mjs" } });
     temp.write("package.json", &manifest.to_string());
     let port = free_port();
-    let mut command = temp.bento(&[&["run"], &GRANTS[..], &["dev"]].concat());
+    let mut command = temp.bento(&["run", "dev"]);
     command.env("PORT", port.to_string());
     let mut bento = Background::spawn(command);
     wait_for_response(port, "nested message");
@@ -267,8 +265,7 @@ fn recover_missing_configuration(extended: &str, create_parent: bool) {
     if create_parent {
         fs::create_dir_all(configuration.parent().unwrap()).unwrap();
     }
-    let mut command =
-        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    let mut command = support::bento_in(&temp.path("app"), &["run", "--watch", "main.ts"]);
     command.env_remove("NODE_PATH");
     let mut bento = Background::spawn(command);
     bento.wait_for_stderr("waiting for changes");
@@ -296,7 +293,7 @@ fn installing_a_missing_configuration_package_recovers_watch() {
     let temp = TempProject::new(json!({ "type": "module" }));
     temp.write("tsconfig.json", &json!({ "extends": "@configs/strict/tsconfig.json" }).to_string());
     temp.write("main.ts", "console.log('package configuration recovered');\n");
-    let mut command = temp.bento(&["run", "--allow-read", "--watch", "main.ts"]);
+    let mut command = temp.bento(&["run", "--watch", "main.ts"]);
     command.env_remove("NODE_PATH");
     let bento = Background::spawn(command);
     bento.wait_for_stderr("waiting for changes");
@@ -314,8 +311,7 @@ fn creating_a_configuration_through_a_directory_symlink_recovers_watch() {
     temp.write("app/main.ts", "console.log('symlink configuration recovered');\n");
     fs::create_dir(temp.path("real")).unwrap();
     std::os::unix::fs::symlink(temp.path("real"), temp.path("shared")).unwrap();
-    let command =
-        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    let command = support::bento_in(&temp.path("app"), &["run", "--watch", "main.ts"]);
     let bento = Background::spawn(command);
     bento.wait_for_stderr("waiting for changes");
 
@@ -331,8 +327,7 @@ fn an_unwatchable_configuration_warns_once_and_retries_after_source_changes() {
     temp.write("app/tsconfig.json", &json!({ "extends": "../loop/base.json" }).to_string());
     temp.write("app/main.ts", "console.log('unwatchable configuration recovered');\n");
     std::os::unix::fs::symlink("loop", temp.path("loop")).unwrap();
-    let command =
-        support::bento_in(&temp.path("app"), &["run", "--allow-read", "--watch", "main.ts"]);
+    let command = support::bento_in(&temp.path("app"), &["run", "--watch", "main.ts"]);
     let bento = Background::spawn(command);
     bento.wait_for_stderr("waiting for changes");
     let configuration = temp.path("").canonicalize().unwrap().join("loop/base.json");
@@ -363,7 +358,7 @@ fn a_loaded_entry_beneath_a_node_modules_ancestor_is_watched() {
     let project = temp.path("node_modules/application");
     temp.write("node_modules/application/package.json", &json!({ "type": "module" }).to_string());
     temp.write("node_modules/application/dist/main.mjs", "console.log('version one');\n");
-    let command = support::bento_in(&project, &["run", "--allow-read", "--watch", "dist/main.mjs"]);
+    let command = support::bento_in(&project, &["run", "--watch", "dist/main.mjs"]);
     let bento = Background::spawn(command);
     bento.wait_for_stdout("version one", 1);
     bento.wait_for_stderr("waiting for changes");
@@ -394,8 +389,7 @@ fn a_loaded_module_stays_watched_when_its_directory_is_moved_and_restored() {
     );
     temp.write("shared/message.mjs", &message_module("shared one"));
     let port = free_port();
-    let grants = ["--allow-read=.", "--allow-write=.", "--allow-net", "--allow-env=PORT"];
-    let mut command = temp.bento(&[&["run", "--watch"], &grants[..], &["app/server.mjs"]].concat());
+    let mut command = temp.bento(&["run", "--watch", "app/server.mjs"]);
     command.env("PORT", port.to_string());
     let bento = Background::spawn(command);
     wait_for_response(port, "shared one");
@@ -411,10 +405,7 @@ fn a_loaded_module_stays_watched_when_its_directory_is_moved_and_restored() {
 }
 
 fn watch_external_script(temp: &TempProject, entry: &str) -> Background {
-    Background::spawn(support::bento_in(
-        &temp.path("app"),
-        &["run", "--allow-read", "--watch", entry],
-    ))
+    Background::spawn(support::bento_in(&temp.path("app"), &["run", "--watch", entry]))
 }
 
 #[test]

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 
-use bento_host::Grants;
+use bento_host::Permissions;
 use bento_task::{Cancellation, Plan, Signal, TaskError};
 use bento_test_support::ports::{Addresses, free_port, port_is_taken, wait_until};
 use support::{SYSTEM_PATH, TempProject};
@@ -40,7 +40,9 @@ fn start(
     ready: impl FnMut() -> bool,
 ) -> (Cancellation, thread::JoinHandle<Result<(), TaskError>>) {
     let plan = Plan::new(temp.project().manifest(), task, &[]).unwrap();
-    let runner = temp.runner(&[("PATH", SYSTEM_PATH)], &Grants::none()).grace_period(grace_period);
+    let runner = temp
+        .runner(&[("PATH", SYSTEM_PATH)], &Permissions::unrestricted())
+        .grace_period(grace_period);
     let cancellation = Cancellation::new();
     let handle = {
         let cancellation = cancellation.clone();
@@ -136,7 +138,9 @@ fn cancellation_before_a_command_starts_runs_nothing() {
     let cancellation = Cancellation::new();
     cancellation.cancel(Signal::Interrupt);
 
-    let result = temp.runner(&[("PATH", SYSTEM_PATH)], &Grants::none()).run(&plan, &cancellation);
+    let result = temp
+        .runner(&[("PATH", SYSTEM_PATH)], &Permissions::unrestricted())
+        .run(&plan, &cancellation);
 
     assert!(matches!(result, Err(TaskError::Cancelled { status: None, .. })), "{result:?}");
     assert!(!temp.path("built").exists());

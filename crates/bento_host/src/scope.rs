@@ -1,121 +1,94 @@
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::NetTarget;
-
-/// How much of one kind of authority a runtime instance holds.
+/// How much of a permission that names individual paths or variables a set of permissions
+/// holds.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "scope", content = "items")]
 pub enum Scope<T: Ord> {
-    /// Nothing is authorized; the default for every kind.
+    /// Nothing; the default.
     #[default]
     None,
-    /// Every item of the kind is authorized, including items created later.
+    /// Everything, including paths and variables that appear later; Node's `*`.
     All,
-    /// Only these items are authorized; an empty set grants nothing, like [`Scope::None`].
+    /// What these patterns cover. An empty set covers nothing, like [`Scope::None`].
     Only(BTreeSet<T>),
 }
 
-/// A granted item, and whether it authorizes a requested operation target.
-pub trait Covers {
-    /// The borrowed form operations are checked against (`Path` for paths, `str` for names).
+/// A pattern a [`Scope`] holds, and the targets it covers.
+pub(crate) trait Pattern: Ord {
+    /// What an operation names: a path or a variable name.
     type Target: ?Sized;
 
-    /// Whether this granted item authorizes an operation on `requested`.
-    fn covers(&self, requested: &Self::Target) -> bool;
-    /// This item seen as an operation target, so granted items can be checked against a
-    /// scope of their own kind.
-    fn as_target(&self) -> &Self::Target;
-    /// How the item reads in diagnostics.
-    fn describe(&self) -> String;
-}
-
-impl Covers for PathBuf {
-    type Target = Path;
-
-    /// Component-wise containment: `/a` covers `/a/b` but not `/ab`.
-    fn covers(&self, requested: &Path) -> bool {
-        requested.starts_with(self)
-    }
-
-    fn as_target(&self) -> &Path {
-        self
-    }
-
-    fn describe(&self) -> String {
-        self.display().to_string()
-    }
-}
-
-impl Covers for String {
-    type Target = str;
-
-    fn covers(&self, requested: &str) -> bool {
-        self == requested
-    }
-
-    fn as_target(&self) -> &str {
-        self
-    }
-
-    fn describe(&self) -> String {
-        self.clone()
-    }
-}
-
-impl Covers for NetTarget {
-    type Target = NetTarget;
-
-    /// A host without a port covers every port of that host. Hosts are compared in their
-    /// canonical spelling.
-    fn covers(&self, requested: &NetTarget) -> bool {
-        self.host() == requested.host()
-            && (self.port().is_none() || self.port() == requested.port())
-    }
-
-    fn as_target(&self) -> &NetTarget {
-        self
-    }
-
-    fn describe(&self) -> String {
-        self.to_string()
-    }
+    fn covers(&self, target: &Self::Target) -> bool;
+    /// Whether every target this pattern covers, `other` covers too.
+    fn within(&self, other: &Self) -> bool;
+    /// Whether some target is covered by both.
+    fn overlaps(&self, other: &Self) -> bool;
 }
 
 impl<T: Ord> Scope<T> {
-    /// A scope of exactly these items. An empty list grants nothing.
+    /// A scope of exactly these patterns. An empty list covers nothing.
     pub fn only(items: impl IntoIterator<Item = T>) -> Self {
         let items: BTreeSet<T> = items.into_iter().collect();
         if items.is_empty() { Scope::None } else { Scope::Only(items) }
     }
+
+    /// Whether this is all of the permission.
+    pub fn is_all(&self) -> bool {
+        matches!(self, Scope::All)
+    }
+
+    /// Whether this covers nothing.
+    pub fn is_none(&self) -> bool {
+        match self {
+            Scope::None => true,
+            Scope::All => false,
+            Scope::Only(items) => items.is_empty(),
+        }
+    }
+
+    /// Removes exactly `pattern`, if this scope holds it. All of a permission has no patterns
+    /// to remove and stays whole.
+    pub(crate) fn remove(&mut self, pattern: &T) {
+        if let Scope::Only(items) = self {
+            items.remove(pattern);
+        }
+    }
 }
 
-impl<T: Ord + Covers> Scope<T> {
-    /// Whether an operation on `requested` is authorized; the check a runtime makes at its
-    /// native operation boundaries.
-    pub fn allows(&self, requested: &T::Target) -> bool {
+/// What a scope of patterns covers.
+pub(crate) trait Coverage<T: Pattern> {
+    fn covers(&self, target: &T::Target) -> bool;
+    /// Whether every target `pattern` covers, this scope covers too.
+    fn contains(&self, pattern: &T) -> bool;
+    /// Whether this scope covers some target `pattern` covers.
+    fn overlaps(&self, pattern: &T) -> bool;
+}
+
+impl<T: Pattern> Coverage<T> for Scope<T> {
+    fn covers(&self, target: &T::Target) -> bool {
         match self {
             Scope::None => false,
             Scope::All => true,
-            Scope::Only(granted) => granted.iter().any(|item| item.covers(requested)),
+            Scope::Only(items) => items.iter().any(|item| item.covers(target)),
         }
     }
 
-    /// The part of `requested` this scope does not authorize, if any.
-    pub(crate) fn excess<'a>(&self, requested: &'a Scope<T>) -> Option<Excess<'a, T>> {
-        match (requested, self) {
-            (Scope::None, _) | (_, Scope::All) => None,
-            (Scope::All, _) => Some(Excess::Everything),
-            (Scope::Only(items), _) => {
-                items.iter().find(|item| !self.allows(item.as_target())).map(Excess::Item)
-            }
+    fn contains(&self, pattern: &T) -> bool {
+        match self {
+            Scope::None => false,
+            Scope::All => true,
+            Scope::Only(items) => items.iter().any(|item| pattern.within(item)),
         }
     }
-}
 
-pub(crate) enum Excess<'a, T> {
-    Everything,
-    Item(&'a T),
+    fn overlaps(&self, pattern: &T) -> bool {
+        match self {
+            Scope::None => false,
+            Scope::All => true,
+            Scope::Only(items) => items.iter().any(|item| pattern.overlaps(item)),
+        }
+    }
 }

@@ -46,20 +46,21 @@ pub(crate) fn replacement(name: &str) -> Option<OpDecl> {
     })
 }
 
+/// Checks `path` as the guest gave it, so a denial names it as Node does, and returns it
+/// resolved against the guest's working directory for the native operation.
 fn checked<'a>(
     state: &OpState,
     path: Cow<'a, Path>,
     kind: OpenAccessKind,
 ) -> Result<CheckedPath<'a>, FsOpsError> {
-    let requested = requested_path(state, path);
     crate::permissions::check_no_follow(
         state.borrow::<PermissionsContainer>(),
-        Cow::Borrowed(&requested),
+        Cow::Borrowed(path.as_ref()),
         kind,
         "node:fs",
     )?;
     // Checking the resolved location must not change the native operation's path semantics.
-    Ok(CheckedPath::unsafe_new(requested))
+    Ok(CheckedPath::unsafe_new(requested_path(state, path)))
 }
 
 fn checked_remove<'a>(
@@ -67,20 +68,19 @@ fn checked_remove<'a>(
     path: Cow<'a, Path>,
     recursive: bool,
 ) -> Result<CheckedPath<'a>, FsOpsError> {
-    let requested = requested_path(state, path);
     crate::permissions::check_remove_no_follow(
         state.borrow::<PermissionsContainer>(),
-        Cow::Borrowed(&requested),
+        Cow::Borrowed(path.as_ref()),
         recursive,
     )?;
-    Ok(CheckedPath::unsafe_new(requested))
+    Ok(CheckedPath::unsafe_new(requested_path(state, path)))
 }
 
 fn requested_path<'a>(state: &OpState, path: Cow<'a, Path>) -> Cow<'a, Path> {
     if path.is_absolute() || path.as_os_str().is_empty() {
         path
     } else {
-        Cow::Owned(state.borrow::<crate::ops::InstanceEnvironment>().cwd.join(path))
+        Cow::Owned(state.borrow::<crate::environment::InstanceEnvironment>().cwd.join(path))
     }
 }
 
